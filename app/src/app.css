@@ -1,20 +1,38 @@
-/* Design tokens + base styles. Mobile first; light/dark follows the system. */
-:root {
-  --bg: #f6f5f1;
-  --surface: #ffffff;
-  --surface-2: #efede7;
-  --text: #1d1e22;
-  --text-muted: #6b6d75;
-  --border: #e2e0d9;
-  --accent: #3d6bff;
-  --accent-text: #ffffff;
-  --success: #1f9d61;
-  --warning: #c77800;
-  --danger: #d6453d;
-  --bounty: #8a4dff;
+/* Fairteilt design tokens (docs/KONZEPT.md §7.5).
+   Warm & familiär: warm light neutrals, round shapes.
+   Indigo = actions, Petrol = XP (bar), Honig = Guthaben (coin), condition fresh → due → over.
+   Light by default; dark via prefers-color-scheme unless the user forced a theme (data-theme). */
+@import "@fontsource-variable/bricolage-grotesque";
+@import "@fontsource-variable/atkinson-hyperlegible-next";
 
-  --radius: 14px;
-  --radius-sm: 9px;
+:root {
+  --bg: #f6f4f0;
+  --surface: #ffffff;
+  --surface-2: #ece9e3;
+  --fg: #1b1b26;
+  --muted: #625f6c;
+  --line: #e0dcd4;
+  --primary: #4338ca;
+  --primary-fg: #ffffff;
+  --primary-soft: #e6e3fa;
+  --xp: #0b7f6f;
+  --xp-soft: #d4eee8;
+  --coin: #95600a;
+  --coin-bg: #f4c246;
+  --coin-soft: #fbefcd;
+  --fresh: #2f9e5b;
+  --due: #e0a019;
+  --over: #d2492a;
+  --over-soft: #fbe1d8;
+  --ok: #1f8a4c;
+  --ok-soft: #d9f0e1;
+  --krumel: #8a5a2b;
+
+  --font-display: "Bricolage Grotesque Variable", "Segoe UI", system-ui, sans-serif;
+  --font-body: "Atkinson Hyperlegible Next Variable", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+  --radius: 18px;
+  --radius-sm: 12px;
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -22,26 +40,26 @@
   --space-5: 24px;
   --tap: 44px; /* minimum touch target */
   --nav-h: 64px;
-
-  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
-  color-scheme: light dark;
+  color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #16171b;
-    --surface: #1f2026;
-    --surface-2: #2a2b33;
-    --text: #ececef;
-    --text-muted: #9a9ca6;
-    --border: #33343c;
-    --accent: #6d8dff;
-    --accent-text: #0e1020;
-    --success: #3fc285;
-    --warning: #f0a13a;
-    --danger: #f06a62;
-    --bounty: #ad85ff;
+  :root:not([data-theme="light"]) {
+    --bg: #14131a; --surface: #1d1c25; --surface-2: #27262f; --fg: #eeedf3; --muted: #a3a1ae; --line: #33313d;
+    --primary: #8f88ff; --primary-fg: #14131a; --primary-soft: #2a2850;
+    --xp: #38c7af; --xp-soft: #143530; --coin: #f4c246; --coin-bg: #f4c246; --coin-soft: #3b3014;
+    --fresh: #4cc47e; --due: #f0b43a; --over: #f2704f; --over-soft: #3f2219; --ok: #4ade80; --ok-soft: #153223;
+    --krumel: #c98d52;
+    color-scheme: dark;
   }
+}
+:root[data-theme="dark"] {
+  --bg: #14131a; --surface: #1d1c25; --surface-2: #27262f; --fg: #eeedf3; --muted: #a3a1ae; --line: #33313d;
+  --primary: #8f88ff; --primary-fg: #14131a; --primary-soft: #2a2850;
+  --xp: #38c7af; --xp-soft: #143530; --coin: #f4c246; --coin-bg: #f4c246; --coin-soft: #3b3014;
+  --fresh: #4cc47e; --due: #f0b43a; --over: #f2704f; --over-soft: #3f2219; --ok: #4ade80; --ok-soft: #153223;
+  --krumel: #c98d52;
+  color-scheme: dark;
 }
 
 * {
@@ -52,8 +70,8 @@ html,
 body {
   margin: 0;
   background: var(--bg);
-  color: var(--text);
-  font-family: var(--font);
+  color: var(--fg);
+  font-family: var(--font-body);
   font-size: 16px;
   line-height: 1.45;
   -webkit-font-smoothing: antialiased;
@@ -65,7 +83,8 @@ h1,
 h2,
 h3 {
   margin: 0;
-  line-height: 1.2;
+  line-height: 1.15;
+  font-family: var(--font-display);
 }
 
 button,
@@ -82,12 +101,12 @@ button {
   padding: 0 var(--space-4);
   background: var(--surface-2);
   cursor: pointer;
+  font-weight: 700;
 }
 
 button.primary {
-  background: var(--accent);
-  color: var(--accent-text);
-  font-weight: 600;
+  background: var(--primary);
+  color: var(--primary-fg);
 }
 
 button:disabled {
@@ -95,27 +114,37 @@ button:disabled {
   cursor: default;
 }
 
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 3px solid var(--primary);
+  outline-offset: 2px;
+}
+
 input[type="text"],
 input[type="url"],
+input[type="email"],
+input[type="password"],
 input[type="number"],
 select {
   min-height: var(--tap);
   width: 100%;
   padding: 0 var(--space-3);
-  border: 1px solid var(--border);
+  border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   background: var(--surface);
 }
 
 .card {
   background: var(--surface);
-  border: 1px solid var(--border);
+  border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: var(--space-4);
 }
 
 .muted {
-  color: var(--text-muted);
+  color: var(--muted);
 }
 
 .stack {
@@ -130,23 +159,64 @@ select {
   gap: var(--space-3);
 }
 
-.chip {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  padding: 2px var(--space-2);
-  border-radius: 999px;
-  background: var(--surface-2);
-  font-size: 0.8rem;
-  font-weight: 600;
-  white-space: nowrap;
+.page-title {
+  font-size: 1.9rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
 }
 
 .section-title {
-  font-size: 0.8rem;
+  font-family: var(--font-body);
+  font-size: 0.78rem;
   font-weight: 700;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--text-muted);
-  margin: var(--space-2) 0 0;
+  color: var(--muted);
+  margin: var(--space-5) 0 var(--space-3);
+}
+
+.xp-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 8px;
+  background: var(--xp-soft);
+  color: var(--xp);
+  font-weight: 700;
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.coin-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 9px 2px 4px;
+  border-radius: 999px;
+  background: var(--coin-soft);
+  color: var(--coin);
+  font-weight: 700;
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.coin-chip::before {
+  content: "";
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: var(--coin-bg);
+  box-shadow: inset 0 -2px 0 rgb(0 0 0 / 0.15);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

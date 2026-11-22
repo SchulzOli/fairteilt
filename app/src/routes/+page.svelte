@@ -1,115 +1,162 @@
 <script lang="ts">
   import TaskCard from "$lib/TaskCard.svelte";
-  import { me, tasks } from "$lib/demo";
+  import Avatar from "$lib/ui/Avatar.svelte";
+  import Icon from "$lib/ui/Icon.svelte";
+  import Krumel from "$lib/ui/Krumel.svelte";
+  import { familyGoal, me, myStreakDays, tasks } from "$lib/demo";
 
   let done = $state<string[]>([]);
 
   const mine = $derived(tasks.filter((t) => t.assignee === me.name && !done.includes(t.id)));
   const open = $derived(tasks.filter((t) => !t.assignee && !done.includes(t.id)));
 
-  // Demo values for the period progress.
-  const contribution = 112;
-  const target = 140;
-  const progress = $derived(Math.min(100, Math.round((contribution / target) * 100)));
+  const familyPct = $derived(Math.min(100, (familyGoal.xp / familyGoal.goal) * 100));
+  const krumelPct = $derived(Math.min(100, (familyGoal.krumelXp / familyGoal.goal) * 100));
+  const ahead = $derived(familyGoal.xp >= familyGoal.krumelXp);
+
+  const today = new Intl.DateTimeFormat("de-DE", { weekday: "long", day: "numeric", month: "long" }).format(new Date());
 </script>
 
-<header class="stack">
-  <p class="muted greeting">Hallo {me.name} 👋</p>
-  <h1>Heute</h1>
+<header class="head">
+  <div class="row">
+    <Avatar animal={me.animal} color={me.color} size={44} name={me.name} />
+    <div>
+      <div class="muted small">{today}</div>
+      <h1 class="page-title">Hallo {me.name}</h1>
+    </div>
+  </div>
+  <span class="streak" title="Serie: Tage mit mindestens einer erledigten Aufgabe">
+    <Icon name="flame" size={16} />{myStreakDays} Tage
+  </span>
 </header>
 
-<section class="card period" aria-label="Fortschritt in dieser Woche">
+<section class="card race" aria-label="Familienziel">
   <div class="row between">
-    <div>
-      <div class="muted small">Diese Woche</div>
-      <div class="big">{contribution} <span class="muted">/ {target} LP</span></div>
-    </div>
-    <div class="balance">
-      <div class="muted small">Guthaben</div>
-      <div class="big">86 G</div>
-    </div>
+    <strong>Familie gegen Krümel</strong>
+    <span class="coin-chip">{familyGoal.reward}</span>
   </div>
-  <div class="bar" role="progressbar" aria-valuenow={progress} aria-valuemin="0" aria-valuemax="100">
-    <div style="width: {progress}%"></div>
+  <div class="track" aria-hidden="true">
+    <span class="lane"></span>
+    <span class="fam" style="width: {familyPct}%"></span>
+    <span class="runner krumel" style="left: {krumelPct}%"><Krumel size={24} /></span>
+    <span class="runner us" style="left: {familyPct}%">wir</span>
+    <span class="goal"><Icon name="flag" size={20} /></span>
   </div>
-  <p class="muted small">Noch {target - contribution} Leistungspunkte bis zu deinem fairen Anteil · 3 Tage übrig</p>
+  <div class="row between small muted">
+    <span>{familyGoal.xp} / {familyGoal.goal} XP</span>
+    <span>{ahead ? "Ihr liegt vorn" : "Krümel knapp vorn"} · noch {familyGoal.daysLeft} Tage</span>
+  </div>
 </section>
 
-<h2 class="section-title">Meine Aufgaben</h2>
+<h2 class="section-title">Heute für dich</h2>
 <div class="stack">
   {#each mine as task (task.id)}
     <TaskCard {task} ondone={(id) => (done = [...done, id])} />
   {:else}
-    <p class="muted">Alles erledigt 🎉</p>
+    <p class="muted">Alles erledigt. Danke dir!</p>
   {/each}
 </div>
 
-<h2 class="section-title">Offen für alle</h2>
+<h2 class="section-title">Offen · wer hilft?</h2>
 <div class="stack">
   {#each open as task (task.id)}
-    <TaskCard {task} />
+    <TaskCard {task} ondone={(id) => (done = [...done, id])} />
   {/each}
 </div>
 
-<p class="muted small demo">Demo-Daten. Die echte Anbindung folgt mit M1–M3.</p>
+<p class="muted small demo">Beispieldaten. Die echte Anbindung folgt mit M1–M3.</p>
 
-<button class="fab primary" aria-label="Aufgabe anlegen">＋</button>
+<button class="fab primary" aria-label="Aufgabe anlegen"><Icon name="plus" size={24} /></button>
 
 <style>
-  header {
-    gap: 0;
+  .head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
     margin-bottom: var(--space-4);
   }
 
-  h1 {
-    font-size: 1.9rem;
-  }
-
-  .greeting {
-    margin: 0;
-  }
-
-  .period {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-3);
-    margin-bottom: var(--space-3);
+  .small {
+    font-size: 0.85rem;
   }
 
   .between {
     justify-content: space-between;
   }
 
-  .balance {
-    text-align: right;
-  }
-
-  .big {
-    font-size: 1.4rem;
-    font-weight: 700;
-  }
-
-  .small {
-    font-size: 0.85rem;
-    margin: 0;
-  }
-
-  .bar {
-    height: 10px;
+  .streak {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
     border-radius: 999px;
+    background: var(--over-soft);
+    color: var(--over);
+    font-weight: 700;
+    font-size: 0.85rem;
+    white-space: nowrap;
+  }
+
+  .race {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+
+  .track {
+    position: relative;
+    height: 34px;
+    margin: 2px 14px 0 4px;
+  }
+
+  .lane,
+  .fam {
+    position: absolute;
+    left: 0;
+    top: 14px;
+    height: 7px;
+    border-radius: 7px;
+  }
+
+  .lane {
+    right: 0;
     background: var(--surface-2);
-    overflow: hidden;
   }
 
-  .bar > div {
-    height: 100%;
-    background: var(--accent);
-    border-radius: inherit;
-    transition: width 0.3s ease;
+  .fam {
+    background: var(--xp);
+    transition: width 0.6s ease;
   }
 
-  .section-title {
-    margin: var(--space-5) 0 var(--space-3);
+  .runner {
+    position: absolute;
+    top: 1px;
+    transform: translateX(-50%);
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    border: 2px solid var(--surface);
+  }
+
+  .runner.krumel {
+    background: color-mix(in srgb, var(--krumel) 22%, var(--surface));
+  }
+
+  .runner.us {
+    background: var(--xp);
+    color: #fff;
+    font-weight: 800;
+    font-size: 0.72rem;
+  }
+
+  .goal {
+    position: absolute;
+    right: -14px;
+    top: 6px;
+    color: var(--coin);
   }
 
   .demo {
@@ -124,7 +171,9 @@
     width: 56px;
     height: 56px;
     border-radius: 18px;
-    font-size: 1.6rem;
-    box-shadow: 0 6px 20px rgb(0 0 0 / 0.2);
+    padding: 0;
+    display: grid;
+    place-items: center;
+    box-shadow: 0 6px 20px rgb(0 0 0 / 0.22);
   }
 </style>

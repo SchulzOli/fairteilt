@@ -1,19 +1,29 @@
 <script lang="ts">
   import "../app.css";
   import { page } from "$app/state";
+  import Icon, { type IconName } from "$lib/ui/Icon.svelte";
+  import { applyTheme, settings } from "$lib/settings.svelte";
 
   let { children } = $props();
 
-  const tabs = [
-    { href: "/", label: "Heute", icon: "☀️" },
-    { href: "/kalender", label: "Kalender", icon: "📅" },
-    { href: "/board", label: "Board", icon: "🧩" },
-    { href: "/punkte", label: "Punkte", icon: "⭐" },
-    { href: "/mehr", label: "Mehr", icon: "☰" },
+  // Load per-device settings once, then keep theme and storage in sync.
+  settings.init();
+  $effect(() => {
+    applyTheme(settings.theme);
+    settings.save();
+    // track sound/vibration too so toggles persist
+    void settings.sound;
+    void settings.vibration;
+  });
+
+  const tabs: { href: string; label: string; icon: IconName }[] = [
+    { href: "/", label: "Heute", icon: "sun" },
+    { href: "/plan", label: "Plan", icon: "plan" },
+    { href: "/punkte", label: "Punkte", icon: "star" },
+    { href: "/familie", label: "Familie", icon: "family" },
   ];
 
-  const isActive = (href: string) =>
-    href === "/" ? page.url.pathname === "/" : page.url.pathname.startsWith(href);
+  const isActive = (href: string) => (href === "/" ? page.url.pathname === "/" : page.url.pathname.startsWith(href));
 </script>
 
 <div class="shell">
@@ -24,8 +34,8 @@
   <nav aria-label="Hauptnavigation">
     {#each tabs as tab (tab.href)}
       <a href={tab.href} class:active={isActive(tab.href)} aria-current={isActive(tab.href) ? "page" : undefined}>
-        <span class="icon" aria-hidden="true">{tab.icon}</span>
-        <span class="label">{tab.label}</span>
+        <Icon name={tab.icon} size={22} />
+        <span>{tab.label}</span>
       </a>
     {/each}
   </nav>
@@ -51,12 +61,12 @@
     position: fixed;
     inset: auto 0 0 0;
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     height: calc(var(--nav-h) + env(safe-area-inset-bottom));
     padding-bottom: env(safe-area-inset-bottom);
-    background: color-mix(in srgb, var(--surface) 92%, transparent);
+    background: color-mix(in srgb, var(--surface) 94%, transparent);
     backdrop-filter: blur(12px);
-    border-top: 1px solid var(--border);
+    border-top: 1px solid var(--line);
     z-index: 10;
   }
 
@@ -65,25 +75,14 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 2px;
-    color: var(--text-muted);
+    gap: 3px;
+    color: var(--muted);
     text-decoration: none;
-    font-size: 0.72rem;
-    font-weight: 600;
-  }
-
-  nav a .icon {
-    font-size: 1.3rem;
-    filter: grayscale(1);
-    opacity: 0.7;
+    font-size: 0.74rem;
+    font-weight: 700;
   }
 
   nav a.active {
-    color: var(--accent);
-  }
-
-  nav a.active .icon {
-    filter: none;
-    opacity: 1;
+    color: var(--primary);
   }
 </style>

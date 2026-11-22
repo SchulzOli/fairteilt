@@ -64,7 +64,7 @@
       <span class="who"><span class="dot" style="background: {m.color}"></span>{m.name}
         <span class="muted small">Gewicht {m.weight}</span></span>
       <input type="range" min="0" max="150" bind:value={contributions[m.id]} />
-      <span class="num">{contributions[m.id]} LP</span>
+      <span class="num">{contributions[m.id]} XP</span>
     </label>
   {/each}
 
@@ -88,7 +88,7 @@
 {#if error}
   <p class="card error">{error}</p>
 {:else if settlement}
-  <h2 class="section-title">Ergebnis · {settlement.total_contribution} LP gesamt</h2>
+  <h2 class="section-title">Ergebnis · {settlement.total_contribution} XP gesamt</h2>
   <div class="stack">
     {#each settlement.lines as line (line.member_id)}
       <article class="card result {line.outcome}">
@@ -138,7 +138,7 @@
     grid-column: 1 / -1;
     grid-row: 2;
     width: 100%;
-    accent-color: var(--accent);
+    accent-color: var(--primary);
   }
 
   .who {
@@ -185,15 +185,15 @@
   }
 
   .result.deficit {
-    border-left-color: var(--danger);
+    border-left-color: var(--over);
   }
 
   .result.surplus {
-    border-left-color: var(--success);
+    border-left-color: var(--ok);
   }
 
   .error {
-    color: var(--danger);
+    color: var(--over);
     margin-top: var(--space-4);
   }
 </style>
