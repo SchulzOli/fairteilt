@@ -73,7 +73,7 @@
       <span class="muted small">Bei Fehlbetrag</span>
       <select bind:value={deficit}>
         <option value="carry_over">Übertrag in nächsten Monat</option>
-        <option value="penalty_tasks">Strafaufgaben</option>
+        <option value="penalty_tasks">Aufholaufgaben</option>
         <option value="zero_sum">Nullsumme (zahlt an andere)</option>
         <option value="balance_deduction">Guthaben-Abzug 50 %</option>
       </select>
@@ -101,7 +101,7 @@
           Abweichung {line.deviation > 0 ? "+" : ""}{line.deviation}
         </div>
         {#if line.penalty_points_due > 0}
-          <div class="small">⚠️ Strafaufgaben im Wert von {line.penalty_points_due} P</div>
+          <div class="small">⚠️ Aufholaufgaben im Wert von {line.penalty_points_due} P</div>
         {/if}
         {#if line.carry_next !== 0}
           <div class="small">↪ {line.carry_next > 0 ? `+${line.carry_next} Ziel` : `${line.carry_next} Ziel`} im nächsten Monat</div>

@@ -3,7 +3,7 @@
 Stand: 22.11.2026 · Status: Entwurf v0.2 (offene Fragen entschieden, §13)
 
 **Fairteilt** ist eine Familien-App für Haushaltsaufgaben mit einstellbarem Punktesystem, periodischem Ausgleich,
-Belohnungen und Strafaufgaben, Erinnerungen sowie Kalender- und Canvas-Planung.
+Belohnungen und Aufholaufgaben, Erinnerungen sowie Kalender- und Canvas-Planung.
 Plattformunabhängig als **Tauri-2-App**, gebaut vor allem fürs Handy. Ein Finanzteil
 (Einnahmen, Ausgaben, Budgets) folgt später, das Datenmodell lässt Platz dafür.
 
@@ -31,7 +31,7 @@ Plattformunabhängig als **Tauri-2-App**, gebaut vor allem fürs Handy. Ein Fina
 | **Mitglied** | Mitgliedschaft eines Nutzers in einem Haushalt, mit Rolle, Gewicht und Farbe |
 | **Vorlage** | wiederverwendbare Aufgabe („Spülmaschine ausräumen“) mit Punkten, Wiederholung, Zuweisungsregel |
 | **Aufgabe** | ein konkretes Vorkommen mit Fälligkeit, Zuständigem und Status |
-| **Leistungspunkte (LP)** | messen die geleistete Arbeit. Grundlage für den Ausgleich, **nicht übertragbar** |
+| **Leistungspunkte (LP)** | messen die geleistete Arbeit. Grundlage für den Ausgleich, **nicht übertragbar**. In der Oberfläche heißen sie **XP** (Entscheidung 22.11.2026), im Konzept und Code bleibt es bei LP bzw. `contribution` |
 | **Guthaben (G)** | „Währung“: übertragbar, einlösbar für Belohnungen, einsetzbar als Bonus auf Aufgaben |
 | **Bonus (Kopfgeld)** | eigenes Guthaben, das ein Mitglied auf eine Aufgabe setzt. Bekommt, wer sie erledigt |
 | **Periode** | Abrechnungszeitraum (Woche, Monat, frei) für den Ausgleich |
@@ -46,7 +46,7 @@ Plattformunabhängig als **Tauri-2-App**, gebaut vor allem fürs Handy. Ein Fina
 
 | Rolle | Darf |
 | --- | --- |
-| **Admin** (meist Eltern) | Regeln und Punktegrenzen ändern, Vorlagen verwalten, Aufgaben bestätigen/ablehnen, Strafaufgaben vergeben, Ausgleich freigeben, Mitglieder einladen/entfernen |
+| **Admin** (meist Eltern) | Regeln und Punktegrenzen ändern, Vorlagen verwalten, Aufgaben bestätigen/ablehnen, Aufholaufgaben vergeben, Ausgleich freigeben, Mitglieder einladen/entfernen |
 | **Mitglied** | Aufgaben anlegen (im Rahmen der Grenzen), übernehmen, erledigen, Guthaben übertragen und als Bonus setzen, Belohnungen einlösen, Aufgaben anderer bestätigen (wenn erlaubt) |
 | **Kind** | wie Mitglied, aber: keine eigenen Aufgaben bestätigen, Übertragungen/Einlösungen ggf. mit Freigabe, keine Regeländerungen. Ohne eigene E-Mail (Profil vom Admin verwaltet). Anmeldung **auf eigenem Gerät per Einladungscode oder per PIN-Profilwechsel auf einem gemeinsamen Familien-Tablet**, beides möglich |
 
@@ -160,7 +160,7 @@ relativ      r_m   = d_m / t_m
 | Ergebnis | Bedingung | Folge (je nach Einstellung) |
 | --- | --- | --- |
 | im Rahmen | `|r_m| ≤ tolerance` | nichts |
-| Fehlbetrag | `r_m < −tolerance` | Strafaufgaben im Wert von ≈ `|d_m|` zuweisen **oder** Guthaben-Abzug **oder** Nullsummen-Ausgleich an die Überschüssigen |
+| Fehlbetrag | `r_m < −tolerance` | Aufholaufgaben im Wert von ≈ `|d_m|` zuweisen **oder** Guthaben-Abzug **oder** Nullsummen-Ausgleich an die Überschüssigen |
 | Überschuss | `r_m > +tolerance` | Guthaben-Bonus `d_m × percent` und/oder Anteil am Nullsummen-Ausgleich |
 
 Ist das Ziel 0 (Gewicht 0 oder niemand hat etwas getan), gilt: wer trotzdem etwas geleistet hat,
@@ -173,28 +173,30 @@ Der Topf ist `min(Σ Fehlbeträge, Σ Überschüsse)`, verteilt anteilig auf bei
 Ist das Guthaben eines Zahlers zu klein, kappt der Server den Betrag, sofern der Haushalt keine
 negativen Stände erlaubt.
 
-**Strafaufgaben-Auswahl:** Aus den Vorlagen mit `kind = penalty` werden Aufgaben gewählt, bis
+**Aufholaufgaben-Auswahl:** Aus den Vorlagen mit `kind = penalty` werden Aufgaben gewählt, bis
 ihre Punkte den Fehlbetrag decken (gierig: die größte zuerst, die noch passt, dann auffüllen).
-Strafaufgaben bringen **Leistungspunkte, aber kein Guthaben** und haben eine Frist.
+Aufholaufgaben bringen **Leistungspunkte, aber kein Guthaben** und haben eine Frist.
 
 ### 5.3 Ablauf
 
 1. Periodenende → Server berechnet die Abrechnung als **Vorschau** (`settlement.status = draft`).
 2. Benachrichtigung an Admins, Übersicht für alle („Wer lag wo?“).
-3. Freigabe (manuell oder automatisch nach X h) → Buchungen + Strafaufgaben werden erzeugt.
+3. Freigabe (manuell oder automatisch nach X h) → Buchungen + Aufholaufgaben werden erzeugt.
 4. Zwei Tage vor Periodenende: Warnung an Mitglieder unter dem Ziel.
 
 Die Rechnung steckt in `punkte-core::settlement` und ist mit Tests abgedeckt.
 
 ---
 
-## 6. Belohnungen und Strafaufgaben
+## 6. Belohnungen, Aufholaufgaben und Familienziel
 
 | Typ | Beschreibung |
 | --- | --- |
 | **Belohnungskatalog** | Dinge, die man mit Guthaben „kauft“: „Film aussuchen“ (30 G), „30 min länger wach“ (50 G). Optional Freigabe, Bestand, Abkühlzeit |
 | **Belohnungsaufgabe** (`kind = reward`) | beliebte Aufgaben mit Extra-Punkten, freigeschaltet als Belohnung („Kuchen backen“) |
-| **Strafaufgabe** (`kind = penalty`) | wird beim Ausgleich oder von Admins zugewiesen. LP ja, Guthaben nein, mit Frist. Wird die Frist versäumt, folgt eine Nachfrist und ein Hinweis an die Admins |
+| **Aufholaufgabe** (`kind = penalty`) | wird beim Ausgleich oder von Admins zugewiesen. LP ja, Guthaben nein, mit Frist. Wird die Frist versäumt, folgt eine Nachfrist und ein Hinweis an die Admins. In der Oberfläche heißt sie immer „Aufholaufgabe“, nie „Strafaufgabe“ |
+| **Familienziel** | gemeinsames LP-Ziel pro Periode mit einer Familienbelohnung (z. B. Ausflug). Dargestellt als Rennen gegen das Maskottchen **Krümel** (Arbeitsname), das gleichmäßig von 0 bis zum Ziel am Periodenende vorrückt. Alle spielen zusammen, es gibt keine Rangliste |
+| **Serie** | Tage in Folge, an denen ein Mitglied seine fälligen Aufgaben erledigt hat (genaue Regel offen). Wird oben in „Heute“ gezeigt |
 
 ---
 
@@ -202,21 +204,41 @@ Die Rechnung steckt in `punkte-core::settlement` und ist mit Tests abgedeckt.
 
 ### 7.1 Vorlage (`TaskTemplate`)
 
-- Titel, Beschreibung, Kategorie/Raum, Symbol, geschätzte Dauer
+- Titel, Beschreibung, **Raum** (Gliederung wie in Tody), Icon aus der eigenen Icon-Familie, geschätzte Dauer
 - Punkte `min/default/max`, `kind` (`regular` · `reward` · `penalty`)
-- Wiederholung als **RRULE** (RFC 5545), z. B. `FREQ=WEEKLY;BYDAY=MO,TH`
+- Rhythmus, pro Vorlage wählbar:
+  - **fester Termin** als RRULE (RFC 5545), z. B. `FREQ=WEEKLY;BYDAY=TU` („Müll jeden Dienstag“)
+  - **nach Bedarf**: Intervall ab der letzten Erledigung, z. B. „Bad alle 7 Tage“. Wer früher
+    erledigt, setzt die Uhr zurück
+- **Zustand** jeder Aufgabe: `frisch → fällig → überfällig`, berechnet aus der Zeit seit dem letzten
+  Mal bzw. bis zum Termin. Die Eskalation der Punkte (§4.2) setzt mit „überfällig“ ein. Dargestellt
+  als Zustandsbalken grün → honig → rot. Ein Raum zeigt den Zustand seiner dringendsten Aufgabe
 - Zuweisung: `fixed(member)` · `rotation(members)` · `least_loaded(members)` (wer in der Periode
   am wenigsten LP hat) · `open` (wer zuerst übernimmt)
+- **Schritte** (optional): geordnete Liste von Teilschritten, z. B. „Bad putzen“ = Waschbecken,
+  Spiegel, Dusche, Boden, Handtücher. Sie werden der Reihe nach abgehakt, mit dem letzten Schritt
+  ist die Aufgabe erledigt (XP erst am Ende, offen: anteilig pro Schritt). Schritte werden in der
+  Vorlage gespeichert und in jedes Vorkommen kopiert
+- **Nachfrage-Dauer** beim Starten: Standard = geschätzte Dauer der Vorlage, änderbar
 - Bestätigung: Haushaltsregel übernehmen · immer · nie · mit Foto
 - Erinnerungen: Versätze wie `-1d`, `-1h`, `0`, Nachhaken bei Überfälligkeit
 
 ### 7.2 Status einer Aufgabe
 
 ```
-open ──claim──▶ claimed ──done──▶ submitted ──approve──▶ completed
-  │                │                  └──reject──▶ claimed
+open ──claim──▶ claimed ──start──▶ in_progress ──done──▶ submitted ──approve──▶ completed
+  │                │  ▲                 │   ▲                      └──reject──▶ claimed
+  │                │  └──── pause ──────┘   └── letzter Schritt = done
+  │                └──────────────── done ─────────────▶ submitted / completed
   └── skip / cancel / expire ──▶ cancelled
 ```
+
+**Starten** (`start`, auch direkt aus `open`): setzt `started_at` und `remind_at`. **Es gibt keinen
+Countdown**: Die App zeigt nur, seit wann die Aufgabe läuft (die Zeit zählt hoch), damit kein Druck
+entsteht. Zu `remind_at` plant die App eine lokale, freundlich formulierte Nachfrage („Wie läuft's mit
+…?“) mit den Aktionen *Erledigt*, *+10 min* (später erneut fragen) und *Später* (pausiert). Eine
+gestartete Aufgabe ist in „Heute“ blau umrandet und zeigt „seit X Min.“ und den Schrittfortschritt.
+Erledigen geht weiterhin auch ohne Starten.
 
 Ohne Bestätigungspflicht geht `done` direkt auf `completed`. Jeder Statuswechsel wird als
 `task_event` protokolliert (Verlauf, Benachrichtigungen, Sync).
@@ -225,18 +247,44 @@ Ohne Bestätigungspflicht geht `done` direkt auf `completed`. Jeder Statuswechse
 
 | Ansicht | Inhalt |
 | --- | --- |
-| **Heute** (Start) | meine fälligen und überfälligen Aufgaben, offene Aufgaben mit Bonus, Punktestand, Fortschritt zum Periodenziel |
-| **Kalender** | Tag / Woche / Monat / Agenda. Ziehen auf einen Zeitslot plant die Aufgabe ein. Wiederholungen werden aufgefaltet. Farbe = Mitglied |
-| **Canvas / Board** | freie Fläche mit Karten und Zonen (je Person, Raum, Tag). Karte in eine Personen-Zone ziehen = zuweisen, in eine Tages-Zone = einplanen. Zoomen und Schieben mit zwei Fingern |
+| **Heute** (Start) | oben Familienziel (Rennen gegen Krümel) und eigene Serie, darunter meine Aufgaben mit Zustandsbalken, dann offene Aufgaben mit Bonus |
+| **Plan · Räume** | Räume mit Zustand und LP-Summe, Aufgaben je Raum |
+| **Plan · Kalender** | Tag / Woche / Monat / Agenda. Ziehen auf einen Zeitslot plant die Aufgabe ein. Wiederholungen werden aufgefaltet. Farbe = Mitglied |
+| **Plan · Board** | freie Fläche mit Karten und Zonen (je Person, Raum, Tag). Karte in eine Personen-Zone ziehen = zuweisen, in eine Tages-Zone = einplanen. Zoomen und Schieben mit zwei Fingern |
 | **Eigene Ansichten** | gespeicherte Filter (Person, Kategorie, Status, Art, Zeitraum, mit/ohne Bonus) + Darstellung (Liste, Kanban, Kalender, Canvas) + Gruppierung/Sortierung. Privat oder für den Haushalt freigegeben |
 | **Punkte** | Kontostand, Verlauf (Ledger), Periodenvergleich, Übertragen, Belohnungen einlösen |
 
 ### 7.4 Mobile-UX
 
-- Untere Navigationsleiste: **Heute · Kalender · Board · Punkte · Mehr**
-- Schnell-Anlegen über einen schwebenden Button, Wischen zum Erledigen/Übernehmen, Haptik beim Abschluss
+- Untere Navigationsleiste: **Heute · Plan · Punkte · Familie** (Plan bündelt Räume, Kalender, Board;
+  Familie bündelt Mitglieder, Regeln, Einstellungen)
+- Schnell-Anlegen über einen schwebenden Button, Wischen zum Erledigen/Übernehmen
+- Erledigen = **kräftiges Konfetti in der Karte**: Häkchen, Vibration, ein dichter Konfetti-Schauer
+  vom Häkchen aus und das „+XP“-Schild. Die ganze Animation bleibt innerhalb der Aufgabenkarte
+  (kein Overlay über andere Inhalte). Bei „Bewegung reduzieren“ nur Häkchen und +XP
+- **Schritt abgehakt** = eigene, kleinere Variante: Häkchen ploppt, ein Ring breitet sich aus,
+  kleine Sterne funkeln, das Schild „2 von 5“ gleitet herein, und der nächste Abschnitt des
+  Fortschrittsbalkens füllt sich. Alles bleibt in der Zeile. Konfetti gibt es erst für die ganze Aufgabe
+- Kinder nutzen dieselbe App ohne Admin-Funktionen (keine eigene Kinder-Oberfläche)
+- **Wandanzeige** auf einem Tablet (quer): Uhr, Familienziel, eine Spalte pro Person mit den Aufgaben
+  des Tages. Abhaken per Antippen → Tier → PIN. Bildschirm bleibt an, Nachtmodus
 - Große Touch-Ziele (≥ 44 px), Safe Areas, Hell/Dunkel nach System
 - Canvas auf dem Handy: Listen-Fallback für kleine Bildschirme, Canvas im Querformat/Tablet voll
+
+### 7.5 Gestaltung (Design-Interview 22.11.2026)
+
+| Thema | Entscheidung |
+| --- | --- |
+| Gefühl | warm und familiär: weiche Formen, warmer heller Grund, Personen im Mittelpunkt |
+| Farben | Indigo = Aktionen, Petrol = Leistungspunkte (Balken), Honig = Guthaben (Münze), Zustand grün/honig/rot. Personenfarben getrennt von Systemfarben |
+| Hell/Dunkel | beide Themen gleichwertig gestaltet. Standard: folgt dem System, Schalter „Hell · Dunkel · System“ unter Familie → Einstellungen (pro Gerät) |
+| Schrift | Bricolage Grotesque für Titel und große Zahlen, Atkinson Hyperlegible Next für Text |
+| Avatare | Tiere zum Aussuchen (Fuchs, Eule, Otter, Igel, Bär, Katze, Hund, Wal, Löwe) in der Personenfarbe. Keine Fotos von Kindern auf dem Server |
+| App-Icon | **geteilter Keks**: ein Keks, fair in zwei gleiche Hälften gebrochen, mit zwei Krümeln, auf Indigo. Quelle in `app/icon-src/` (Desktop mit runden Ecken, Android adaptiv aus Vorder- und Hintergrund, iOS mit Indigo-Grund) |
+| Bilder | eigene Icon-Familie: runde Linien, 24er-Raster, 2 px |
+| Spiel | Serien und Familienziel (Rennen gegen Krümel). Keine Ranglisten, keine Abzeichen |
+| Punkte-Name | Was man mit Aufgaben verdient, heißt in der Oberfläche **XP**. Guthaben bleibt „G“ mit Münze |
+| Vorbild | Tody: Zustandsbalken, Rhythmus nach Bedarf, Räume, Rennen gegen ein Maskottchen. Figuren und Gestaltung sind eigene Entwürfe |
 
 ---
 
@@ -253,7 +301,7 @@ Ohne Bestätigungspflicht geht `done` direkt auf `completed`. Jeder Statuswechse
 | Bestätigt / abgelehnt | Erlediger |
 | Guthaben erhalten | Empfänger |
 | Periodenende naht, du liegst hinter dem Ziel | Betroffener |
-| Abrechnung bereit / freigegeben, Strafaufgabe erhalten | Admins / alle |
+| Abrechnung bereit / freigegeben, Aufholaufgabe erhalten | Admins / alle |
 | Tagesübersicht zur Wunschzeit | jeder, der sie aktiviert hat |
 
 ### 8.2 Zustellung (stufenweise)
@@ -338,7 +386,8 @@ Periodenabschluss. Kein zusätzlicher Dienst nötig, mehrere Instanzen wären sp
 | `devices` | id, user_id, platform, push_token, push_provider |
 | `categories` | id, household_id, name, icon, color |
 | `task_templates` | id, household_id, title, kind, points_min/default/max, rrule, assignment (jsonb), approval, reminders (jsonb) |
-| `tasks` | id, household_id, template_id, title, kind, status, assignee_id, due_at, scheduled_start/end, points_* (Kopie), completed_by, completed_at, version |
+| `tasks` | id, household_id, template_id, title, kind, status (+ `in_progress`), assignee_id, due_at, scheduled_start/end, started_at, remind_at, points_* (Kopie), completed_by, completed_at, version |
+| `task_steps` | id, task_id, position, title, done_by, done_at (Vorlagen: `template_steps` mit position, title) |
 | `task_events` | id, task_id, actor_id, type, payload, created_at |
 | `bounties` | id, task_id, pledger_id, amount, status (held/paid/refunded) |
 | `ledger_entries` | siehe §4.5 |
@@ -375,15 +424,18 @@ Haushalte, Mitglieder und dieselbe Sync-Schicht.
 
 ## 12. Fahrplan
 
+Ausführlich mit nächsten Schritten und Designentwurf: [ROADMAP.md](ROADMAP.md).
+
 | Meilenstein | Inhalt |
 | --- | --- |
 | **M0** Gerüst | Workspace, `punkte-core` mit Punkte-/Ausgleichsregeln + Tests, axum-Server mit Health und Migration, Tauri+SvelteKit mit mobiler Navigation, Deploy-Dateien |
 | **M1** Konten | Registrierung/Anmeldung, Haushalt anlegen, Einladungen (QR), Rollen, Kinderprofile |
-| **M2** Aufgaben | Vorlagen, RRULE-Wiederholung, Zuweisungsregeln, Status, Heute-Ansicht |
+| **M2** Aufgaben, Räume & Zustand | Vorlagen, Räume, Rhythmus fest (RRULE) oder nach Bedarf, Zustand, Zuweisungsregeln, Heute-Ansicht |
 | **M3** Punkte | Ledger, Bestätigung, Eskalation, Boni, Übertragungen, Punkte-Ansicht |
-| **M4** Ausgleich | Perioden, Abrechnung mit Vorschau, Strafaufgaben, Belohnungskatalog |
+| **α** Familien-Alpha | Hetzner-Deployment, Backups, signierte APK, echter Familienalltag |
+| **M4** Ausgleich & Familienziel | Perioden, Abrechnung mit Vorschau, Aufholaufgaben, Familienziel (Rennen gegen Krümel), Belohnungskatalog |
 | **M5** Erinnerungen | lokale Benachrichtigungen, In-App-Postfach, WebSocket, danach Push (FCM/APNs) |
-| **M6** Planung | Kalender, Canvas/Board, eigene Ansichten |
+| **M6** Plan & Wandanzeige | Kalender, Board, eigene Ansichten, Tablet-Wandanzeige |
 | **M7** Offline + Release | Outbox-Sync, Android-Release (Play Store/APK), iOS über CI |
 | **M8** Finanzen | Haushaltsbuch-Modul |
 

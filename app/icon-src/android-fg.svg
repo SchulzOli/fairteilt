@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Android adaptive icon foreground: only the cookie, transparent around it.
+       The launcher masks it (circle, squircle, …) on top of android-bg.svg. -->
+  <defs>
+    <clipPath id="half-left"><path d="M0 0H55L47 26 57 42 44 58 53 74 44 100H0z"/></clipPath>
+    <clipPath id="half-right"><path d="M55 0H100V100H44L53 74 44 58 57 42 47 26z"/></clipPath>
+  </defs>
+  <g transform="scale(10.24)">
+    <g clip-path="url(#half-left)">
+      <g transform="translate(-3 2)">
+        <circle cx="50" cy="50" r="30" fill="#f4c246"/>
+        <circle cx="50" cy="50" r="30" fill="none" stroke="#d99a1e" stroke-width="3"/>
+        <circle cx="38" cy="38" r="3.6" fill="#5b3415"/>
+        <circle cx="33" cy="56" r="3.2" fill="#5b3415"/>
+        <circle cx="44" cy="68" r="3" fill="#5b3415"/>
+      </g>
+    </g>
+    <g clip-path="url(#half-right)">
+      <g transform="translate(3 -2)">
+        <circle cx="50" cy="50" r="30" fill="#f4c246"/>
+        <circle cx="50" cy="50" r="30" fill="none" stroke="#d99a1e" stroke-width="3"/>
+        <circle cx="64" cy="40" r="3.4" fill="#5b3415"/>
+        <circle cx="68" cy="58" r="3.2" fill="#5b3415"/>
+        <circle cx="57" cy="66" r="2.8" fill="#5b3415"/>
+      </g>
+    </g>
+    <circle cx="24" cy="78" r="2.6" fill="#f4c246"/>
+    <circle cx="77" cy="23" r="2.2" fill="#f4c246"/>
+  </g>
+</svg>

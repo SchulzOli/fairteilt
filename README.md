@@ -1,10 +1,10 @@
 # Fairteilt
 
 Familien-App für Haushaltsaufgaben mit einstellbarem Punktesystem, periodischem Ausgleich,
-Belohnungen/Strafaufgaben, Erinnerungen und Kalender-/Canvas-Planung.
+Belohnungen/Aufholaufgaben, Erinnerungen und Kalender-/Canvas-Planung.
 Tauri 2 (Android, iOS, Desktop) + SvelteKit, Backend in Rust (axum + PostgreSQL) auf Hetzner.
 
-Konzept, Regeln und Fahrplan: **[docs/KONZEPT.md](docs/KONZEPT.md)**
+Konzept und Regeln: **[docs/KONZEPT.md](docs/KONZEPT.md)** · Roadmap: **[docs/ROADMAP.md](docs/ROADMAP.md)**
 
 ## Aufbau
 
@@ -51,6 +51,16 @@ Die Punkte-Ansicht rechnet den Ausgleich offline mit `punkte-core`.
 | `GET /health` | Status + Datenbankverbindung |
 | `GET /api/v1/meta` | Version und Standardregeln für neue Haushalte |
 | `POST /api/v1/preview/settlement` | Ausgleich durchrechnen: `{ policy, members }` → `Settlement` |
+
+## App-Icon
+
+Quelle: `app/icon-src/` (geteilter Keks). Nach Änderungen alle Größen neu erzeugen:
+
+```powershell
+pnpm --dir app tauri icon icon-src/icon.json
+```
+
+Danach `app/src-tauri/icons/64x64.png` als `app/static/favicon.png` übernehmen.
 
 ## Android
 

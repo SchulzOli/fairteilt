@@ -12,7 +12,7 @@
       <span class:late={task.overdue}>{task.due}</span>
       <span>·</span>
       <span>{task.room}</span>
-      {#if task.kind === "penalty"}<span class="chip penalty">Strafaufgabe</span>{/if}
+      {#if task.kind === "penalty"}<span class="chip penalty">Aufholaufgabe</span>{/if}
       {#if task.kind === "reward"}<span class="chip reward">Belohnung</span>{/if}
     </div>
   </div>
