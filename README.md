@@ -37,6 +37,12 @@ docker compose -f deploy/docker-compose.dev.yml up -d
 Copy-Item server/.env.example server/.env; cargo run -p punkte-server
 ```
 
+Tests (Integrationstests brauchen die Entwicklungsdatenbank):
+
+```powershell
+$env:DATABASE_URL = 'postgres://punkte:punkte-dev@localhost:5432/punkte'; cargo test --workspace
+```
+
 ```powershell
 pnpm --dir app install; pnpm --dir app tauri dev
 ```
@@ -44,13 +50,19 @@ pnpm --dir app install; pnpm --dir app tauri dev
 In der App unter **Mehr → Server** `http://localhost:8080` eintragen und „Verbindung testen“.
 Die Punkte-Ansicht rechnet den Ausgleich offline mit `punkte-core`.
 
-### API (Stand M0)
+### API (Stand M1, erster Teil)
 
 | Route | Zweck |
 | --- | --- |
 | `GET /health` | Status + Datenbankverbindung |
 | `GET /api/v1/meta` | Version und Standardregeln für neue Haushalte |
 | `POST /api/v1/preview/settlement` | Ausgleich durchrechnen: `{ policy, members }` → `Settlement` |
+| `POST /api/v1/auth/register` · `/login` | Konto anlegen / anmelden → Zugriffstoken (15 min) + Refresh-Token |
+| `POST /api/v1/auth/refresh` · `/logout` | Refresh-Token tauschen (rotierend) / Gerät abmelden |
+| `GET /api/v1/me` | eigenes Konto und Haushalte |
+| `POST /api/v1/households` | Haushalt mit Standardregeln anlegen (Ersteller wird Admin) |
+| `POST /api/v1/households/{id}/invites` | Einladungscode erzeugen (nur Admins, 7 Tage gültig) |
+| `POST /api/v1/invites/accept` | mit Code beitreten, Tier und Farbe wählen |
 
 ## App-Icon
 

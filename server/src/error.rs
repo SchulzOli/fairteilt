@@ -4,13 +4,19 @@ use axum::response::{IntoResponse, Response};
 use serde_json::json;
 
 /// Error type for handlers. Internal details are logged, never sent to clients.
+/// Messages are German because the app shows them to users as they are.
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {
     #[error("{0}")]
     BadRequest(String),
-    #[allow(dead_code)] // used by the resource routes from M1 on
+    #[error("not signed in")]
+    Unauthorized,
+    #[error("{0}")]
+    Forbidden(String),
     #[error("not found")]
     NotFound,
+    #[error("{0}")]
+    Conflict(String),
     #[error(transparent)]
     Database(#[from] sqlx::Error),
     #[error(transparent)]
@@ -21,7 +27,10 @@ impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (status, code, message) = match &self {
             AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, "bad_request", msg.clone()),
+            AppError::Unauthorized => (StatusCode::UNAUTHORIZED, "unauthorized", "Bitte melde dich an.".into()),
+            AppError::Forbidden(msg) => (StatusCode::FORBIDDEN, "forbidden", msg.clone()),
             AppError::NotFound => (StatusCode::NOT_FOUND, "not_found", "Nicht gefunden".into()),
+            AppError::Conflict(msg) => (StatusCode::CONFLICT, "conflict", msg.clone()),
             AppError::Database(_) | AppError::Other(_) => {
                 tracing::error!(error = %self, "internal error");
                 (StatusCode::INTERNAL_SERVER_ERROR, "internal", "Interner Fehler".into())

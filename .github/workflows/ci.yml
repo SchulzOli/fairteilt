@@ -18,6 +18,22 @@ jobs:
     runs-on: ubuntu-latest
     env:
       CARGO_TERM_COLOR: always
+      # Integration tests (#[sqlx::test]) create one fresh database per test here.
+      DATABASE_URL: postgres://punkte:punkte-ci@localhost:5432/punkte
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_DB: punkte
+          POSTGRES_USER: punkte
+          POSTGRES_PASSWORD: punkte-ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U punkte -d punkte"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
     steps:
       - uses: actions/checkout@v4
 

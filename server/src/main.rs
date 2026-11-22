@@ -1,23 +1,13 @@
-//! punkte-server: REST API, scheduler and persistence.
-
-mod config;
-mod error;
-mod routes;
-mod scheduler;
+//! punkte-server binary: config, database, migrations, scheduler, HTTP.
 
 use std::time::Duration;
 
 use anyhow::Context;
+use punkte_server::config::Config;
+use punkte_server::{AppState, MIGRATOR, routes, scheduler};
 use sqlx::postgres::PgPoolOptions;
 use tokio::net::TcpListener;
 use tracing_subscriber::EnvFilter;
-
-use crate::config::Config;
-
-#[derive(Clone)]
-pub struct AppState {
-    pub db: sqlx::PgPool,
-}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -30,10 +20,10 @@ async fn main() -> anyhow::Result<()> {
     let config = Config::from_env()?;
     let db = connect_with_retry(&config.database_url).await?;
 
-    sqlx::migrate!("./migrations").run(&db).await.context("running migrations")?;
+    MIGRATOR.run(&db).await.context("running migrations")?;
     tracing::info!("migrations up to date");
 
-    let state = AppState { db };
+    let state = AppState::new(db, config.jwt_secret.as_bytes());
     let scheduler = tokio::spawn(scheduler::run(state.db.clone()));
 
     let listener = TcpListener::bind(&config.bind_addr)
@@ -41,7 +31,7 @@ async fn main() -> anyhow::Result<()> {
         .with_context(|| format!("binding {}", config.bind_addr))?;
     tracing::info!("listening on http://{}", config.bind_addr);
 
-    axum::serve(listener, routes::router(state, &config))
+    axum::serve(listener, routes::router(state, &config.cors_origins))
         .with_graceful_shutdown(shutdown_signal())
         .await?;
 

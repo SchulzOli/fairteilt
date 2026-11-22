@@ -27,3 +27,9 @@ strip = true
 inherits = "release"
 panic = "unwind"
 lto = "thin"
+
+# Password hashing is deliberately slow; keep it fast enough in debug builds and tests.
+[profile.dev.package.argon2]
+opt-level = 3
+[profile.dev.package.blake2]
+opt-level = 3

@@ -9,24 +9,31 @@ use serde::{Deserialize, Serialize};
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 
-use crate::AppState;
-use crate::config::Config;
 use crate::error::{AppError, AppResult};
+use crate::{AppState, api};
 
-pub fn router(state: AppState, config: &Config) -> Router {
-    let origins: Vec<HeaderValue> = config.cors_origins.iter().filter_map(|o| o.parse().ok()).collect();
+pub fn router(state: AppState, cors_origins: &[String]) -> Router {
+    let origins: Vec<HeaderValue> = cors_origins.iter().filter_map(|o| o.parse().ok()).collect();
     let cors = CorsLayer::new()
         .allow_origin(origins)
         .allow_methods([Method::GET, Method::POST, Method::PUT, Method::PATCH, Method::DELETE])
         .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION]);
 
-    let api = Router::new()
+    let v1 = Router::new()
         .route("/meta", get(meta))
-        .route("/preview/settlement", post(preview_settlement));
+        .route("/preview/settlement", post(preview_settlement))
+        .route("/auth/register", post(api::auth::register))
+        .route("/auth/login", post(api::auth::login))
+        .route("/auth/refresh", post(api::auth::refresh))
+        .route("/auth/logout", post(api::auth::logout))
+        .route("/me", get(api::auth::me))
+        .route("/households", post(api::households::create))
+        .route("/households/{id}/invites", post(api::households::create_invite))
+        .route("/invites/accept", post(api::households::accept_invite));
 
     Router::new()
         .route("/health", get(health))
-        .nest("/api/v1", api)
+        .nest("/api/v1", v1)
         .layer(TraceLayer::new_for_http())
         .layer(cors)
         .with_state(state)

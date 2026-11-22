@@ -8,13 +8,12 @@ im Familienalltag nutzbar (Familien-Alpha). Umfang grob: S / M / L.
 
 ## Nächste Schritte
 
+Erledigt: CI, TypeScript-Typen aus `punkte-core`, Design-Grundlage in der App.
+
 | Wer | Schritt |
 | --- | --- |
-| Code | CI auf GitHub Actions: `cargo test`, `cargo clippy`, `svelte-check`, Build |
-| Code | TypeScript-Typen aus `punkte-core` erzeugen (ts-rs oder specta) |
-| Code | Design-Grundlage in der App: Tokens (hell + dunkel, Schalter Hell/Dunkel/System), Schriften, Icon-Familie, 9 Tier-Avatare, Zustandsbalken, Klang-Bausteine (Marimba-Synth), Navigation mit 4 Tabs |
 | Code | `punkte-core`: Rhythmus „nach Bedarf“ und Zustand (frisch → fällig → überfällig), mit Tests |
-| Code | M1 starten: Registrierung, Login, Sitzungen pro Gerät |
+| Code | M1 weiter: Kinderprofile mit PIN, Rate-Limit, App-Screens für Anmeldung und Haushalt |
 | Entscheidung | Klang auswählen (Klang-Spielplatz auf der Roadmap-Seite). Krümel, Serie, Schritte und Tiere sind entschieden |
 | Betrieb | Hetzner-Cloud-Server bestellen, DNS `fairteilt.oli-tech.eu` setzen (bis zur Alpha) |
 | Betrieb | Tablet für die Wandanzeige festlegen. Firebase vor M5, Apple-Developer-Account vor M7 |
@@ -35,6 +34,12 @@ im Familienalltag nutzbar (Familien-Alpha). Umfang grob: S / M / L.
 | | **M8 Haushaltsbuch** | Ausgaben, Budgets und Belege in denselben Haushalten | L |
 
 ### M1 Konten & Haushalt
+
+**Stand 22.11.2026:** Server-Teil begonnen und getestet: Registrierung, Login (Argon2id), Zugriffstoken
+(JWT, 15 min) + rotierendes Refresh-Token pro Gerät, Abmelden, `/me`, Haushalt mit Standardregeln,
+Einladungscodes (Admin, 7 Tage, einmalig). Offen: Kinderprofile ohne E-Mail mit PIN, Rate-Limit,
+App-Screens (Anmeldung, Assistent, Beitreten per Code/QR), Token im Schlüsselbund.
+
 
 - Server: Registrierung und Login (E-Mail + Passwort, Argon2id), Zugriffstoken + rotierendes
   Refresh-Token pro Gerät, Haushalt mit Standardregeln, Einladungscodes mit Ablauf und Rolle,
