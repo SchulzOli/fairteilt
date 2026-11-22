@@ -12,7 +12,10 @@ export type DeficitAction =
   | { type: "zero_sum" }
   | { type: "carry_over"; percent: number };
 
-export type SurplusAction = { type: "none" } | { type: "bonus"; percent: number };
+export type SurplusAction =
+  | { type: "none" }
+  | { type: "bonus"; percent: number }
+  | { type: "carry_over"; percent: number };
 
 export type PeriodLength =
   | { type: "weekly"; start_weekday: number }
@@ -39,7 +42,7 @@ export interface PointPolicy {
   transfer_enabled: boolean;
   transfer_max_per_period: number | null;
   child_transfer_needs_approval: boolean;
-  approval_required: boolean;
+  approval: "everyone" | "children_only" | "nobody";
   quality_adjust: boolean;
   allow_negative_balance: boolean;
 }
@@ -49,7 +52,8 @@ export interface MemberPeriodInput {
   weight: number;
   availability: number;
   contribution: number;
-  carried_deficit: number;
+  /** deficit > 0 raises the target, lead < 0 lowers it */
+  carry_in: number;
   quota: number | null;
 }
 

@@ -4,14 +4,17 @@
 //! with a target derived from their weight (capacity) and availability, and/or a fixed
 //! quota. Members outside the tolerance band get consequences: penalty tasks, balance
 //! deduction, zero-sum payment to over-achievers or a carried-over deficit; members above
-//! the band may receive a balance bonus.
+//! the band may receive a balance bonus or carry their lead into the next period.
 //!
 //! ```text
 //! capacity_m = weight_m · availability_m
 //! fair_m     = T · capacity_m / Σ capacity          (T = Σ contribution)
-//! target_m   = fair_m | quota_m · availability_m | max(both)   + carried_deficit_m
+//! target_m   = max(0, fair_m | quota_m · availability_m | max(both)  + carry_in_m)
 //! deviation  = contribution_m − target_m
 //! ```
+//!
+//! `carry_in` is signed: a carried deficit (> 0) raises the next target, a carried lead
+//! (< 0) lowers it.
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -59,6 +62,8 @@ pub enum SurplusAction {
     None,
     /// Credit `percent` % of the surplus as balance.
     Bonus { percent: u32 },
+    /// Lower next period's target by `percent` % of the surplus (the lead carries over).
+    CarryOver { percent: u32 },
 }
 
 /// Household-wide settlement rules. Stored as JSON on the household.
@@ -79,11 +84,13 @@ pub struct PeriodPolicy {
 impl Default for PeriodPolicy {
     fn default() -> Self {
         Self {
-            length: PeriodLength::Weekly { start_weekday: 1 },
+            // Household default (decided 22.11.2026): monthly, 20 % tolerance,
+            // deficit and lead both carry over into the next month.
+            length: PeriodLength::Monthly { start_day: 1 },
             mode: PeriodMode::FairShare,
-            tolerance_percent: 10,
-            deficit_action: DeficitAction::PenaltyTasks,
-            surplus_action: SurplusAction::Bonus { percent: 50 },
+            tolerance_percent: 20,
+            deficit_action: DeficitAction::CarryOver { percent: 100 },
+            surplus_action: SurplusAction::CarryOver { percent: 100 },
             auto_approve_after_hours: Some(24),
             warn_before_end_hours: Some(48),
         }
@@ -99,8 +106,9 @@ pub struct MemberPeriodInput {
     pub availability: f64,
     /// Leistungspunkte earned in this period.
     pub contribution: Points,
-    /// Deficit carried over from the previous period (raises the target).
-    pub carried_deficit: Points,
+    /// Carried over from the previous period: deficit > 0 raises the target,
+    /// lead < 0 lowers it. This is the previous line's `carry_next`.
+    pub carry_in: Points,
     /// Fixed quota for `FixedQuota` / `Both` (full availability).
     pub quota: Option<Points>,
 }
@@ -127,7 +135,7 @@ pub struct SettlementLine {
     pub balance_delta: Points,
     /// Points worth of penalty tasks to assign.
     pub penalty_points_due: Points,
-    /// Deficit to add to next period's target.
+    /// To feed into next period's `carry_in`: deficit > 0, lead < 0.
     pub carry_next: Points,
 }
 
@@ -164,7 +172,7 @@ pub fn settle(policy: &PeriodPolicy, members: &[MemberPeriodInput]) -> Settlemen
                 PeriodMode::FixedQuota => quota,
                 PeriodMode::Both => fair.max(quota),
             };
-            let target = base.round() as Points + m.carried_deficit.max(0);
+            let target = (base.round() as Points + m.carry_in).max(0);
             let deviation = m.contribution - target;
             let deviation_ratio = (target > 0).then(|| deviation as f64 / target as f64);
             let outcome = match deviation_ratio {
@@ -204,11 +212,15 @@ pub fn settle(policy: &PeriodPolicy, members: &[MemberPeriodInput]) -> Settlemen
                     }
                 }
             }
-            Outcome::Surplus => {
-                if let SurplusAction::Bonus { percent } = policy.surplus_action {
-                    line.balance_delta += percent_of(line.deviation, percent);
+            Outcome::Surplus => match policy.surplus_action {
+                SurplusAction::None => {}
+                SurplusAction::Bonus { percent } => {
+                    line.balance_delta += percent_of(line.deviation, percent)
                 }
-            }
+                SurplusAction::CarryOver { percent } => {
+                    line.carry_next = -percent_of(line.deviation, percent)
+                }
+            },
             Outcome::WithinTolerance => {}
         }
     }
@@ -301,13 +313,19 @@ mod tests {
             weight,
             availability: 1.0,
             contribution,
-            carried_deficit: 0,
+            carry_in: 0,
             quota: None,
         }
     }
 
     fn policy(deficit: DeficitAction, surplus: SurplusAction) -> PeriodPolicy {
-        PeriodPolicy { deficit_action: deficit, surplus_action: surplus, ..Default::default() }
+        PeriodPolicy {
+            length: PeriodLength::Weekly { start_weekday: 1 },
+            tolerance_percent: 10,
+            deficit_action: deficit,
+            surplus_action: surplus,
+            ..Default::default()
+        }
     }
 
     fn balance_sum(s: &Settlement) -> Points {
@@ -348,7 +366,8 @@ mod tests {
     #[test]
     fn tolerance_boundary_is_inclusive() {
         // 55 vs 45 → targets 50, ±10 % exactly → within.
-        let s = settle(&PeriodPolicy::default(), &[member(1, 1.0, 55), member(2, 1.0, 45)]);
+        let p = policy(DeficitAction::PenaltyTasks, SurplusAction::None);
+        let s = settle(&p, &[member(1, 1.0, 55), member(2, 1.0, 45)]);
         assert!(s.lines.iter().all(|l| l.outcome == Outcome::WithinTolerance));
     }
 
@@ -385,7 +404,7 @@ mod tests {
 
         // Next period: B's carried deficit raises the target.
         let mut b = member(2, 1.0, 50);
-        b.carried_deficit = 10;
+        b.carry_in = 10;
         let s = settle(&PeriodPolicy::default(), &[member(1, 1.0, 50), b]);
         assert_eq!(s.lines[1].target, 60);
     }
@@ -415,6 +434,37 @@ mod tests {
     }
 
     #[test]
+    fn default_carries_deficit_and_lead() {
+        // Monthly, 20 % tolerance: 70 vs 30 → targets 50, ±40 % → both carry.
+        let s = settle(&PeriodPolicy::default(), &[member(1, 1.0, 70), member(2, 1.0, 30)]);
+        assert_eq!(s.lines[0].carry_next, -20, "lead lowers next target");
+        assert_eq!(s.lines[1].carry_next, 20, "deficit raises next target");
+        assert!(s.lines.iter().all(|l| l.balance_delta == 0 && l.penalty_points_due == 0));
+
+        // Next month both do 50: targets become 30 (lead) and 70 (deficit).
+        let mut a = member(1, 1.0, 50);
+        a.carry_in = s.lines[0].carry_next;
+        let mut b = member(2, 1.0, 50);
+        b.carry_in = s.lines[1].carry_next;
+        let next = settle(&PeriodPolicy::default(), &[a, b]);
+        assert_eq!((next.lines[0].target, next.lines[1].target), (30, 70));
+    }
+
+    #[test]
+    fn within_tolerance_carries_nothing() {
+        let s = settle(&PeriodPolicy::default(), &[member(1, 1.0, 55), member(2, 1.0, 45)]);
+        assert!(s.lines.iter().all(|l| l.carry_next == 0));
+    }
+
+    #[test]
+    fn large_lead_cannot_make_target_negative() {
+        let mut a = member(1, 1.0, 10);
+        a.carry_in = -500;
+        let s = settle(&PeriodPolicy::default(), &[a, member(2, 1.0, 10)]);
+        assert_eq!(s.lines[0].target, 0);
+    }
+
+    #[test]
     fn allocate_sums_exactly() {
         assert_eq!(allocate(10, &[1, 1, 1]), vec![4, 3, 3]);
         assert_eq!(allocate(7, &[0, 5, 0]), vec![0, 7, 0]);
@@ -436,7 +486,7 @@ mod tests {
     fn policy_json_roundtrip() {
         let p = PeriodPolicy::default();
         let json = serde_json::to_string(&p).unwrap();
-        assert!(json.contains("\"type\":\"penalty_tasks\""));
+        assert!(json.contains("\"type\":\"carry_over\""));
         assert_eq!(serde_json::from_str::<PeriodPolicy>(&json).unwrap(), p);
     }
 }

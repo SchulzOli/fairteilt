@@ -1,4 +1,4 @@
-# Haushaltspunkte
+# Fairteilt
 
 Familien-App für Haushaltsaufgaben mit einstellbarem Punktesystem, periodischem Ausgleich,
 Belohnungen/Strafaufgaben, Erinnerungen und Kalender-/Canvas-Planung.
@@ -54,32 +54,46 @@ Die Punkte-Ansicht rechnet den Ausgleich offline mit `punkte-core`.
 
 ## Android
 
-Fehlt auf diesem PC noch: Android Studio (SDK + NDK), ein JDK 17+ und die Rust-Targets.
+Auf diesem PC eingerichtet (Benutzer-Umgebungsvariablen):
 
-1. Android Studio installieren, im SDK Manager „NDK (Side by side)“ und „Android SDK Command-line Tools“ dazunehmen
-2. Umgebungsvariablen setzen: `JAVA_HOME` (JBR aus Android Studio), `ANDROID_HOME`, `NDK_HOME`
-3. Rust-Targets hinzufügen:
-   ```powershell
-   rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
-   ```
-4. Projekt initialisieren und starten:
-   ```powershell
-   pnpm --dir app tauri android init
-   ```
-   ```powershell
-   pnpm --dir app tauri android dev
-   ```
+| Variable | Wert |
+| --- | --- |
+| `JAVA_HOME` | `D:\Android\jdk-21` |
+| `ANDROID_HOME` | `D:\Android\Sdk` |
+| `NDK_HOME` | `D:\Android\Sdk\ndk\30.0.16248370` |
+
+Rust-Targets für Android sind im MSVC-Toolchain installiert, das Gradle-Projekt liegt in
+`app/src-tauri/gen/android`.
+
+```powershell
+pnpm --dir app tauri android dev
+```
+
+```powershell
+pnpm --dir app tauri android build --debug --apk --target aarch64
+```
+
+Auf einem neuen Rechner: SDK, NDK (Side by side) und JDK 17+ installieren, die Variablen oben setzen,
+`rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android`.
 
 iOS braucht macOS mit Xcode. Später über einen macOS-Runner in GitHub Actions.
 
 ## Deployment (Hetzner)
 
 1. Cloud-Server (Debian, kleinste Instanz reicht), Firewall nur 22/80/443, SSH nur mit Schlüssel
-2. DNS-Eintrag für die gewünschte Domain auf die Server-IP
+2. DNS-Eintrag `fairteilt.oli-tech.eu` (A/AAAA) auf die Server-IP
 3. Repo auf den Server holen, dann in `deploy/`:
    ```bash
-   cp .env.example .env   # DOMAIN und POSTGRES_PASSWORD eintragen
+   cp .env.example .env   # POSTGRES_PASSWORD eintragen (DOMAIN ist vorbelegt)
    docker compose up -d --build
    ```
-4. Caddy holt das TLS-Zertifikat selbst. Prüfen mit `curl https://<domain>/health`
+4. Caddy holt das TLS-Zertifikat selbst. Prüfen mit `curl https://fairteilt.oli-tech.eu/health`
 5. Backups: `deploy/backup.sh` per Cron, Kopie außer Haus mit restic (Storage Box oder NAS)
+
+## Lizenz
+
+Copyright (C) 2026 SchulzOli
+
+Fairteilt ist freie Software unter der [GNU Affero General Public License v3.0 oder später](LICENSE).
+Wer den Server verändert und anderen als Dienst anbietet, muss den geänderten Quellcode ebenfalls
+bereitstellen.

@@ -18,9 +18,9 @@ pub mod task;
 pub type Points = i64;
 
 pub use ledger::{LedgerDelta, LedgerKind};
-pub use points::{Escalation, PointPolicy, PointRange, PointsError};
+pub use points::{ApprovalRule, Escalation, PointPolicy, PointRange, PointsError};
 pub use settlement::{
-    DeficitAction, MemberPeriodInput, Outcome, PeriodMode, PeriodPolicy, Settlement,
+    DeficitAction, MemberPeriodInput, Outcome, PeriodLength, PeriodMode, PeriodPolicy, Settlement,
     SettlementLine, SurplusAction,
 };
 pub use task::{TaskAction, TaskKind, TaskStatus, TransitionError};

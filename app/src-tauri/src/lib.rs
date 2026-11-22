@@ -1,4 +1,4 @@
-//! Tauri core of the Haushaltspunkte app.
+//! Tauri core of the Fairteilt app.
 //!
 //! The Rust side owns everything that should not live in the webview: talking to the
 //! server (no CORS / mixed-content issues), later the offline outbox, the local SQLite

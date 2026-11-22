@@ -6,3 +6,8 @@ node_modules/
 .env
 *.local
 .DS_Store
+# Firebase / signing material never goes into the repo
+google-services.json
+GoogleService-Info.plist
+*.jks
+*.keystore

@@ -8,17 +8,21 @@
     [members[1].id]: 45,
     [members[2].id]: 20,
   });
-  let deficit = $state<"penalty_tasks" | "zero_sum" | "balance_deduction">("penalty_tasks");
-  let tolerance = $state(10);
+  let deficit = $state<"carry_over" | "penalty_tasks" | "zero_sum" | "balance_deduction">("carry_over");
+  let tolerance = $state(20);
   let settlement = $state<Settlement | null>(null);
   let error = $state<string | null>(null);
 
   const policy = $derived<PeriodPolicy>({
-    length: { type: "weekly", start_weekday: 1 },
+    length: { type: "monthly", start_day: 1 },
     mode: "fair_share",
     tolerance_percent: tolerance,
-    deficit_action: deficit === "balance_deduction" ? { type: "balance_deduction", percent: 50 } : { type: deficit },
-    surplus_action: { type: "bonus", percent: 50 },
+    deficit_action:
+      deficit === "balance_deduction" || deficit === "carry_over"
+        ? { type: deficit, percent: deficit === "carry_over" ? 100 : 50 }
+        : { type: deficit },
+    // Carry the lead over when deficits carry over, otherwise pay a 50 % bonus.
+    surplus_action: deficit === "carry_over" ? { type: "carry_over", percent: 100 } : { type: "bonus", percent: 50 },
     auto_approve_after_hours: 24,
     warn_before_end_hours: 48,
   });
@@ -29,7 +33,7 @@
       weight: m.weight,
       availability: 1,
       contribution: contributions[m.id] ?? 0,
-      carried_deficit: 0,
+      carry_in: 0,
       quota: null,
     }));
     if (!isTauri()) {
@@ -51,7 +55,7 @@
 
 <header>
   <h1>Punkte</h1>
-  <p class="muted">Ausgleich der Woche ausprobieren: Leistungspunkte verschieben und sehen, was passiert.</p>
+  <p class="muted">Ausgleich des Monats ausprobieren: Leistungspunkte verschieben und sehen, was passiert.</p>
 </header>
 
 <section class="card stack">
@@ -68,6 +72,7 @@
     <label class="stack tight">
       <span class="muted small">Bei Fehlbetrag</span>
       <select bind:value={deficit}>
+        <option value="carry_over">Übertrag in nächsten Monat</option>
         <option value="penalty_tasks">Strafaufgaben</option>
         <option value="zero_sum">Nullsumme (zahlt an andere)</option>
         <option value="balance_deduction">Guthaben-Abzug 50 %</option>
@@ -97,6 +102,9 @@
         </div>
         {#if line.penalty_points_due > 0}
           <div class="small">⚠️ Strafaufgaben im Wert von {line.penalty_points_due} P</div>
+        {/if}
+        {#if line.carry_next !== 0}
+          <div class="small">↪ {line.carry_next > 0 ? `+${line.carry_next} Ziel` : `${line.carry_next} Ziel`} im nächsten Monat</div>
         {/if}
         {#if line.balance_delta !== 0}
           <div class="small">{line.balance_delta > 0 ? "💰 +" : "💸 "}{line.balance_delta} Guthaben</div>

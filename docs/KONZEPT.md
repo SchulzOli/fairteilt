@@ -1,8 +1,8 @@
-# Punktesystem-Haushaltsbuch – Konzept
+# Fairteilt – Konzept
 
-Stand: 22.11.2026 · Status: Entwurf v0.1
+Stand: 22.11.2026 · Status: Entwurf v0.2 (offene Fragen entschieden, §13)
 
-Eine Familien-App für Haushaltsaufgaben mit einstellbarem Punktesystem, periodischem Ausgleich,
+**Fairteilt** ist eine Familien-App für Haushaltsaufgaben mit einstellbarem Punktesystem, periodischem Ausgleich,
 Belohnungen und Strafaufgaben, Erinnerungen sowie Kalender- und Canvas-Planung.
 Plattformunabhängig als **Tauri-2-App**, gebaut vor allem fürs Handy. Ein Finanzteil
 (Einnahmen, Ausgaben, Budgets) folgt später, das Datenmodell lässt Platz dafür.
@@ -15,7 +15,9 @@ Plattformunabhängig als **Tauri-2-App**, gebaut vor allem fürs Handy. Ein Fina
 | --- | --- | --- |
 | Client | Tauri 2 + SvelteKit (Svelte 5, SPA, `adapter-static`), TypeScript | eine Codebasis für Android, iOS und Desktop, kleine Bundles, flott auf dem Handy |
 | Backend | eigener Server in Rust (axum) + PostgreSQL | mehrere Nutzer brauchen eine gemeinsame Wahrheit. Ausgleich und Erinnerungen laufen zeitgesteuert auf dem Server |
-| Hosting | Hetzner Cloud (Rechenzentrum in DE), Docker Compose, Caddy (TLS) | öffentlich erreichbar ohne Tailscale auf jedem Familienhandy, DSGVO-freundlich |
+| Hosting | Hetzner Cloud (Rechenzentrum in DE), Docker Compose, Caddy (TLS), **`fairteilt.oli-tech.eu`** | öffentlich erreichbar ohne Tailscale auf jedem Familienhandy, DSGVO-freundlich |
+| App-Kennung | Name **Fairteilt**, Kennung `eu.olitech.fairteilt` | passt zur Domain `oli-tech.eu`. Nach dem ersten Store-Release nicht mehr änderbar |
+| Firebase | **FCM** (Android-Push) und **App Distribution** (Testversionen an die Familie), optional später **Hosting** für eine Web-Version | Backend und Datenbank bleiben auf Hetzner: Firebase führt keinen Rust-Container mit Postgres aus (nur über Cloud Run + Cloud SQL, teurer) |
 | Gemeinsame Logik | Rust-Crate `punkte-core` (rein, ohne IO) | dieselbe Punkte- und Ausgleichslogik auf dem Server und (für Offline-Vorschau) in der App, gut testbar |
 | Umfang v1 | Aufgaben, Punkte, Ausgleich, Belohnungen/Strafen, Erinnerungen, Kalender/Canvas | Finanzen kommen später (eigenes Modul, siehe §10) |
 
@@ -46,7 +48,7 @@ Plattformunabhängig als **Tauri-2-App**, gebaut vor allem fürs Handy. Ein Fina
 | --- | --- |
 | **Admin** (meist Eltern) | Regeln und Punktegrenzen ändern, Vorlagen verwalten, Aufgaben bestätigen/ablehnen, Strafaufgaben vergeben, Ausgleich freigeben, Mitglieder einladen/entfernen |
 | **Mitglied** | Aufgaben anlegen (im Rahmen der Grenzen), übernehmen, erledigen, Guthaben übertragen und als Bonus setzen, Belohnungen einlösen, Aufgaben anderer bestätigen (wenn erlaubt) |
-| **Kind** | wie Mitglied, aber: keine eigenen Aufgaben bestätigen, Übertragungen/Einlösungen ggf. mit Freigabe, keine Regeländerungen. Optional ohne eigene E-Mail (Profil vom Admin verwaltet, Anmeldung per Einladungscode/PIN) |
+| **Kind** | wie Mitglied, aber: keine eigenen Aufgaben bestätigen, Übertragungen/Einlösungen ggf. mit Freigabe, keine Regeländerungen. Ohne eigene E-Mail (Profil vom Admin verwaltet). Anmeldung **auf eigenem Gerät per Einladungscode oder per PIN-Profilwechsel auf einem gemeinsamen Familien-Tablet**, beides möglich |
 
 Grundsatz: **Niemand bestätigt die eigene Aufgabe**, wenn der Haushalt Bestätigung verlangt.
 
@@ -66,7 +68,7 @@ Grundsatz: **Niemand bestätigt die eigene Aufgabe**, wenn der Haushalt Bestäti
 | `transfer.enabled` | an | Guthaben an Personen übertragen |
 | `transfer.max_per_period` | 100 G | Limit je Mitglied und Periode |
 | `transfer.child_needs_approval` | an | Kinder brauchen Freigabe |
-| `approval_required` | an | Erledigt → erst nach Bestätigung gutgeschrieben |
+| `approval` | `children_only` | Wer Bestätigung braucht: `everyone` · `children_only` · `nobody`. Pro Vorlage überschreibbar (immer / nie / mit Foto) |
 | `quality_adjust` | an | Bestätiger darf Punkte innerhalb von min…max anpassen |
 
 ### 4.2 Punkte je Aufgabe
@@ -126,9 +128,15 @@ Korrekturen erfolgen durch Gegenbuchung, nie durch Ändern. Das Guthaben darf ni
 | --- | --- |
 | `length` | `weekly(start_weekday)`, `monthly(start_day)`, `custom(days)` |
 | `mode` | `fair_share` (relativ zum Gewicht) · `fixed_quota` (feste Mindestpunkte je Mitglied) · `both` |
-| `tolerance` | z. B. 10 % Abweichung ohne Folgen |
+| `tolerance` | Abweichung ohne Folgen (und ohne Übertrag), in % |
 | `deficit_action` | `penalty_tasks` · `balance_deduction(percent)` · `zero_sum` (zahlt an die Überschüssigen) · `carry_over(percent)` (Fehlbetrag erhöht das Ziel der nächsten Periode) · `none` |
-| `surplus_action` | `bonus(percent)` · `none`. Bei `zero_sum` bekommen Überschüssige ihren Anteil zusätzlich |
+| `surplus_action` | `bonus(percent)` · `carry_over(percent)` (Vorsprung senkt das Ziel der nächsten Periode) · `none`. Bei `zero_sum` bekommen Überschüssige ihren Anteil zusätzlich |
+
+**Voreinstellung für neue Haushalte:** monatlich ab dem 1., `fair_share`, **20 % Toleranz**,
+Rückstand **und** Vorsprung wandern zu 100 % in den nächsten Monat (`carry_over` auf beiden
+Seiten), Auto-Freigabe nach 24 h, Warnung 48 h vor Monatsende. Wer im Rahmen bleibt, nimmt
+nichts mit. Ein Prozentsatz unter 100 lässt alte Stände mit der Zeit verfallen, damit sich
+kein riesiges Polster oder ein nie abzutragender Rückstand aufbaut.
 | `auto_approve_after_hours` | Vorschau für Admins, automatische Freigabe nach X Stunden |
 | `warn_before_end_hours` | Warnung an Mitglieder unter dem Ziel vor Periodenende |
 
@@ -144,7 +152,7 @@ gesamt       T     = Σ c_m
 ziel         t_m   = T · (w_m·a_m) / Σ(w·a)          (fair_share)
              t_m   = quota_m · a_m                   (fixed_quota)
              t_m   = max(beide)                      (both)
-             t_m  += übernommener Fehlbetrag         (carry_over aus der Vorperiode)
+             t_m   = max(0, t_m + carry_in_m)        (Übertrag: Rückstand > 0, Vorsprung < 0)
 abweichung   d_m   = c_m − t_m
 relativ      r_m   = d_m / t_m
 ```
@@ -254,7 +262,7 @@ Ohne Bestätigungspflicht geht `done` direkt auf `completed`. Jeder Statuswechse
 | --- | --- | --- |
 | 1 | **Lokale Benachrichtigungen** (`tauri-plugin-notification`), von der App aus synchronisierten Daten geplant | geht ohne Push-Dienst und offline. Deckt Erinnerungen zu eigenen Aufgaben ab |
 | 1 | **In-App-Postfach** + Live-Updates per WebSocket | alles, solange die App offen ist |
-| 2 | **Server-Push**: Android über FCM, iOS über APNs | für Ereignisse anderer (zugewiesen, Bonus, Abrechnung). Braucht ein Firebase-Projekt und einen Apple-Developer-Account. Tauri 2 bringt kein offizielles Push-Plugin mit: vor Stufe 2 prüfen, ob ein Community-Plugin taugt oder ein kleines eigenes Mobile-Plugin (Kotlin/Swift) nötig ist |
+| 2 | **Server-Push**: Android über FCM, iOS über APNs (**entschieden**) | für Ereignisse anderer (zugewiesen, Bonus, Abrechnung). Braucht ein Firebase-Projekt und einen Apple-Developer-Account (99 €/Jahr, erst für iOS). Tauri 2 bringt kein offizielles Push-Plugin mit: vor Stufe 2 prüfen, ob ein Community-Plugin taugt oder ein kleines eigenes Mobile-Plugin (Kotlin/Swift) nötig ist |
 | 2 (opt.) | **UnifiedPush/ntfy** auf dem Hetzner-Server | Android ohne Google-Dienste |
 | 3 (opt.) | E-Mail / Matrix | Tagesübersicht, Abrechnungsbericht |
 
@@ -359,7 +367,7 @@ Haushalte, Mitglieder und dieselbe Sync-Schicht.
 | Ziel | Voraussetzung | Stand auf diesem PC |
 | --- | --- | --- |
 | Windows-Desktop | Rust, WebView2 | ✅ vorhanden |
-| Android | Android Studio (SDK, NDK), JDK 17+, `ANDROID_HOME`/`NDK_HOME`, Rust-Targets `aarch64-linux-android` u. a. | ❌ fehlt noch, siehe README |
+| Android | SDK, NDK, JDK 17+, `ANDROID_HOME`/`NDK_HOME`, Rust-Targets `aarch64-linux-android` u. a. | ✅ SDK, NDK 30 und JDK 21 unter `D:\Android`, Projekt in `app/src-tauri/gen/android` |
 | iOS | macOS mit Xcode, Apple-Developer-Account | ❌ auf Windows nicht möglich. Später per GitHub-Actions-Runner mit macOS |
 | Server-Image | Docker, Build für arm64/amd64 (Hetzner ARM-Instanzen sind günstig) | Docker vorhanden |
 
@@ -381,11 +389,29 @@ Haushalte, Mitglieder und dieselbe Sync-Schicht.
 
 ---
 
-## 13. Offene Fragen
+## 13. Entscheidungen (22.11.2026)
 
-1. **Domain:** Unter welcher Adresse läuft der Server (z. B. eine Subdomain von `oliexe.de`)?
-2. **Kinder:** Haben Kinder eigene Geräte, oder melden Eltern für sie auf dem Familien-Tablet an?
-3. **Bestätigung:** Standardmäßig Pflicht für alle oder nur für Kinder?
-4. **Push über Google/Apple:** In Ordnung, oder lieber nur lokale Erinnerungen + ntfy?
-5. **Ausgleich-Standard:** Welche Voreinstellung für neue Haushalte: wöchentlich, `fair_share`,
-   10 % Toleranz, Strafaufgaben bei Fehlbetrag, Bonus 0,5 × Überschuss?
+| # | Frage | Entscheidung |
+| --- | --- | --- |
+| 1 | Domain | `fairteilt.oli-tech.eu` (Hetzner, Caddy) |
+| 2 | Kinder | beides: eigenes Gerät per Einladungscode **oder** PIN-Profilwechsel auf dem Familien-Tablet |
+| 3 | Bestätigung | nur bei Kindern (`approval = children_only`), pro Vorlage überschreibbar |
+| 4 | Push | FCM (Android) + APNs (iOS). Firebase zusätzlich für App Distribution |
+| 5 | Ausgleich-Standard | monatlich, 20 % Toleranz, Rückstand und Vorsprung werden übertragen (§5.1) |
+| – | Name / Kennung | **Fairteilt**, `eu.olitech.fairteilt` |
+| – | Anmeldung Erwachsene | E-Mail + Passwort (Argon2id), Sitzung pro Gerät. Passkeys optional später |
+| – | Firebase-Projekt | wird vor M5 angelegt (FCM + App Distribution). `google-services.json` nicht ins Repo |
+| – | Quellcode | öffentlich auf GitHub, Lizenz **AGPL-3.0-or-later** |
+
+### Markenrecherche (22.11.2026, ohne Gewähr)
+
+TMview (EUIPO-Netz, enthält DPMA) kennt genau eine Marke „fairteilt“: DPMA 302020019496.2,
+angemeldet 10.09.2020, Klassen 35/36/45 (Werbung, Finanzdienstleistungen, Politikberatung),
+Status **beendet**. Für Software (Klasse 9/42) gibt es keinen Eintrag, auch die Websuche und
+der Play Store zeigen keine App dieses Namens. Ähnlich klingt „Fairteiler“ (Abgabestellen von
+foodsharing), das ist aber ein anderes Wort und ein anderer Bereich. Vor einem öffentlichen
+Store-Release noch einmal prüfen, eine eigene Anmeldung in Klasse 9/42 wäre möglich.
+
+### Noch offen
+
+- Tauri-2-Push: Community-Plugin oder eigenes kleines Mobile-Plugin (vor M5 prüfen)

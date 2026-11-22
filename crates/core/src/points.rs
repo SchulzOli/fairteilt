@@ -66,6 +66,29 @@ impl Escalation {
     }
 }
 
+/// Who needs another member's approval before a completed task is credited.
+/// Templates can override this per task (always / never / with photo).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ApprovalRule {
+    /// Every completion is approved by someone else.
+    Everyone,
+    /// Only tasks completed by members with the child role (household default).
+    ChildrenOnly,
+    /// Completed = credited; admins can still revert afterwards.
+    Nobody,
+}
+
+impl ApprovalRule {
+    pub fn required_for(self, completer_is_child: bool) -> bool {
+        match self {
+            ApprovalRule::Everyone => true,
+            ApprovalRule::ChildrenOnly => completer_is_child,
+            ApprovalRule::Nobody => false,
+        }
+    }
+}
+
 /// Household-wide point rules. Stored as JSON on the household.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PointPolicy {
@@ -83,8 +106,8 @@ pub struct PointPolicy {
     /// Max balance a member can transfer to others per period.
     pub transfer_max_per_period: Option<Points>,
     pub child_transfer_needs_approval: bool,
-    /// Completed tasks are only credited after another member approves them.
-    pub approval_required: bool,
+    /// Who needs approval before completed tasks are credited.
+    pub approval: ApprovalRule,
     /// Approver may adjust the points within the task's min…max.
     pub quality_adjust: bool,
     /// Allow `penalty_deduction` to push a balance below zero.
@@ -103,7 +126,7 @@ impl Default for PointPolicy {
             transfer_enabled: true,
             transfer_max_per_period: Some(100),
             child_transfer_needs_approval: true,
-            approval_required: true,
+            approval: ApprovalRule::ChildrenOnly,
             quality_adjust: true,
             allow_negative_balance: false,
         }
@@ -190,6 +213,15 @@ mod tests {
         let p = PointPolicy { escalation: None, ..Default::default() };
         let r = PointRange::new(5, 10, 16).unwrap();
         assert_eq!(p.current_points(&r, 30 * DAY), 10);
+    }
+
+    #[test]
+    fn approval_rule() {
+        assert!(ApprovalRule::ChildrenOnly.required_for(true));
+        assert!(!ApprovalRule::ChildrenOnly.required_for(false));
+        assert!(ApprovalRule::Everyone.required_for(false));
+        assert!(!ApprovalRule::Nobody.required_for(true));
+        assert_eq!(PointPolicy::default().approval, ApprovalRule::ChildrenOnly);
     }
 
     #[test]
