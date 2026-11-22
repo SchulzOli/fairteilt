@@ -4,7 +4,7 @@
   import Avatar from "$lib/ui/Avatar.svelte";
   import Icon from "$lib/ui/Icon.svelte";
   import Krumel from "$lib/ui/Krumel.svelte";
-  import { familyGoal, myStreakDays } from "$lib/demo";
+  import { familyGoal } from "$lib/demo";
   import { session } from "$lib/session.svelte";
   import { conditionOf, taskStore } from "$lib/tasks.svelte";
   import type { AnimalName } from "$lib/ui/Avatar.svelte";
@@ -17,10 +17,13 @@
   const byUrgency = $derived(
     [...taskStore.tasks].sort((a, b) => conditionOf(b, taskStore.now) - conditionOf(a, taskStore.now)),
   );
-  const running = $derived(byUrgency.filter((t) => t.status === "in_progress" && t.assignee_id === me));
-  const mine = $derived(byUrgency.filter((t) => t.status !== "in_progress" && t.assignee_id === me));
-  const open = $derived(byUrgency.filter((t) => !t.assignee_id));
-  const others = $derived(byUrgency.filter((t) => t.assignee_id && t.assignee_id !== me));
+  const toReview = $derived(planner ? byUrgency.filter((t) => t.status === "submitted" && t.completed_by !== me) : []);
+  const rest = $derived(byUrgency.filter((t) => !toReview.includes(t)));
+  const running = $derived(rest.filter((t) => t.status === "in_progress" && t.assignee_id === me));
+  const mine = $derived(rest.filter((t) => t.status !== "in_progress" && t.assignee_id === me));
+  const open = $derived(rest.filter((t) => !t.assignee_id));
+  const others = $derived(rest.filter((t) => t.assignee_id && t.assignee_id !== me));
+  const streak = $derived(taskStore.myAccount?.streak ?? { days: 0, today: false });
 
   const familyPct = $derived(Math.min(100, (familyGoal.xp / familyGoal.goal) * 100));
   const krumelPct = $derived(Math.min(100, (familyGoal.krumelXp / familyGoal.goal) * 100));
@@ -37,8 +40,9 @@
       <h1 class="page-title">Hallo {meName}</h1>
     </div>
   </div>
-  <span class="streak" title="Serie: Tage mit mindestens einer erledigten Aufgabe">
-    <Icon name="flame" size={16} />{myStreakDays} Tage
+  <span class="streak" class:cold={!streak.today}
+    title={streak.today ? "Serie: Tage mit mindestens einer erledigten Aufgabe" : "Heute noch eine Aufgabe, dann geht die Serie weiter"}>
+    <Icon name="flame" size={16} />{streak.days} {streak.days === 1 ? "Tag" : "Tage"}
   </span>
 </header>
 
@@ -77,6 +81,13 @@
     {/if}
   </section>
 {:else}
+  {#if toReview.length}
+    <h2 class="section-title">Zu bestätigen</h2>
+    <div class="stack">
+      {#each toReview as task (task.id)}<TaskCard {task} />{/each}
+    </div>
+  {/if}
+
   {#if running.length}
     <h2 class="section-title">Läuft gerade</h2>
     <div class="stack">
@@ -108,7 +119,7 @@
   {/if}
 {/if}
 
-<p class="muted small demo">Familienziel und Serie sind noch Beispieldaten (kommen mit M3 und M4).</p>
+<p class="muted small demo">Das Familienziel ist noch ein Beispiel. Das echte Rennen gegen Krümel kommt mit M4.</p>
 
 {#if planner}
   <button class="fab primary" aria-label="Aufgabe anlegen" onclick={() => (sheet = {})}><Icon name="plus" size={24} /></button>
@@ -146,6 +157,11 @@
     font-weight: 700;
     font-size: 0.85rem;
     white-space: nowrap;
+  }
+
+  .streak.cold {
+    background: var(--surface-2);
+    color: var(--muted);
   }
 
   .race {

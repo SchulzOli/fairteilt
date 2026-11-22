@@ -4,5 +4,6 @@ import type { PointRange } from "./PointRange";
 import type { Schedule } from "./Schedule";
 import type { StepOrder } from "./StepOrder";
 import type { TaskKind } from "./TaskKind";
+import type { TemplateApproval } from "./TemplateApproval";
 
-export type TemplateDto = { id: string, title: string, room_id: string | null, icon: string | null, kind: TaskKind, points: PointRange, schedule: Schedule, assignment: Assignment, step_order: StepOrder, duration_min: number | null, steps: Array<string>, };
+export type TemplateDto = { id: string, title: string, room_id: string | null, icon: string | null, kind: TaskKind, points: PointRange, schedule: Schedule, assignment: Assignment, step_order: StepOrder, duration_min: number | null, steps: Array<string>, approval: TemplateApproval, };

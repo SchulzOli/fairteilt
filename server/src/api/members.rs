@@ -61,7 +61,7 @@ pub async fn list(State(state): State<AppState>, user: AuthUser, Path(household_
                 (m.pin_hash IS NOT NULL) AS has_pin, (u.email IS NOT NULL) AS has_email, m.joined_at
          FROM memberships m JOIN users u ON u.id = m.user_id
          WHERE m.household_id = $1 AND m.active
-         ORDER BY m.joined_at",
+         ORDER BY m.seq",
     )
     .bind(household_id)
     .fetch_all(&state.db)

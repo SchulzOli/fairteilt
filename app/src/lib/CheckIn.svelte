@@ -8,7 +8,7 @@
 
   let busy = $state(false);
   let error = $state("");
-  let thanks = $state<{ title: string; xp: number } | null>(null);
+  let thanks = $state<{ title: string; xp: number; waiting: boolean } | null>(null);
 
   const task = $derived(
     taskStore.tasks.find(
@@ -37,11 +37,20 @@
     run(async () => {
       const t = task!;
       let xp: number | null = null;
+      let waiting = false;
       const open = t.steps.filter((s) => s.done_at === null);
-      if (open.length === 0) xp = (await taskStore.action(t.id, "done")).xp_awarded;
-      for (const s of open) xp = (await taskStore.checkStep(t.id, s.id)).xp_awarded ?? xp;
+      if (open.length === 0) {
+        const res = await taskStore.action(t.id, "done");
+        xp = res.xp_awarded;
+        waiting = res.submitted;
+      }
+      for (const s of open) {
+        const res = await taskStore.checkStep(t.id, s.id);
+        xp = res.xp_awarded ?? xp;
+        waiting = waiting || res.submitted;
+      }
       feedback("done");
-      thanks = { title: t.title, xp: xp ?? t.xp };
+      thanks = { title: t.title, xp: xp ?? t.xp, waiting };
       setTimeout(() => (thanks = null), 2600);
     });
 
@@ -72,7 +81,9 @@
 {/if}
 
 {#if thanks}
-  <div class="toast" role="status">Danke! „{thanks.title}“ ist erledigt · <b>+{thanks.xp} XP</b></div>
+  <div class="toast" role="status">
+    Danke! „{thanks.title}“ ist erledigt · {#if thanks.waiting}wartet aufs OK{:else}<b>+{thanks.xp} XP</b>{/if}
+  </div>
 {/if}
 
 <style>

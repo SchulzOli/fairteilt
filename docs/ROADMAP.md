@@ -8,11 +8,12 @@ im Familienalltag nutzbar (Familien-Alpha). Umfang grob: S / M / L.
 
 ## Nächste Schritte
 
-Erledigt: CI, TypeScript-Typen aus `punkte-core` und Server, Design-Grundlage in der App, **M1**, **M2**.
+Erledigt: CI, TypeScript-Typen aus `punkte-core` und Server, Design-Grundlage in der App, **M1**, **M2**, **M3**.
 
 | Wer | Schritt |
 | --- | --- |
-| Code | M3: Punktebuch, Bestätigen mit Anpassung, Bonus und Übertragungen, Serie, Punkte-Ansicht mit echten Daten |
+| Code | Familien-Alpha: Deployment auf Hetzner durchspielen, signierte APK, Backup und Wiederherstellung testen |
+| Code | M4: Monatsabschluss, Familienziel gegen Krümel, Belohnungskatalog |
 | Entscheidung | Klang auswählen (Klang-Spielplatz auf der Roadmap-Seite). Krümel, Serie, Schritte und Tiere sind entschieden |
 | Betrieb | Hetzner-Cloud-Server bestellen, DNS `fairteilt.oli-tech.eu` setzen (bis zur Alpha) |
 | Betrieb | Tablet für die Wandanzeige festlegen. Firebase vor M5, Apple-Developer-Account vor M7 |
@@ -24,8 +25,8 @@ Erledigt: CI, TypeScript-Typen aus `punkte-core` und Server, Design-Grundlage in
 | ✅ | **M0 Gerüst** | Konzept, `punkte-core`, Server, App-Hülle, Android-Build, Designrichtung | – |
 | ✅ | **M1 Konten & Haushalt** | Ein Admin legt den Haushalt an, ein zweiter tritt per QR-Code bei, ein Kind sucht sich ein Tier aus und meldet sich per PIN an | L |
 | ✅ | **M2 Aufgaben, Räume & Zustand** | „Bad putzen, alle 7 Tage“ wird gelb und rot; Alex startet es, hakt fünf Schritte ab, und Fairteilt fragt freundlich nach, falls er hängen bleibt | L |
-| ▶ | **M3 Punkte & Bestätigung** | Kind erledigt, Elternteil bestätigt mit angepassten Punkten, die Serie zählt hoch | M |
-| | **α Familien-Alpha** | Läuft auf Hetzner mit Backups, signierte APK, zwei Wochen Alltag ohne Datenverlust | S |
+| ✅ | **M3 Punkte & Bestätigung** | Kind erledigt, Elternteil bestätigt mit angepassten Punkten, die Serie zählt hoch | M |
+| ▶ | **α Familien-Alpha** | Läuft auf Hetzner mit Backups, signierte APK, zwei Wochen Alltag ohne Datenverlust | S |
 | | **M4 Ausgleich, Familienziel & Belohnungen** | Monatsabschluss läuft automatisch, Rennen gegen Krümel entscheidet über die Familienbelohnung | M |
 | | **M5 Erinnerungen & Push** | Lokale Erinnerungen beim Kippen auf „fällig“, Postfach, Push über FCM | M |
 | | **M6 Plan & Wandanzeige** | Kalender, Board, eigene Ansichten, Tablet-Wandanzeige mit PIN-Abhaken | L |
@@ -74,6 +75,19 @@ erscheint sie, sobald die App offen ist. Punkte werden ab M3 ins Punktebuch gebu
   Schritt abhaken mit Funkeln, Aufgabe erledigen mit kräftigem Konfetti, beides innerhalb der Karte
 
 ### M3 Punkte & Bestätigung
+
+**Abgeschlossen am 22.11.2026.** `punkte-core`: Serie (Tage in Folge, der laufende Tag zählt noch nicht
+gegen sie), Bestätigung pro Vorlage (wie im Haushalt, immer, nie, mit Foto), Regeln für Bonus und
+Übertragung. Server: Punktebuch in Gebrauch (jede Aufgabe wird genau einmal gutgeschrieben), Kinder
+reichen ein und ein Erwachsener bestätigt mit angepassten XP im Rahmen und einer Nachricht oder schickt
+die Aufgabe mit Nachricht zurück; niemand bestätigt die eigene Aufgabe. Bonus auf Aufgaben wird sofort
+reserviert, beim Erledigen ausgezahlt und beim Überspringen zurückgebucht. Übertragungen immer mit
+Notiz, Limit pro Monat, Kinder mit Freigabe durch Admins. Konten mit Guthaben, XP des Monats und Serie.
+Aufholaufgaben bringen XP, aber kein Guthaben. App: Heute mit echter Serie und „Zu bestätigen“,
+Bestätigen-Blatt, Bonus setzen auf der Aufgabenseite, Punkte-Ansicht mit Konto, Übertragen, Freigeben,
+Verlauf und Familienübersicht (Mitgliederreihenfolge, keine Rangliste). Das M3-Szenario ist als
+Server-Test und in der App geprüft. Bis M4 zählt der Kalendermonat als Periode für XP und das
+Übertragungslimit; Perioden im Punktebuch setzt der Monatsabschluss.
 
 - Punktebuch (nur anhängen), Bestätigen/Ablehnen mit Anpassung im Rahmen und Nachricht ans Kind
 - Bonus auf Aufgaben (Treuhand), Übertragungen, Serien pro Person

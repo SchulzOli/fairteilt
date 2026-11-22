@@ -15,6 +15,18 @@ pub enum PointsError {
     OutsidePolicy { min: Points, max: Points, policy_min: Points, policy_max: Points },
     #[error("Anpassung {value} liegt außerhalb von {min}…{max}")]
     AdjustmentOutOfRange { value: Points, min: Points, max: Points },
+    #[error("Der Betrag muss größer als 0 sein")]
+    AmountNotPositive,
+    #[error("Nicht genug Guthaben: {balance} G vorhanden, {needed} G nötig")]
+    InsufficientBalance { balance: Points, needed: Points },
+    #[error("Boni auf Aufgaben sind in diesem Haushalt ausgeschaltet")]
+    BountyDisabled,
+    #[error("Höchstens {max} G pro Bonus")]
+    PledgeTooLarge { max: Points },
+    #[error("Übertragungen sind in diesem Haushalt ausgeschaltet")]
+    TransferDisabled,
+    #[error("In diesem Zeitraum sind nur noch {remaining} G Übertragung möglich")]
+    TransferLimit { remaining: Points },
 }
 
 /// `min ≤ default ≤ max` for a single task or template.
@@ -92,6 +104,49 @@ impl ApprovalRule {
     }
 }
 
+/// Approval setting of a template: the household rule or an override (KONZEPT §7.1).
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TemplateApproval {
+    /// Follow the household's `ApprovalRule`.
+    #[default]
+    Household,
+    Always,
+    Never,
+    /// Always, with a photo as proof (photos follow later; until then like `Always`).
+    Photo,
+}
+
+impl TemplateApproval {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            TemplateApproval::Household => "household",
+            TemplateApproval::Always => "always",
+            TemplateApproval::Never => "never",
+            TemplateApproval::Photo => "photo",
+        }
+    }
+
+    pub fn parse(s: &str) -> Self {
+        match s {
+            "always" => TemplateApproval::Always,
+            "never" => TemplateApproval::Never,
+            "photo" => TemplateApproval::Photo,
+            _ => TemplateApproval::Household,
+        }
+    }
+
+    /// Whether a completion by this member must be approved by someone else.
+    pub fn required(self, household: ApprovalRule, completer_is_child: bool) -> bool {
+        match self {
+            TemplateApproval::Household => household.required_for(completer_is_child),
+            TemplateApproval::Always | TemplateApproval::Photo => true,
+            TemplateApproval::Never => false,
+        }
+    }
+}
+
 /// Household-wide point rules. Stored as JSON on the household.
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -157,6 +212,44 @@ impl PointPolicy {
         range.clamp(range.default.saturating_add(bonus))
     }
 
+    /// Checks a bounty pledge (KONZEPT §4.3) against the rules and the pledger's balance.
+    pub fn check_bounty(&self, amount: Points, balance: Points) -> Result<(), PointsError> {
+        if !self.bounty_enabled {
+            return Err(PointsError::BountyDisabled);
+        }
+        if amount <= 0 {
+            return Err(PointsError::AmountNotPositive);
+        }
+        if let Some(max) = self.bounty_max_per_pledge
+            && amount > max
+        {
+            return Err(PointsError::PledgeTooLarge { max });
+        }
+        if amount > balance {
+            return Err(PointsError::InsufficientBalance { balance, needed: amount });
+        }
+        Ok(())
+    }
+
+    /// Checks a transfer (KONZEPT §4.4). `sent_in_period` = already transferred in this period.
+    pub fn check_transfer(&self, amount: Points, balance: Points, sent_in_period: Points) -> Result<(), PointsError> {
+        if !self.transfer_enabled {
+            return Err(PointsError::TransferDisabled);
+        }
+        if amount <= 0 {
+            return Err(PointsError::AmountNotPositive);
+        }
+        if let Some(max) = self.transfer_max_per_period
+            && sent_in_period + amount > max
+        {
+            return Err(PointsError::TransferLimit { remaining: (max - sent_in_period).max(0) });
+        }
+        if amount > balance {
+            return Err(PointsError::InsufficientBalance { balance, needed: amount });
+        }
+        Ok(())
+    }
+
     /// Final base points on approval. `adjusted` is the approver's choice (if allowed).
     pub fn completion_points(
         &self,
@@ -183,6 +276,42 @@ impl PointPolicy {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn template_approval_overrides_household() {
+        use TemplateApproval as T;
+        assert!(T::Household.required(ApprovalRule::ChildrenOnly, true));
+        assert!(!T::Household.required(ApprovalRule::ChildrenOnly, false));
+        assert!(T::Always.required(ApprovalRule::Nobody, false));
+        assert!(T::Photo.required(ApprovalRule::Nobody, false));
+        assert!(!T::Never.required(ApprovalRule::Everyone, true));
+        assert_eq!(T::parse(T::Photo.as_str()), T::Photo);
+        assert_eq!(T::parse("unknown"), T::Household);
+    }
+
+    #[test]
+    fn bounty_rules() {
+        let p = PointPolicy::default();
+        assert!(p.check_bounty(20, 30).is_ok());
+        assert_eq!(p.check_bounty(0, 30), Err(PointsError::AmountNotPositive));
+        assert_eq!(p.check_bounty(60, 100), Err(PointsError::PledgeTooLarge { max: 50 }));
+        assert_eq!(p.check_bounty(20, 10), Err(PointsError::InsufficientBalance { balance: 10, needed: 20 }));
+        let off = PointPolicy { bounty_enabled: false, ..p };
+        assert_eq!(off.check_bounty(1, 10), Err(PointsError::BountyDisabled));
+    }
+
+    #[test]
+    fn transfer_rules() {
+        let p = PointPolicy::default();
+        assert!(p.check_transfer(15, 20, 0).is_ok());
+        assert_eq!(p.check_transfer(15, 20, 90), Err(PointsError::TransferLimit { remaining: 10 }));
+        assert_eq!(p.check_transfer(25, 20, 0), Err(PointsError::InsufficientBalance { balance: 20, needed: 25 }));
+        assert_eq!(p.check_transfer(-5, 20, 0), Err(PointsError::AmountNotPositive));
+        let unlimited = PointPolicy { transfer_max_per_period: None, ..p.clone() };
+        assert!(unlimited.check_transfer(500, 1000, 900).is_ok());
+        let off = PointPolicy { transfer_enabled: false, ..p };
+        assert_eq!(off.check_transfer(1, 10, 0), Err(PointsError::TransferDisabled));
+    }
 
     const DAY: i64 = 86_400;
 

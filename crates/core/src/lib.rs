@@ -16,6 +16,7 @@ pub mod points;
 pub mod schedule;
 pub mod settlement;
 pub mod steps;
+pub mod streak;
 pub mod task;
 
 /// Point amounts. Signed because ledger deltas can be negative.
@@ -26,7 +27,8 @@ pub use condition::{ConditionState, condition, state as condition_state};
 pub use ledger::{LedgerDelta, LedgerKind};
 pub use schedule::{Cycle, Schedule, ScheduleError};
 pub use steps::{StepOrder, all_done, can_check};
-pub use points::{ApprovalRule, Escalation, PointPolicy, PointRange, PointsError};
+pub use points::{ApprovalRule, Escalation, PointPolicy, PointRange, PointsError, TemplateApproval};
+pub use streak::{Streak, streak};
 pub use settlement::{
     DeficitAction, MemberPeriodInput, Outcome, PeriodLength, PeriodMode, PeriodPolicy, Settlement,
     SettlementLine, SurplusAction,

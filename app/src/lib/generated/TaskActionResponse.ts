@@ -3,9 +3,17 @@ import type { TaskDto } from "./TaskDto";
 
 export type TaskActionResponse = { task: TaskDto, 
 /**
- * XP earned when this action completed the task.
+ * XP credited when this action completed the task (directly or by approval).
  */
 xp_awarded: number | null, 
+/**
+ * Bonus G paid out together with the XP.
+ */
+bounty_paid: number | null, 
+/**
+ * The task now waits for an adult to confirm it.
+ */
+submitted: boolean, 
 /**
  * The next round of a recurring task, if one was created.
  */

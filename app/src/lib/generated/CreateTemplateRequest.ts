@@ -4,6 +4,7 @@ import type { PointRange } from "./PointRange";
 import type { Schedule } from "./Schedule";
 import type { StepOrder } from "./StepOrder";
 import type { TaskKind } from "./TaskKind";
+import type { TemplateApproval } from "./TemplateApproval";
 
 export type CreateTemplateRequest = { title: string, room_id: string | null, icon: string | null, kind: TaskKind | null, 
 /**
@@ -17,4 +18,8 @@ duration_min: number | null,
 /**
  * Only for one-off tasks: optional due date.
  */
-due_at: string | null, };
+due_at: string | null, 
+/**
+ * Approval for this task; default: the household rule.
+ */
+approval: TemplateApproval | null, };

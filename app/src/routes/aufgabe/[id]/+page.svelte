@@ -6,12 +6,16 @@
   import { clock, conditionOf, dueText, iconOf, memberName, stepsDone, taskStore } from "$lib/tasks.svelte";
   import ConditionBar from "$lib/ui/ConditionBar.svelte";
   import Icon from "$lib/ui/Icon.svelte";
+  import ReviewSheet from "$lib/ReviewSheet.svelte";
 
   const id = $derived(page.params.id ?? "");
 
   /** The task as last answered by the server for this page (also after it is completed). */
   let local = $state<TaskDto | null>(null);
-  let finished = $state<{ xp: number; next: string | null } | null>(null);
+  let finished = $state<{ xp: number; next: string | null; submitted: boolean; bounty: number | null } | null>(null);
+  let reviewing = $state(false);
+  let pledging = $state(false);
+  let pledgeAmount = $state(5);
   let sparkle = $state<string | null>(null);
   let busy = $state(false);
   let error = $state("");
@@ -28,6 +32,12 @@
   const checkinIn = $derived(
     task?.remind_at && Date.parse(task.remind_at) > now ? Math.ceil((Date.parse(task.remind_at) - now) / 60_000) : null,
   );
+  const submitted = $derived(task?.status === "submitted");
+  const canReview = $derived(submitted && session.membership?.role !== "child" && task?.completed_by !== me);
+  const canPledge = $derived(
+    !!task && !submitted && task.status !== "completed" && task.status !== "cancelled" && task.assignee_id !== me,
+  );
+  const balance = $derived(taskStore.myAccount?.balance ?? 0);
   const nextTask = $derived(finished?.next ? taskStore.tasks.find((t) => t.id === finished!.next) : undefined);
 
   // Not in the current list (e.g. opened from a link after it was done): fetch it.
@@ -63,8 +73,15 @@
     act(async () => {
       const res = await taskStore.action(id, "done");
       local = res.task;
-      finished = { xp: res.xp_awarded ?? 0, next: res.next_task_id };
+      finished = { xp: res.xp_awarded ?? 0, next: res.next_task_id, submitted: res.submitted, bounty: res.bounty_paid };
       feedback("done");
+    });
+
+  const pledge = () =>
+    act(async () => {
+      local = await taskStore.pledge(id, pledgeAmount);
+      pledging = false;
+      feedback("coin");
     });
 
   const check = (step: TaskStepDto) =>
@@ -73,8 +90,8 @@
       local = res.task;
       sparkle = step.id;
       setTimeout(() => sparkle === step.id && (sparkle = null), 900);
-      if (res.xp_awarded !== null) {
-        finished = { xp: res.xp_awarded, next: res.next_task_id };
+      if (res.xp_awarded !== null || res.submitted) {
+        finished = { xp: res.xp_awarded ?? 0, next: res.next_task_id, submitted: res.submitted, bounty: res.bounty_paid };
         feedback("done");
       } else {
         feedback("step");
@@ -114,7 +131,10 @@
         {#if finished}erledigt{:else if task.assignee_id}{task.assignee_id === me ? "du bist" : `${memberName(task.assignee_id)} ist`} dran{:else}noch offen{/if}
       </div>
     </div>
-    <span class="xp-chip">{finished ? finished.xp : task.xp} XP</span>
+    <span class="chips">
+      <span class="xp-chip">{finished && !finished.submitted ? finished.xp : task.xp} XP</span>
+      {#if task.bounty > 0 && !finished}<span class="coin-chip">+{task.bounty}</span>{/if}
+    </span>
     {#if !finished}
       <div class="cond">
         <ConditionBar value={condition} />
@@ -131,12 +151,29 @@
         {/each}
       </span>
       <span class="big-check" aria-hidden="true"><Icon name="check" size={40} /></span>
-      <h2>Geschafft!</h2>
-      <span class="xp-burst">+{finished.xp} XP</span>
-      {#if nextTask}<p class="muted">{nextText(nextTask)}</p>{/if}
+      {#if finished.submitted}
+        <h2>Prima!</h2>
+        <p class="muted">Ein Erwachsener schaut noch kurz drüber, dann bekommst du deine {task.xp} XP.</p>
+      {:else}
+        <h2>Geschafft!</h2>
+        <span class="xp-burst">+{finished.xp} XP{finished.bounty ? ` · +${finished.bounty} G` : ""}</span>
+        {#if nextTask}<p class="muted">{nextText(nextTask)}</p>{/if}
+      {/if}
       <a class="btnlike primary" href="/">Zurück zu Heute</a>
     </section>
+  {:else if submitted}
+    <section class="card status">
+      {#if canReview}
+        <p><b>{memberName(task.completed_by)}</b> ist fertig. Passt alles?</p>
+        <button class="primary go" onclick={() => (reviewing = true)}><Icon name="check" size={20} />Prüfen und bestätigen</button>
+      {:else}
+        <p class="center"><b>Wartet auf Bestätigung.</b><br /><span class="muted small">Sobald ein Erwachsener zugestimmt hat, gibt es die XP.</span></p>
+      {/if}
+    </section>
   {:else}
+    {#if task.review_note}
+      <section class="card note"><span class="muted small">Nachricht</span><p>„{task.review_note}“</p></section>
+    {/if}
     <section class="card status">
       {#if running && task.started_at}
         <div class="timer" aria-label="Läuft seit {clock(task.started_at, now)}">
@@ -188,13 +225,93 @@
       </section>
     {/if}
 
-    {#if session.isAdmin && task.status !== "submitted"}
+    {#if canPledge}
+      <section class="card bounty">
+        {#if pledging}
+          <div class="row between">
+            <span>Bonus aus deinem Guthaben <span class="muted small">({balance} G)</span></span>
+          </div>
+          <div class="stepper">
+            <button type="button" aria-label="Weniger" disabled={pledgeAmount <= 1} onclick={() => (pledgeAmount = Math.max(1, pledgeAmount - 5))}>−</button>
+            <b>{pledgeAmount} G</b>
+            <button type="button" aria-label="Mehr" disabled={pledgeAmount >= balance} onclick={() => (pledgeAmount = Math.min(balance, pledgeAmount + 5))}>+</button>
+          </div>
+          <div class="two">
+            <button onclick={() => (pledging = false)}>Abbrechen</button>
+            <button class="primary" disabled={busy || pledgeAmount > balance} onclick={pledge}>Bonus setzen</button>
+          </div>
+        {:else}
+          <button class="link-btn" disabled={balance <= 0} onclick={() => ((pledgeAmount = Math.min(5, balance)), (pledging = true))}>
+            <span class="coin-chip">G</span>{task.bounty > 0 ? "Bonus erhöhen" : "Bonus setzen"}{balance <= 0 ? " (kein Guthaben)" : ""}
+          </button>
+        {/if}
+      </section>
+    {/if}
+
+    {#if session.isAdmin}
       <button class="link" disabled={busy} onclick={skip}>Diese Runde überspringen</button>
     {/if}
   {/if}
 {/if}
 
+{#if reviewing && task}
+  <ReviewSheet {task} onclose={() => (reviewing = false)} />
+{/if}
+
 <style>
+  .chips {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 4px;
+  }
+
+  .note {
+    margin-bottom: var(--space-3);
+    border-color: color-mix(in srgb, var(--coin) 40%, var(--line));
+  }
+
+  .note p {
+    font-style: italic;
+  }
+
+  .bounty {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    margin-top: var(--space-3);
+  }
+
+  .stepper {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-3);
+  }
+
+  .stepper button {
+    width: 40px;
+    min-height: 40px;
+    padding: 0;
+    border-radius: 50%;
+    font-size: 1.2rem;
+  }
+
+  .stepper b {
+    font-size: 1.3rem;
+  }
+
+  .link-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    background: transparent;
+    border: none;
+    padding: 0;
+    color: var(--fg);
+    font-weight: 700;
+  }
+
   .back {
     display: inline-flex;
     align-items: center;

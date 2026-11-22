@@ -212,6 +212,11 @@ async fn task_rules_and_rights(db: PgPool) {
     assert_eq!(s, StatusCode::FORBIDDEN);
     let (s, r) = call(&app, "POST", &format!("/api/v1/tasks/{tid}/action"), Some(mia), Some(json!({ "action": "done" }))).await;
     assert_eq!(s, StatusCode::OK, "{r}");
+    // Children's tasks wait for an adult (household default), then they are credited.
+    assert_eq!((r["submitted"].as_bool(), r["task"]["status"].as_str()), (Some(true), Some("submitted")));
+    assert!(r["xp_awarded"].is_null());
+    let (s, r) = call(&app, "POST", &format!("/api/v1/tasks/{tid}/review"), Some(&alex), Some(json!({ "approve": true }))).await;
+    assert_eq!(s, StatusCode::OK, "{r}");
     assert_eq!(r["xp_awarded"], 10);
     assert!(r["next_task_id"].is_null());
     let (_, list) = call(&app, "GET", &format!("/api/v1/households/{hid}/tasks"), Some(&sam), None).await;

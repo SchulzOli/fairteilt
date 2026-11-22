@@ -394,10 +394,11 @@ Periodenabschluss. Kein zusätzlicher Dienst nötig, mehrere Instanzen wären sp
 | `devices` | id, user_id, platform, push_token, push_provider |
 | `rooms` | id, household_id, name, icon, color, position |
 | `task_templates` | id, household_id, title, kind, points_min/default/max, schedule (jsonb), step_order, assignment (jsonb), approval, reminders (jsonb) |
-| `tasks` | id, household_id, template_id, room_id, title, icon, kind, status (+ `in_progress`), assignee_id, cycle_start, due_at, scheduled_start/end, started_at, remind_at, points_* (Kopie), completed_by, completed_at, version |
+| `tasks` | id, household_id, template_id, room_id, title, icon, kind, status (+ `in_progress`), assignee_id, cycle_start, due_at, scheduled_start/end, started_at, remind_at, points_* (Kopie), completed_by, completed_at, approved_by, approved_at, review_note, version |
 | `task_steps` | id, task_id, position, title, done_by, done_at (Vorlagen: `template_steps` mit position, title) |
 | `task_events` | id, task_id, actor_id, type, payload, created_at |
 | `bounties` | id, task_id, pledger_id, amount, status (held/paid/refunded) |
+| `transfers` | id, household_id, from_id, to_id, amount, note, status (done/pending/declined), decided_by |
 | `ledger_entries` | siehe §4.5 |
 | `periods` | id, household_id, starts_at, ends_at, status |
 | `settlements` / `settlement_lines` | Abrechnung je Periode und Mitglied (Ziel, Leistung, Abweichung, Folge) |

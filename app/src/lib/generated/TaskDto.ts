@@ -17,4 +17,12 @@ xp: number, points_min: number, points_max: number, started_at: string | null,
 /**
  * When the app should gently ask "Wie läuft's?". Time only counts up.
  */
-remind_at: string | null, duration_min: number | null, step_order: StepOrder, steps: Array<TaskStepDto>, completed_at: string | null, completed_by: string | null, points_awarded: number | null, };
+remind_at: string | null, duration_min: number | null, step_order: StepOrder, steps: Array<TaskStepDto>, completed_at: string | null, completed_by: string | null, points_awarded: number | null, 
+/**
+ * Bonus G currently held on this task (paid to whoever completes it).
+ */
+bounty: number, approved_by: string | null, 
+/**
+ * Message from the reviewer ("Super!" or "Bitte noch den Boden").
+ */
+review_note: string | null, };

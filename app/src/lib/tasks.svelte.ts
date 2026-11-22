@@ -1,5 +1,6 @@
 // Tasks and rooms of the active household, kept current over the live WebSocket (M2).
 import type {
+  AccountDto,
   CreateTemplateRequest,
   CreateTemplateResponse,
   RoomDto,
@@ -15,7 +16,11 @@ const DAY = 86_400_000;
 class TaskStore {
   tasks = $state<TaskDto[]>([]);
   rooms = $state<RoomDto[]>([]);
+  /** Accounts (G, XP, streak) of all members, in member order. */
+  accounts = $state<AccountDto[]>([]);
   loaded = $state(false);
+  /** Counts reloads: pages with their own data (history) reload when it changes. */
+  version = $state(0);
   /** Connected to the live channel. */
   live = $state(false);
   /** Ticks every second: elapsed time and condition bars move without reloading. */
@@ -50,6 +55,7 @@ class TaskStore {
     ws?.close();
     this.tasks = [];
     this.rooms = [];
+    this.accounts = [];
     this.loaded = false;
     this.live = false;
   }
@@ -58,14 +64,17 @@ class TaskStore {
     const hid = this.hid;
     if (!hid) return;
     if (Date.now() < this.holdUntil) return this.scheduleReload();
-    const [tasks, rooms] = await Promise.all([
+    const [tasks, rooms, accounts] = await Promise.all([
       session.request<TaskDto[]>("GET", `/households/${hid}/tasks`),
       session.request<RoomDto[]>("GET", `/households/${hid}/rooms`),
+      session.request<AccountDto[]>("GET", `/households/${hid}/accounts`),
     ]);
     if (hid !== this.hid) return;
     this.tasks = tasks;
     this.rooms = rooms;
+    this.accounts = accounts;
     this.loaded = true;
+    this.version++;
   }
 
   /** Coalesces bursts of live events into one reload. */
@@ -99,7 +108,7 @@ class TaskStore {
         // After a reconnect we may have missed events.
         if (this.retry > 0) this.scheduleReload();
         this.retry = 0;
-      } else if (type === "tasks_changed" || type === "rooms_changed") {
+      } else if (type === "tasks_changed" || type === "rooms_changed" || type === "points_changed") {
         this.scheduleReload();
       }
     };
@@ -158,6 +167,26 @@ class TaskStore {
     const room = await session.request<RoomDto>("POST", `/households/${this.hid}/rooms`, { name, icon });
     this.rooms = [...this.rooms, room];
     return room;
+  }
+
+  /** Adult confirms (optionally with adjusted XP and a message) or sends the task back. */
+  async review(id: string, approve: boolean, points: number | null, note: string | null): Promise<TaskActionResponse> {
+    const res = await session.request<TaskActionResponse>("POST", `/tasks/${id}/review`, { approve, points, note });
+    if (res.xp_awarded !== null) this.hold(1500);
+    this.patch(res);
+    return res;
+  }
+
+  async pledge(id: string, amount: number): Promise<TaskDto> {
+    const task = await session.request<TaskDto>("POST", `/tasks/${id}/bounty`, { amount });
+    const i = this.tasks.findIndex((t) => t.id === id);
+    if (i >= 0) this.tasks[i] = task;
+    this.scheduleReload();
+    return task;
+  }
+
+  get myAccount(): AccountDto | undefined {
+    return this.accounts.find((a) => a.membership_id === session.membership?.membership_id);
   }
 
   roomOf(t: TaskDto): RoomDto | undefined {

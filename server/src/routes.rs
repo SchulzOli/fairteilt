@@ -43,7 +43,13 @@ pub fn router(state: AppState, cors_origins: &[String]) -> Router {
         .route("/households/{id}/live", get(crate::live::live))
         .route("/tasks/{tid}", get(api::tasks::get_task))
         .route("/tasks/{tid}/action", post(api::tasks::action))
-        .route("/tasks/{tid}/steps/{sid}/check", post(api::tasks::check_step));
+        .route("/tasks/{tid}/steps/{sid}/check", post(api::tasks::check_step))
+        .route("/tasks/{tid}/review", post(api::tasks::review))
+        .route("/tasks/{tid}/bounty", post(api::tasks::pledge))
+        .route("/households/{id}/accounts", get(api::points::accounts))
+        .route("/households/{id}/ledger", get(api::points::history))
+        .route("/households/{id}/transfers", get(api::points::list_transfers).post(api::points::create_transfer))
+        .route("/transfers/{xid}/decide", post(api::points::decide_transfer));
 
     Router::new()
         .route("/health", get(health))

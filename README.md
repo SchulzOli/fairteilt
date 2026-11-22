@@ -52,7 +52,7 @@ pnpm --dir app install; pnpm --dir app tauri dev
 In der App unter **Mehr → Server** `http://localhost:8080` eintragen und „Verbindung testen“.
 Die Punkte-Ansicht rechnet den Ausgleich offline mit `punkte-core`.
 
-### API (Stand M2)
+### API (Stand M3)
 
 | Route | Zweck |
 | --- | --- |
@@ -74,7 +74,12 @@ Die Punkte-Ansicht rechnet den Ausgleich offline mit `punkte-core`.
 | `GET /api/v1/households/{id}/tasks` · `GET /api/v1/tasks/{tid}` | aktuelle Runden mit Zustand, XP und Schritten |
 | `POST /api/v1/tasks/{tid}/action` | `claim` · `unclaim` · `start` · `pause` · `snooze` · `done` · `cancel` (nur Admins) |
 | `POST /api/v1/tasks/{tid}/steps/{sid}/check` | Schritt abhaken; der letzte erledigt die Aufgabe |
-| `GET /api/v1/households/{id}/live?token=` | WebSocket: `tasks_changed` / `rooms_changed`, wenn sich etwas ändert |
+| `POST /api/v1/tasks/{tid}/review` | Erwachsene bestätigen (XP im Rahmen anpassbar, Nachricht) oder schicken zurück |
+| `POST /api/v1/tasks/{tid}/bounty` | Bonus aus eigenem Guthaben setzen (sofort reserviert) |
+| `GET /api/v1/households/{id}/accounts` | Guthaben, XP des Monats und Serie aller Mitglieder |
+| `GET /api/v1/households/{id}/ledger` | Verlauf des eigenen Kontos (Admins: `?member=`), `before` + `limit` zum Blättern |
+| `GET` · `POST /api/v1/households/{id}/transfers` · `POST /api/v1/transfers/{xid}/decide` | Guthaben übertragen, Freigabe für Kinder |
+| `GET /api/v1/households/{id}/live?token=` | WebSocket: `tasks_changed` / `rooms_changed` / `points_changed`, wenn sich etwas ändert |
 
 ## App-Icon
 

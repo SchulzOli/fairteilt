@@ -1,8 +1,9 @@
-//! Task templates, current rounds, actions and steps (M2, KONZEPT §7).
+//! Task templates, current rounds, actions, steps, approval and bounties (M2/M3, KONZEPT §4, §7).
 //!
 //! Every template has exactly one current round (a `tasks` row that is not completed or
-//! cancelled). Completing it awards the escalated XP on the task (the ledger follows in M3)
-//! and creates the next round for recurring templates.
+//! cancelled). Completing it credits the escalated XP to the ledger, pays out bounties and
+//! creates the next round for recurring templates. Where the household (or template) asks for
+//! approval, `done` submits the task and an adult credits it with `review`.
 
 use std::str::FromStr;
 
@@ -12,14 +13,15 @@ use axum::Json;
 use chrono::{DateTime, Datelike, Duration, TimeZone, Utc};
 use chrono_tz::Tz;
 use punkte_core::{
-    Assignment, ConditionState, Cycle, PointPolicy, PointRange, Schedule, StepOrder, TaskAction, TaskKind, TaskStatus, all_done,
-    can_check, condition, condition_state,
+    Assignment, ConditionState, Cycle, LedgerDelta, PointPolicy, PointRange, Schedule, StepOrder, TaskAction, TaskKind, TaskStatus,
+    TemplateApproval, all_done, can_check, condition, condition_state,
 };
 use serde::{Deserialize, Serialize};
 use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 
 use crate::api::households::membership;
+use crate::api::points::{Ledger, balance, lock_member};
 use crate::api::rooms::{check_icon, planner};
 use crate::auth::AuthUser;
 use crate::error::{AppError, AppResult};
@@ -30,18 +32,35 @@ const MAX_STEPS: usize = 20;
 
 // ---------------------------------------------------------------- household context
 
-struct Household {
-    tz: Tz,
-    policy: PointPolicy,
+pub(crate) struct Household {
+    pub tz: Tz,
+    pub policy: PointPolicy,
 }
 
-async fn household(db: &sqlx::PgPool, id: Uuid) -> AppResult<Household> {
+pub(crate) async fn household(db: &sqlx::PgPool, id: Uuid) -> AppResult<Household> {
     let (tz, policy): (String, serde_json::Value) =
         sqlx::query_as("SELECT timezone, point_policy FROM households WHERE id = $1").bind(id).fetch_one(db).await?;
     Ok(Household {
         tz: Tz::from_str(&tz).unwrap_or(chrono_tz::Europe::Berlin),
         policy: serde_json::from_value(policy).map_err(anyhow::Error::from)?,
     })
+}
+
+fn kind_parse(s: &str) -> TaskKind {
+    match s {
+        "reward" => TaskKind::Reward,
+        "penalty" => TaskKind::Penalty,
+        _ => TaskKind::Regular,
+    }
+}
+
+/// Start of the current calendar month in the household's time zone (the period until M4).
+pub(crate) fn month_start(tz: Tz, now: DateTime<Utc>) -> DateTime<Utc> {
+    let local = now.with_timezone(&tz);
+    tz.with_ymd_and_hms(local.year(), local.month(), 1, 0, 0, 0)
+        .earliest()
+        .map(|t| t.with_timezone(&Utc))
+        .unwrap_or(now - Duration::days(31))
 }
 
 fn kind_str(k: TaskKind) -> &'static str {
@@ -115,6 +134,11 @@ pub struct TaskDto {
     pub completed_at: Option<DateTime<Utc>>,
     pub completed_by: Option<Uuid>,
     pub points_awarded: Option<i64>,
+    /// Bonus G currently held on this task (paid to whoever completes it).
+    pub bounty: i64,
+    pub approved_by: Option<Uuid>,
+    /// Message from the reviewer ("Super!" or "Bitte noch den Boden").
+    pub review_note: Option<String>,
 }
 
 #[derive(sqlx::FromRow)]
@@ -139,13 +163,19 @@ struct TaskRow {
     completed_at: Option<DateTime<Utc>>,
     completed_by: Option<Uuid>,
     points_awarded: Option<i64>,
+    bounty: i64,
+    approved_by: Option<Uuid>,
+    review_note: Option<String>,
+    household_id: Uuid,
 }
 
 /// Columns of `TaskRow`, as a macro so queries stay literal (static) SQL strings.
 macro_rules! task_columns {
     () => {
         "id, template_id, title, icon, room_id, kind, status, assignee_id, cycle_start, due_at,
-         points_min, points_default, points_max, started_at, remind_at, duration_min, step_order, completed_at, completed_by, points_awarded"
+         points_min, points_default, points_max, started_at, remind_at, duration_min, step_order, completed_at, completed_by, points_awarded,
+         (SELECT COALESCE(SUM(b.amount), 0) FROM bounties b WHERE b.task_id = tasks.id AND b.status = 'held')::BIGINT AS bounty,
+         approved_by, review_note, household_id"
     };
 }
 
@@ -160,18 +190,15 @@ fn current_xp(policy: &PointPolicy, t: &TaskRow, now: DateTime<Utc>) -> i64 {
 
 fn to_dto(t: TaskRow, steps: Vec<TaskStepDto>, policy: &PointPolicy, now: DateTime<Utc>) -> TaskDto {
     let c = condition(t.cycle_start, t.due_at, now);
-    let xp = current_xp(policy, &t, now);
+    // Submitted: the proposal waiting for review; completed: what was credited.
+    let xp = t.points_awarded.unwrap_or_else(|| current_xp(policy, &t, now));
     TaskDto {
         id: t.id,
         template_id: t.template_id,
         title: t.title,
         icon: t.icon,
         room_id: t.room_id,
-        kind: match t.kind.as_str() {
-            "reward" => TaskKind::Reward,
-            "penalty" => TaskKind::Penalty,
-            _ => TaskKind::Regular,
-        },
+        kind: kind_parse(&t.kind),
         status: status_parse(&t.status),
         assignee_id: t.assignee_id,
         cycle_start: t.cycle_start,
@@ -189,6 +216,9 @@ fn to_dto(t: TaskRow, steps: Vec<TaskStepDto>, policy: &PointPolicy, now: DateTi
         completed_at: t.completed_at,
         completed_by: t.completed_by,
         points_awarded: t.points_awarded,
+        bounty: t.bounty,
+        approved_by: t.approved_by,
+        review_note: t.review_note,
     }
 }
 
@@ -243,6 +273,8 @@ pub struct CreateTemplateRequest {
     pub duration_min: Option<i32>,
     /// Only for one-off tasks: optional due date.
     pub due_at: Option<DateTime<Utc>>,
+    /// Approval for this task; default: the household rule.
+    pub approval: Option<TemplateApproval>,
 }
 
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
@@ -259,6 +291,7 @@ pub struct TemplateDto {
     pub step_order: StepOrder,
     pub duration_min: Option<i32>,
     pub steps: Vec<String>,
+    pub approval: TemplateApproval,
 }
 
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
@@ -275,12 +308,7 @@ fn default_range(policy: &PointPolicy) -> PointRange {
 
 /// XP per member in the current calendar month (household time zone), for "least loaded".
 async fn month_load(tx: &mut Transaction<'_, Postgres>, household_id: Uuid, tz: Tz, now: DateTime<Utc>) -> AppResult<Vec<(Uuid, i64)>> {
-    let local = now.with_timezone(&tz);
-    let month_start = tz
-        .with_ymd_and_hms(local.year(), local.month(), 1, 0, 0, 0)
-        .earliest()
-        .map(|t| t.with_timezone(&Utc))
-        .unwrap_or(now - Duration::days(31));
+    let month_start = month_start(tz, now);
     let rows: Vec<(Uuid, i64)> = sqlx::query_as(
         "SELECT completed_by, COALESCE(SUM(points_awarded), 0)::BIGINT FROM tasks
          WHERE household_id = $1 AND status = 'completed' AND completed_at >= $2 AND completed_by IS NOT NULL
@@ -425,8 +453,8 @@ pub async fn create_template(
     let template_id = Uuid::new_v4();
     sqlx::query(
         "INSERT INTO task_templates (id, household_id, room_id, title, icon, kind, points_min, points_default, points_max,
-                                     schedule, assignment, step_order, duration_min)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)",
+                                     schedule, assignment, step_order, duration_min, approval)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)",
     )
     .bind(template_id)
     .bind(household_id)
@@ -441,6 +469,7 @@ pub async fn create_template(
     .bind(serde_json::to_value(&req.assignment).map_err(anyhow::Error::from)?)
     .bind(req.step_order.as_str())
     .bind(req.duration_min)
+    .bind(req.approval.unwrap_or_default().as_str())
     .execute(&mut *tx)
     .await?;
     for (i, s) in steps.iter().enumerate() {
@@ -483,10 +512,11 @@ pub async fn list_templates(State(state): State<AppState>, user: AuthUser, Path(
         step_order: String,
         duration_min: Option<i32>,
         steps: Vec<String>,
+        approval: String,
     }
     let rows = sqlx::query_as::<_, Row>(
         "SELECT t.id, t.title, t.room_id, t.icon, t.kind, t.points_min, t.points_default, t.points_max, t.schedule, t.assignment,
-                t.step_order, t.duration_min,
+                t.step_order, t.duration_min, t.approval,
                 COALESCE(ARRAY(SELECT s.title FROM template_steps s WHERE s.template_id = t.id ORDER BY s.position), '{}') AS steps
          FROM task_templates t WHERE t.household_id = $1 AND NOT t.archived ORDER BY t.created_at",
     )
@@ -500,17 +530,14 @@ pub async fn list_templates(State(state): State<AppState>, user: AuthUser, Path(
                 title: r.title,
                 room_id: r.room_id,
                 icon: r.icon,
-                kind: match r.kind.as_str() {
-                    "reward" => TaskKind::Reward,
-                    "penalty" => TaskKind::Penalty,
-                    _ => TaskKind::Regular,
-                },
+                kind: kind_parse(&r.kind),
                 points: PointRange { min: r.points_min, default: r.points_default, max: r.points_max },
                 schedule: serde_json::from_value(r.schedule).unwrap_or(Schedule::Once),
                 assignment: serde_json::from_value(r.assignment).unwrap_or(Assignment::Open),
                 step_order: StepOrder::parse(&r.step_order).unwrap_or_default(),
                 duration_min: r.duration_min,
                 steps: r.steps,
+                approval: TemplateApproval::parse(&r.approval),
             })
             .collect(),
     ))
@@ -600,23 +627,52 @@ pub struct TaskActionRequest {
 #[derive(Serialize)]
 pub struct TaskActionResponse {
     pub task: TaskDto,
-    /// XP earned when this action completed the task.
+    /// XP credited when this action completed the task (directly or by approval).
     pub xp_awarded: Option<i64>,
+    /// Bonus G paid out together with the XP.
+    pub bounty_paid: Option<i64>,
+    /// The task now waits for an adult to confirm it.
+    pub submitted: bool,
     /// The next round of a recurring task, if one was created.
     pub next_task_id: Option<Uuid>,
 }
 
-/// Completes the round inside `tx`: escalated XP, next round for recurring templates.
-async fn complete(
+#[derive(Default)]
+struct Outcome {
+    xp_awarded: Option<i64>,
+    bounty_paid: Option<i64>,
+    submitted: bool,
+    next_task_id: Option<Uuid>,
+}
+
+impl Outcome {
+    fn credited(&self) -> bool {
+        self.xp_awarded.is_some()
+    }
+}
+
+async fn approval_required(tx: &mut Transaction<'_, Postgres>, task: &TaskRow, completer_role: &str, hh: &Household) -> AppResult<bool> {
+    let setting: Option<String> = match task.template_id {
+        Some(id) => sqlx::query_scalar("SELECT approval FROM task_templates WHERE id = $1").bind(id).fetch_optional(&mut **tx).await?,
+        None => None,
+    };
+    let setting = setting.map(|s| TemplateApproval::parse(&s)).unwrap_or_default();
+    Ok(setting.required(hh.policy.approval, completer_role == "child"))
+}
+
+/// The person is done: the task goes to review, or it is credited right away.
+async fn finish(
     tx: &mut Transaction<'_, Postgres>,
     task: &TaskRow,
     actor: Uuid,
+    actor_role: &str,
     hh: &Household,
     now: DateTime<Utc>,
-) -> AppResult<(i64, Option<Uuid>)> {
+) -> AppResult<Outcome> {
     let xp = current_xp(&hh.policy, task, now);
+    let submitted = approval_required(tx, task, actor_role, hh).await?;
     sqlx::query(
-        "UPDATE tasks SET status = 'completed', completed_by = $2, completed_at = $3, points_awarded = $4,
+        "UPDATE tasks SET status = $5, completed_by = $2, completed_at = $3, points_awarded = $4, review_note = NULL,
                           started_at = NULL, remind_at = NULL, assignee_id = COALESCE(assignee_id, $2), updated_at = $3, version = version + 1
          WHERE id = $1",
     )
@@ -624,31 +680,82 @@ async fn complete(
     .bind(actor)
     .bind(now)
     .bind(xp)
+    .bind(if submitted { "submitted" } else { "completed" })
     .execute(&mut **tx)
     .await?;
+    if submitted {
+        record_event(tx, task.id, actor, "submitted", serde_json::json!({ "xp": xp })).await?;
+        return Ok(Outcome { submitted: true, ..Outcome::default() });
+    }
     record_event(tx, task.id, actor, "completed", serde_json::json!({ "xp": xp })).await?;
+    let paid = credit(tx, task, actor, xp, None, actor).await?;
     let next = next_round(tx, task, now, hh).await?;
-    Ok((xp, next))
+    Ok(Outcome { xp_awarded: Some(xp), bounty_paid: (paid > 0).then_some(paid), submitted: false, next_task_id: next })
 }
 
-async fn next_round(tx: &mut Transaction<'_, Postgres>, task: &TaskRow, now: DateTime<Utc>, hh: &Household) -> AppResult<Option<Uuid>> {
+/// Books the XP (and G, except for catch-up tasks) and pays out held bounties to `member`.
+async fn credit(tx: &mut Transaction<'_, Postgres>, task: &TaskRow, member: Uuid, xp: i64, note: Option<&str>, by: Uuid) -> AppResult<i64> {
+    let ledger = Ledger { household: task.household_id, by };
+    ledger.book(tx, member, LedgerDelta::task_reward(kind_parse(&task.kind), xp), "task", task.id, note).await?;
+    let held: Vec<i64> = sqlx::query_scalar("UPDATE bounties SET status = 'paid' WHERE task_id = $1 AND status = 'held' RETURNING amount")
+        .bind(task.id)
+        .fetch_all(&mut **tx)
+        .await?;
+    let paid: i64 = held.iter().sum();
+    if paid > 0 {
+        ledger.book(tx, member, LedgerDelta::bounty_payout(paid), "task", task.id, None).await?;
+    }
+    Ok(paid)
+}
+
+/// A round that will not be done (skipped): bounties go back to who set them.
+async fn refund_bounties(tx: &mut Transaction<'_, Postgres>, task: &TaskRow, by: Uuid) -> AppResult<()> {
+    let held: Vec<(Uuid, i64)> =
+        sqlx::query_as("UPDATE bounties SET status = 'refunded' WHERE task_id = $1 AND status = 'held' RETURNING pledger_id, amount")
+            .bind(task.id)
+            .fetch_all(&mut **tx)
+            .await?;
+    let ledger = Ledger { household: task.household_id, by };
+    for (pledger, amount) in held {
+        ledger.book(tx, pledger, LedgerDelta::bounty_refund(amount), "task", task.id, None).await?;
+    }
+    Ok(())
+}
+
+async fn next_round(tx: &mut Transaction<'_, Postgres>, task: &TaskRow, done_at: DateTime<Utc>, hh: &Household) -> AppResult<Option<Uuid>> {
     let Some(template_id) = task.template_id else { return Ok(None) };
     let schedule: serde_json::Value =
         sqlx::query_scalar("SELECT schedule FROM task_templates WHERE id = $1 AND NOT archived").bind(template_id).fetch_one(&mut **tx).await?;
     let schedule: Schedule = serde_json::from_value(schedule).unwrap_or(Schedule::Once);
-    let prev_due = task.due_at.unwrap_or(now);
-    match schedule.next_cycle(now, prev_due, hh.tz) {
-        Some(c) => Ok(Some(spawn_round(tx, template_id, c.start, Some(c.due), now, hh.tz).await?)),
+    let prev_due = task.due_at.unwrap_or(done_at);
+    match schedule.next_cycle(done_at, prev_due, hh.tz) {
+        Some(c) => Ok(Some(spawn_round(tx, template_id, c.start, Some(c.due), Utc::now(), hh.tz).await?)),
         None => Ok(None),
     }
 }
 
 async fn lock_task(tx: &mut Transaction<'_, Postgres>, task_id: Uuid) -> AppResult<TaskRow> {
-    sqlx::query_as::<_, TaskRow>(concat!("SELECT ", task_columns!(), " FROM tasks WHERE id = $1 FOR UPDATE"))
-        .bind(task_id)
-        .fetch_optional(&mut **tx)
-        .await?
-        .ok_or(AppError::NotFound)
+    // Lock first (FOR UPDATE does not combine with the aggregate column), then read.
+    let found: Option<Uuid> = sqlx::query_scalar("SELECT id FROM tasks WHERE id = $1 FOR UPDATE").bind(task_id).fetch_optional(&mut **tx).await?;
+    found.ok_or(AppError::NotFound)?;
+    Ok(sqlx::query_as::<_, TaskRow>(concat!("SELECT ", task_columns!(), " FROM tasks WHERE id = $1")).bind(task_id).fetch_one(&mut **tx).await?)
+}
+
+fn notify(state: &AppState, hid: Uuid, outcome: &Outcome) {
+    state.live.notify(hid, r#"{"type":"tasks_changed"}"#);
+    if outcome.credited() {
+        state.live.notify(hid, r#"{"type":"points_changed"}"#);
+    }
+}
+
+async fn respond(state: &AppState, task_id: Uuid, hh: &Household, o: Outcome) -> AppResult<Json<TaskActionResponse>> {
+    Ok(Json(TaskActionResponse {
+        task: load_dto(state, task_id, &hh.policy).await?,
+        xp_awarded: o.xp_awarded,
+        bounty_paid: o.bounty_paid,
+        submitted: o.submitted,
+        next_task_id: o.next_task_id,
+    }))
 }
 
 pub async fn action(
@@ -665,8 +772,7 @@ pub async fn action(
     let status = status_parse(&task.status);
     let invalid = || AppError::Conflict("Das geht in diesem Zustand der Aufgabe nicht.".into());
 
-    let mut xp_awarded = None;
-    let mut next_task_id = None;
+    let mut outcome = Outcome::default();
     match req.action {
         TaskCommand::Snooze => {
             if status != TaskStatus::InProgress {
@@ -688,7 +794,8 @@ pub async fn action(
                 .bind(task_id)
                 .execute(&mut *tx)
                 .await?;
-            next_task_id = next_round(&mut tx, &task, now, &hh).await?;
+            refund_bounties(&mut tx, &task, me).await?;
+            outcome.next_task_id = next_round(&mut tx, &task, now, &hh).await?;
         }
         TaskCommand::Done => {
             status.apply(TaskAction::Done, false).map_err(|_| invalid())?;
@@ -699,9 +806,7 @@ pub async fn action(
             if !all_done(&done) {
                 return Err(AppError::Conflict("Erst alle Schritte abhaken, dann ist die Aufgabe erledigt.".into()));
             }
-            let (xp, next) = complete(&mut tx, &task, me, &hh, now).await?;
-            xp_awarded = Some(xp);
-            next_task_id = next;
+            outcome = finish(&mut tx, &task, me, &role, &hh, now).await?;
         }
         cmd => {
             let action = match cmd {
@@ -747,18 +852,21 @@ pub async fn action(
         record_event(&mut tx, task_id, me, event, serde_json::json!({})).await?;
     }
     tx.commit().await?;
-    state.live.notify(hid, r#"{"type":"tasks_changed"}"#);
-    Ok(Json(TaskActionResponse { task: load_dto(&state, task_id, &hh.policy).await?, xp_awarded, next_task_id }))
+    notify(&state, hid, &outcome);
+    if req.action == TaskCommand::Cancel {
+        state.live.notify(hid, r#"{"type":"points_changed"}"#);
+    }
+    respond(&state, task_id, &hh, outcome).await
 }
 
 /// Checks one step. Checking a step means working on it: an open task becomes started.
-/// The last step completes the task.
+/// The last step finishes the task.
 pub async fn check_step(
     State(state): State<AppState>,
     user: AuthUser,
     Path((task_id, step_id)): Path<(Uuid, Uuid)>,
 ) -> AppResult<Json<TaskActionResponse>> {
-    let (hid, me, _) = task_household(&state, &user, task_id).await?;
+    let (hid, me, role) = task_household(&state, &user, task_id).await?;
     let hh = household(&state.db, hid).await?;
     let now = Utc::now();
     let mut tx = state.db.begin().await?;
@@ -785,12 +893,9 @@ pub async fn check_step(
     record_event(&mut tx, task_id, me, "step_done", serde_json::json!({ "step": index })).await?;
     done[index] = true;
 
-    let mut xp_awarded = None;
-    let mut next_task_id = None;
+    let mut outcome = Outcome::default();
     if all_done(&done) {
-        let (xp, next) = complete(&mut tx, &task, me, &hh, now).await?;
-        xp_awarded = Some(xp);
-        next_task_id = next;
+        outcome = finish(&mut tx, &task, me, &role, &hh, now).await?;
     } else if status != TaskStatus::InProgress {
         let minutes = task.duration_min.unwrap_or(DEFAULT_CHECKIN_MIN);
         sqlx::query("UPDATE tasks SET status = 'in_progress', assignee_id = $2, started_at = $3, remind_at = $4, updated_at = $3 WHERE id = $1")
@@ -802,6 +907,131 @@ pub async fn check_step(
             .await?;
     }
     tx.commit().await?;
+    notify(&state, hid, &outcome);
+    respond(&state, task_id, &hh, outcome).await
+}
+
+// ---------------------------------------------------------------- review (M3)
+
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+#[derive(Deserialize)]
+pub struct ReviewRequest {
+    /// true = confirm and credit, false = "bitte nochmal" (back to the person).
+    pub approve: bool,
+    /// Adjusted XP within the task's min…max (if the household allows it).
+    pub points: Option<i64>,
+    /// Message to the person who did the task.
+    pub note: Option<String>,
+}
+
+/// An adult confirms (optionally with adjusted XP) or sends a submitted task back.
+/// Nobody reviews their own task (KONZEPT §3).
+pub async fn review(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(task_id): Path<Uuid>,
+    Json(req): Json<ReviewRequest>,
+) -> AppResult<Json<TaskActionResponse>> {
+    let (hid, me, role) = task_household(&state, &user, task_id).await?;
+    if role == "child" {
+        return Err(AppError::Forbidden("Bestätigen können nur Erwachsene.".into()));
+    }
+    let hh = household(&state.db, hid).await?;
+    let now = Utc::now();
+    let note = req.note.as_deref().map(str::trim).filter(|n| !n.is_empty()).map(str::to_string);
+    if note.as_ref().is_some_and(|n| n.chars().count() > 300) {
+        return Err(AppError::BadRequest("Die Nachricht darf höchstens 300 Zeichen lang sein.".into()));
+    }
+    let mut tx = state.db.begin().await?;
+    let task = lock_task(&mut tx, task_id).await?;
+    if status_parse(&task.status) != TaskStatus::Submitted {
+        return Err(AppError::Conflict("Diese Aufgabe wartet nicht auf Bestätigung.".into()));
+    }
+    let completer = task.completed_by.ok_or(AppError::NotFound)?;
+    if completer == me {
+        return Err(AppError::Forbidden("Die eigene Aufgabe bestätigt bitte jemand anderes.".into()));
+    }
+
+    let mut outcome = Outcome::default();
+    if req.approve {
+        let done_at = task.completed_at.unwrap_or(now);
+        let age = task.due_at.map(|d| (done_at - d).num_seconds()).unwrap_or(0);
+        let xp = hh.policy.completion_points(&range_of(&task), age, req.points).map_err(|e| AppError::BadRequest(e.to_string()))?;
+        sqlx::query(
+            "UPDATE tasks SET status = 'completed', points_awarded = $2, approved_by = $3, approved_at = $4, review_note = $5,
+                              updated_at = $4, version = version + 1
+             WHERE id = $1",
+        )
+        .bind(task_id)
+        .bind(xp)
+        .bind(me)
+        .bind(now)
+        .bind(&note)
+        .execute(&mut *tx)
+        .await?;
+        record_event(&mut tx, task_id, me, "approved", serde_json::json!({ "xp": xp, "note": note })).await?;
+        let paid = credit(&mut tx, &task, completer, xp, note.as_deref(), me).await?;
+        // The next round starts when the work was done, not when it was confirmed.
+        let next = next_round(&mut tx, &task, done_at, &hh).await?;
+        outcome = Outcome { xp_awarded: Some(xp), bounty_paid: (paid > 0).then_some(paid), submitted: false, next_task_id: next };
+    } else {
+        sqlx::query(
+            "UPDATE tasks SET status = 'claimed', assignee_id = $2, completed_by = NULL, completed_at = NULL, points_awarded = NULL,
+                              review_note = $3, updated_at = now(), version = version + 1
+             WHERE id = $1",
+        )
+        .bind(task_id)
+        .bind(completer)
+        .bind(&note)
+        .execute(&mut *tx)
+        .await?;
+        record_event(&mut tx, task_id, me, "rejected", serde_json::json!({ "note": note })).await?;
+    }
+    tx.commit().await?;
+    notify(&state, hid, &outcome);
+    respond(&state, task_id, &hh, outcome).await
+}
+
+// ---------------------------------------------------------------- bounty (M3)
+
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+#[derive(Deserialize)]
+pub struct BountyRequest {
+    pub amount: i64,
+}
+
+/// "Wer das Bad putzt, bekommt 20 von mir": the G is held right away (KONZEPT §4.3).
+pub async fn pledge(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(task_id): Path<Uuid>,
+    Json(req): Json<BountyRequest>,
+) -> AppResult<Json<TaskDto>> {
+    let (hid, me, _) = task_household(&state, &user, task_id).await?;
+    let hh = household(&state.db, hid).await?;
+    let mut tx = state.db.begin().await?;
+    let task = lock_task(&mut tx, task_id).await?;
+    let status = status_parse(&task.status);
+    if status.is_final() || status == TaskStatus::Submitted {
+        return Err(AppError::Conflict("Auf erledigte Aufgaben kann man keinen Bonus mehr setzen.".into()));
+    }
+    if task.assignee_id == Some(me) {
+        return Err(AppError::Forbidden("Auf die eigene Aufgabe kannst du keinen Bonus setzen.".into()));
+    }
+    lock_member(&mut tx, me).await?;
+    let have = balance(&mut tx, me).await?;
+    hh.policy.check_bounty(req.amount, have).map_err(|e| AppError::BadRequest(e.to_string()))?;
+    sqlx::query("INSERT INTO bounties (id, task_id, pledger_id, amount) VALUES ($1, $2, $3, $4)")
+        .bind(Uuid::new_v4())
+        .bind(task_id)
+        .bind(me)
+        .bind(req.amount)
+        .execute(&mut *tx)
+        .await?;
+    Ledger { household: hid, by: me }.book(&mut tx, me, LedgerDelta::bounty_hold(req.amount), "task", task_id, None).await?;
+    record_event(&mut tx, task_id, me, "bounty", serde_json::json!({ "amount": req.amount })).await?;
+    tx.commit().await?;
     state.live.notify(hid, r#"{"type":"tasks_changed"}"#);
-    Ok(Json(TaskActionResponse { task: load_dto(&state, task_id, &hh.policy).await?, xp_awarded, next_task_id }))
+    state.live.notify(hid, r#"{"type":"points_changed"}"#);
+    Ok(Json(load_dto(&state, task_id, &hh.policy).await?))
 }

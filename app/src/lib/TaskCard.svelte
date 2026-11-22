@@ -3,16 +3,18 @@
   import type { TaskDto } from "$lib/generated";
   import { session } from "$lib/session.svelte";
   import { feedback } from "$lib/settings.svelte";
-  import { conditionOf, dueText, iconOf, minutesSince, stepsDone, taskStore } from "$lib/tasks.svelte";
+  import { conditionOf, dueText, iconOf, memberName, minutesSince, stepsDone, taskStore } from "$lib/tasks.svelte";
   import Avatar from "$lib/ui/Avatar.svelte";
   import type { AnimalName } from "$lib/ui/Avatar.svelte";
   import ConditionBar from "$lib/ui/ConditionBar.svelte";
   import Icon from "$lib/ui/Icon.svelte";
+  import ReviewSheet from "$lib/ReviewSheet.svelte";
 
   let { task }: { task: TaskDto } = $props();
 
   let celebrating = $state(false);
-  let earned = $state(0);
+  let earned = $state("");
+  let reviewing = $state(false);
   let error = $state("");
 
   const now = $derived(taskStore.now);
@@ -23,6 +25,10 @@
   const hasSteps = $derived(task.steps.length > 0);
   const assignee = $derived(session.members.find((m) => m.membership_id === task.assignee_id));
   const isMine = $derived(task.assignee_id !== null && task.assignee_id === session.membership?.membership_id);
+  const submitted = $derived(task.status === "submitted");
+  const canReview = $derived(
+    submitted && session.membership?.role !== "child" && task.completed_by !== session.membership?.membership_id,
+  );
 
   // Confetti pieces fly out of the check button; everything stays inside the card.
   const COLORS = ["var(--coin-bg)", "#d63384", "var(--xp)", "var(--primary)", "#e8660f", "var(--fresh)", "#2563eb", "var(--over)"];
@@ -48,7 +54,11 @@
       celebrating = true;
       taskStore.hold(1600);
       const res = await taskStore.action(task.id, "done");
-      earned = res.xp_awarded ?? task.xp;
+      earned = res.submitted
+        ? "Prima! Wartet aufs OK"
+        : `+${res.xp_awarded ?? task.xp} XP${res.bounty_paid ? ` · +${res.bounty_paid} G` : ""}`;
+      // A submitted task stays in the list (waiting for an adult): end the celebration.
+      if (res.submitted) setTimeout(() => (celebrating = false), 1500);
       feedback("done");
     } catch (e) {
       celebrating = false;
@@ -64,7 +74,9 @@
     <h3 class:done={celebrating}>{task.title}</h3>
     <div class="meta">
       {#if room}<span>{room.name}</span><span aria-hidden="true">·</span>{/if}
-      {#if running && task.started_at}
+      {#if submitted}
+        <span class="wait">{canReview ? `${memberName(task.completed_by)} ist fertig` : "wartet aufs OK"}</span>
+      {:else if running && task.started_at}
         <span class="run"><Icon name="timer" size={14} />läuft seit {minutesSince(task.started_at, now)} Min.</span>
       {:else}
         <span class:late={condition >= 1}>{dueText(task, now)}</span>
@@ -73,15 +85,23 @@
       {#if task.kind === "penalty"}<span class="chip aufhol">Aufholaufgabe</span>{/if}
       {#if task.kind === "reward"}<span class="chip reward">Belohnung</span>{/if}
     </div>
+    {#if task.review_note && !submitted}<p class="note">„{task.review_note}“</p>{/if}
     {#if error}<p class="err" role="alert">{error}</p>{/if}
   </div>
   <div class="right">
     <span class="xp-chip">{task.xp} XP</span>
+    {#if task.bounty > 0}<span class="coin-chip">+{task.bounty}</span>{/if}
     {#if assignee && !isMine}
       <Avatar animal={assignee.animal as AnimalName} color={assignee.color} size={22} name={assignee.display_name} />
     {/if}
   </div>
-  {#if hasSteps}
+  {#if submitted}
+    {#if canReview}
+      <button class="check review" aria-label="Prüfen: {task.title}" onclick={() => (reviewing = true)}><Icon name="check" size={18} /></button>
+    {:else}
+      <span class="check waiting" aria-hidden="true"><Icon name="timer" size={18} /></span>
+    {/if}
+  {:else if hasSteps}
     <button class="check go" aria-label="{running ? 'Weiter' : 'Starten'}: {task.title}" onclick={open}>
       <Icon name={running ? "chevron" : "play"} size={16} />
     </button>
@@ -93,7 +113,7 @@
   <div class="cond"><ConditionBar value={condition} /></div>
 
   {#if celebrating}
-    <span class="fly" aria-hidden="true">+{earned || task.xp} XP</span>
+    <span class="fly" aria-hidden="true">{earned || `+${task.xp} XP`}</span>
     <span class="confetti" aria-hidden="true">
       {#each pieces as p, i (i)}
         <i
@@ -104,6 +124,10 @@
     </span>
   {/if}
 </article>
+
+{#if reviewing}
+  <ReviewSheet {task} onclose={() => (reviewing = false)} />
+{/if}
 
 <style>
   .task {
@@ -162,6 +186,34 @@
   .err {
     color: var(--over);
     font-size: 0.85rem;
+  }
+
+  .wait {
+    padding: 0 8px;
+    border-radius: 999px;
+    background: var(--coin-soft);
+    color: var(--coin);
+    font-weight: 700;
+    font-size: 0.8rem;
+  }
+
+  .note {
+    margin-top: 2px;
+    font-size: 0.85rem;
+    font-style: italic;
+    color: var(--fg);
+  }
+
+  .check.review {
+    color: #fff;
+    background: var(--primary);
+    border-color: var(--primary);
+  }
+
+  .check.waiting {
+    color: var(--coin);
+    border-style: dashed;
+    min-height: var(--tap);
   }
 
   .check.go {
@@ -271,6 +323,7 @@
     font-size: 0.8rem;
     border-radius: 999px;
     padding: 2px 9px;
+    white-space: nowrap;
     animation: fly-in 1.4s ease-out forwards;
   }
 

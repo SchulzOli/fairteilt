@@ -25,7 +25,7 @@
 
 <script lang="ts">
   import { untrack } from "svelte";
-  import type { Assignment, Schedule } from "$lib/generated";
+  import type { Assignment, Schedule, TemplateApproval } from "$lib/generated";
   import { session } from "$lib/session.svelte";
   import { feedback } from "$lib/settings.svelte";
   import { TASK_ICONS, iconOf, taskStore } from "$lib/tasks.svelte";
@@ -56,6 +56,7 @@
   let steps = $state<string[]>([...(init.preset?.steps ?? [])]);
   let sequential = $state(init.preset?.sequential ?? false);
   let duration = $state<number | null>(init.preset?.duration ?? null);
+  let approval = $state<TemplateApproval>("household");
   let newStep = $state("");
   let busy = $state(false);
   let error = $state("");
@@ -106,6 +107,7 @@
         step_order: sequential ? "sequential" : "free",
         duration_min: duration,
         due_at: null,
+        approval,
       });
       feedback("confirm");
       onclose();
@@ -222,6 +224,15 @@
             <button type="button" role="radio" aria-checked={sequential} class:sel={sequential} onclick={() => (sequential = true)}>Der Reihe nach</button>
           </div>
         {/if}
+      </div>
+
+      <div class="field"><span>Bestätigung</span>
+        <div class="seg" role="radiogroup" aria-label="Bestätigung">
+          <button type="button" role="radio" aria-checked={approval === "household"} class:sel={approval === "household"} onclick={() => (approval = "household")}>Wie im Haushalt</button>
+          <button type="button" role="radio" aria-checked={approval === "always"} class:sel={approval === "always"} onclick={() => (approval = "always")}>Immer</button>
+          <button type="button" role="radio" aria-checked={approval === "never"} class:sel={approval === "never"} onclick={() => (approval = "never")}>Nie</button>
+        </div>
+        <small class="muted">{approval === "household" ? "Aufgaben von Kindern bestätigt ein Erwachsener." : approval === "always" ? "Jemand anderes bestätigt immer." : "Zählt sofort, ohne Bestätigung."}</small>
       </div>
 
       <div class="field"><span>Dauer <small class="muted">(danach fragt Fairteilt kurz nach)</small></span>
