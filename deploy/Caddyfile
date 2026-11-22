@@ -1,0 +1,10 @@
+# Automatic HTTPS via Let's Encrypt. DNS A/AAAA record of $DOMAIN must point to the server.
+{$DOMAIN} {
+	encode zstd gzip
+	reverse_proxy api:8080
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		-Server
+	}
+}

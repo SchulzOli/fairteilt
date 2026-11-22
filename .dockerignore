@@ -1,0 +1,7 @@
+target
+**/node_modules
+app/build
+app/.svelte-kit
+app/src-tauri/gen
+.git
+.env

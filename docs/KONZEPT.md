@@ -1,0 +1,391 @@
+# Punktesystem-Haushaltsbuch – Konzept
+
+Stand: 22.11.2026 · Status: Entwurf v0.1
+
+Eine Familien-App für Haushaltsaufgaben mit einstellbarem Punktesystem, periodischem Ausgleich,
+Belohnungen und Strafaufgaben, Erinnerungen sowie Kalender- und Canvas-Planung.
+Plattformunabhängig als **Tauri-2-App**, gebaut vor allem fürs Handy. Ein Finanzteil
+(Einnahmen, Ausgaben, Budgets) folgt später, das Datenmodell lässt Platz dafür.
+
+---
+
+## 1. Entscheidungen
+
+| Thema | Entscheidung | Warum |
+| --- | --- | --- |
+| Client | Tauri 2 + SvelteKit (Svelte 5, SPA, `adapter-static`), TypeScript | eine Codebasis für Android, iOS und Desktop, kleine Bundles, flott auf dem Handy |
+| Backend | eigener Server in Rust (axum) + PostgreSQL | mehrere Nutzer brauchen eine gemeinsame Wahrheit. Ausgleich und Erinnerungen laufen zeitgesteuert auf dem Server |
+| Hosting | Hetzner Cloud (Rechenzentrum in DE), Docker Compose, Caddy (TLS) | öffentlich erreichbar ohne Tailscale auf jedem Familienhandy, DSGVO-freundlich |
+| Gemeinsame Logik | Rust-Crate `punkte-core` (rein, ohne IO) | dieselbe Punkte- und Ausgleichslogik auf dem Server und (für Offline-Vorschau) in der App, gut testbar |
+| Umfang v1 | Aufgaben, Punkte, Ausgleich, Belohnungen/Strafen, Erinnerungen, Kalender/Canvas | Finanzen kommen später (eigenes Modul, siehe §10) |
+
+---
+
+## 2. Begriffe
+
+| Begriff | Bedeutung |
+| --- | --- |
+| **Haushalt** | eine Familie bzw. WG. Ein Nutzer kann in mehreren Haushalten sein (z. B. Patchwork, getrennte Eltern) |
+| **Mitglied** | Mitgliedschaft eines Nutzers in einem Haushalt, mit Rolle, Gewicht und Farbe |
+| **Vorlage** | wiederverwendbare Aufgabe („Spülmaschine ausräumen“) mit Punkten, Wiederholung, Zuweisungsregel |
+| **Aufgabe** | ein konkretes Vorkommen mit Fälligkeit, Zuständigem und Status |
+| **Leistungspunkte (LP)** | messen die geleistete Arbeit. Grundlage für den Ausgleich, **nicht übertragbar** |
+| **Guthaben (G)** | „Währung“: übertragbar, einlösbar für Belohnungen, einsetzbar als Bonus auf Aufgaben |
+| **Bonus (Kopfgeld)** | eigenes Guthaben, das ein Mitglied auf eine Aufgabe setzt. Bekommt, wer sie erledigt |
+| **Periode** | Abrechnungszeitraum (Woche, Monat, frei) für den Ausgleich |
+
+> **Warum zwei Punktearten?** Würde nur eine Zahl zählen, ließe sich die Fairness durch
+> Verschenken von Punkten aushebeln. So zählt für den Ausgleich nur echte Arbeit (LP).
+> Guthaben darf frei fließen, ohne die Gerechtigkeitsrechnung zu verfälschen.
+
+---
+
+## 3. Rollen und Rechte
+
+| Rolle | Darf |
+| --- | --- |
+| **Admin** (meist Eltern) | Regeln und Punktegrenzen ändern, Vorlagen verwalten, Aufgaben bestätigen/ablehnen, Strafaufgaben vergeben, Ausgleich freigeben, Mitglieder einladen/entfernen |
+| **Mitglied** | Aufgaben anlegen (im Rahmen der Grenzen), übernehmen, erledigen, Guthaben übertragen und als Bonus setzen, Belohnungen einlösen, Aufgaben anderer bestätigen (wenn erlaubt) |
+| **Kind** | wie Mitglied, aber: keine eigenen Aufgaben bestätigen, Übertragungen/Einlösungen ggf. mit Freigabe, keine Regeländerungen. Optional ohne eigene E-Mail (Profil vom Admin verwaltet, Anmeldung per Einladungscode/PIN) |
+
+Grundsatz: **Niemand bestätigt die eigene Aufgabe**, wenn der Haushalt Bestätigung verlangt.
+
+---
+
+## 4. Punktesystem (einstellbar)
+
+### 4.1 Haushaltsweite Regeln (`PointPolicy`)
+
+| Einstellung | Beispiel | Wirkung |
+| --- | --- | --- |
+| `task_min` / `task_max` | 1 / 100 | harte Grenzen für jede Aufgabe |
+| `default_points` | 10 | Vorschlag für neue Aufgaben |
+| `escalation` | an, +2 je 24 h, bis Aufgaben-Max | liegengebliebene Aufgaben werden wertvoller |
+| `bounty.enabled` | an | Bonus auf Aufgaben erlaubt |
+| `bounty.max_per_pledge` | 50 G | Obergrenze je Einsatz |
+| `transfer.enabled` | an | Guthaben an Personen übertragen |
+| `transfer.max_per_period` | 100 G | Limit je Mitglied und Periode |
+| `transfer.child_needs_approval` | an | Kinder brauchen Freigabe |
+| `approval_required` | an | Erledigt → erst nach Bestätigung gutgeschrieben |
+| `quality_adjust` | an | Bestätiger darf Punkte innerhalb von min…max anpassen |
+
+### 4.2 Punkte je Aufgabe
+
+Jede Vorlage/Aufgabe hat `points_min ≤ points_default ≤ points_max`, alle innerhalb der Haushaltsgrenzen.
+
+Wert bei Erledigung:
+
+```
+basis   = clamp(points_default + eskalation(alter), points_min, points_max)
+basis'  = Bestätiger-Anpassung (optional, innerhalb points_min…points_max)
+LP      += basis'
+G       += basis' + Summe aller Boni auf dieser Aufgabe
+```
+
+`eskalation(alter) = floor(alter / step_interval) × step_points`. Alter läuft ab Fälligkeit
+(oder ab Anlage bei offenen Aufgaben ohne Termin).
+
+### 4.3 Bonus auf Aufgaben (eigene Punkte übertragen)
+
+- Ein Mitglied setzt eigenes Guthaben auf eine Aufgabe („Wer das Bad putzt, bekommt 20 von mir“).
+- Das Guthaben wird **sofort reserviert** (Treuhand-Buchung), damit niemand mehr verspricht, als er hat.
+- Wird die Aufgabe bestätigt → Auszahlung an den Erlediger. Wird sie abgebrochen oder läuft ab → Rückbuchung.
+- Den Bonus auf die eigene, einem selbst zugewiesene Aufgabe zu setzen, ist nicht erlaubt.
+
+### 4.4 Übertragung an Personen
+
+- Direkte Übertragung von Guthaben (Geschenk, Tausch „Ich übernehme deinen Müll-Dienst für 15“).
+- Grenzen aus `PointPolicy`, Kinder optional mit Freigabe, immer mit Notiz.
+- Leistungspunkte bleiben unberührt.
+
+### 4.5 Punktebuch (Ledger)
+
+Alle Punktebewegungen sind **unveränderliche Buchungen**. Stände sind Summen darüber.
+
+| Feld | Inhalt |
+| --- | --- |
+| `id` | UUID (vom Client erzeugt → idempotent bei Offline-Sync) |
+| `household_id`, `member_id` | wessen Konto |
+| `kind` | `task_reward`, `bounty_hold`, `bounty_payout`, `bounty_refund`, `transfer_out`, `transfer_in`, `reward_redeem`, `penalty_deduction`, `settlement_bonus`, `settlement_zero_sum`, `manual_adjust` |
+| `contribution_delta` | Änderung der Leistungspunkte (meist 0 außer bei `task_reward`) |
+| `balance_delta` | Änderung des Guthabens |
+| `ref_type`, `ref_id` | Bezug (Aufgabe, Übertragung, Abrechnung …) |
+| `period_id` | in welcher Periode gebucht |
+| `created_by`, `created_at`, `note` | Nachvollziehbarkeit |
+
+Korrekturen erfolgen durch Gegenbuchung, nie durch Ändern. Das Guthaben darf nicht negativ werden
+(Ausnahme: `penalty_deduction`, wenn der Haushalt das erlaubt).
+
+---
+
+## 5. Periodischer Ausgleich (Gleichstellung)
+
+### 5.1 Einstellungen (`PeriodPolicy`)
+
+| Einstellung | Optionen |
+| --- | --- |
+| `length` | `weekly(start_weekday)`, `monthly(start_day)`, `custom(days)` |
+| `mode` | `fair_share` (relativ zum Gewicht) · `fixed_quota` (feste Mindestpunkte je Mitglied) · `both` |
+| `tolerance` | z. B. 10 % Abweichung ohne Folgen |
+| `deficit_action` | `penalty_tasks` · `balance_deduction(percent)` · `zero_sum` (zahlt an die Überschüssigen) · `carry_over(percent)` (Fehlbetrag erhöht das Ziel der nächsten Periode) · `none` |
+| `surplus_action` | `bonus(percent)` · `none`. Bei `zero_sum` bekommen Überschüssige ihren Anteil zusätzlich |
+| `auto_approve_after_hours` | Vorschau für Admins, automatische Freigabe nach X Stunden |
+| `warn_before_end_hours` | Warnung an Mitglieder unter dem Ziel vor Periodenende |
+
+### 5.2 Rechnung
+
+Für jedes Mitglied *m* in Periode *P*:
+
+```
+verfügbarkeit a_m  = Anteil der Tage ohne Abwesenheit (Urlaub, krank)  ∈ [0, 1]
+gewicht      w_m   = Kapazität (Erwachsener 1.0, Teenager 0.6, Kind 0.3 …)
+leistung     c_m   = Summe LP in P
+gesamt       T     = Σ c_m
+ziel         t_m   = T · (w_m·a_m) / Σ(w·a)          (fair_share)
+             t_m   = quota_m · a_m                   (fixed_quota)
+             t_m   = max(beide)                      (both)
+             t_m  += übernommener Fehlbetrag         (carry_over aus der Vorperiode)
+abweichung   d_m   = c_m − t_m
+relativ      r_m   = d_m / t_m
+```
+
+| Ergebnis | Bedingung | Folge (je nach Einstellung) |
+| --- | --- | --- |
+| im Rahmen | `|r_m| ≤ tolerance` | nichts |
+| Fehlbetrag | `r_m < −tolerance` | Strafaufgaben im Wert von ≈ `|d_m|` zuweisen **oder** Guthaben-Abzug **oder** Nullsummen-Ausgleich an die Überschüssigen |
+| Überschuss | `r_m > +tolerance` | Guthaben-Bonus `d_m × percent` und/oder Anteil am Nullsummen-Ausgleich |
+
+Ist das Ziel 0 (Gewicht 0 oder niemand hat etwas getan), gilt: wer trotzdem etwas geleistet hat,
+liegt im Überschuss, sonst im Rahmen. Mit `fair_share` allein hat also niemand einen Fehlbetrag,
+wenn alle nichts tun. Dafür gibt es `fixed_quota`/`both`.
+
+**Nullsummen-Modus:** Wer unter dem Ziel liegt, zahlt Guthaben an die, die darüber liegen.
+Der Topf ist `min(Σ Fehlbeträge, Σ Überschüsse)`, verteilt anteilig auf beiden Seiten
+(ganzzahlig nach dem Verfahren des größten Rests). Die Summe aller Guthaben bleibt gleich.
+Ist das Guthaben eines Zahlers zu klein, kappt der Server den Betrag, sofern der Haushalt keine
+negativen Stände erlaubt.
+
+**Strafaufgaben-Auswahl:** Aus den Vorlagen mit `kind = penalty` werden Aufgaben gewählt, bis
+ihre Punkte den Fehlbetrag decken (gierig: die größte zuerst, die noch passt, dann auffüllen).
+Strafaufgaben bringen **Leistungspunkte, aber kein Guthaben** und haben eine Frist.
+
+### 5.3 Ablauf
+
+1. Periodenende → Server berechnet die Abrechnung als **Vorschau** (`settlement.status = draft`).
+2. Benachrichtigung an Admins, Übersicht für alle („Wer lag wo?“).
+3. Freigabe (manuell oder automatisch nach X h) → Buchungen + Strafaufgaben werden erzeugt.
+4. Zwei Tage vor Periodenende: Warnung an Mitglieder unter dem Ziel.
+
+Die Rechnung steckt in `punkte-core::settlement` und ist mit Tests abgedeckt.
+
+---
+
+## 6. Belohnungen und Strafaufgaben
+
+| Typ | Beschreibung |
+| --- | --- |
+| **Belohnungskatalog** | Dinge, die man mit Guthaben „kauft“: „Film aussuchen“ (30 G), „30 min länger wach“ (50 G). Optional Freigabe, Bestand, Abkühlzeit |
+| **Belohnungsaufgabe** (`kind = reward`) | beliebte Aufgaben mit Extra-Punkten, freigeschaltet als Belohnung („Kuchen backen“) |
+| **Strafaufgabe** (`kind = penalty`) | wird beim Ausgleich oder von Admins zugewiesen. LP ja, Guthaben nein, mit Frist. Wird die Frist versäumt, folgt eine Nachfrist und ein Hinweis an die Admins |
+
+---
+
+## 7. Aufgaben
+
+### 7.1 Vorlage (`TaskTemplate`)
+
+- Titel, Beschreibung, Kategorie/Raum, Symbol, geschätzte Dauer
+- Punkte `min/default/max`, `kind` (`regular` · `reward` · `penalty`)
+- Wiederholung als **RRULE** (RFC 5545), z. B. `FREQ=WEEKLY;BYDAY=MO,TH`
+- Zuweisung: `fixed(member)` · `rotation(members)` · `least_loaded(members)` (wer in der Periode
+  am wenigsten LP hat) · `open` (wer zuerst übernimmt)
+- Bestätigung: Haushaltsregel übernehmen · immer · nie · mit Foto
+- Erinnerungen: Versätze wie `-1d`, `-1h`, `0`, Nachhaken bei Überfälligkeit
+
+### 7.2 Status einer Aufgabe
+
+```
+open ──claim──▶ claimed ──done──▶ submitted ──approve──▶ completed
+  │                │                  └──reject──▶ claimed
+  └── skip / cancel / expire ──▶ cancelled
+```
+
+Ohne Bestätigungspflicht geht `done` direkt auf `completed`. Jeder Statuswechsel wird als
+`task_event` protokolliert (Verlauf, Benachrichtigungen, Sync).
+
+### 7.3 Ansichten
+
+| Ansicht | Inhalt |
+| --- | --- |
+| **Heute** (Start) | meine fälligen und überfälligen Aufgaben, offene Aufgaben mit Bonus, Punktestand, Fortschritt zum Periodenziel |
+| **Kalender** | Tag / Woche / Monat / Agenda. Ziehen auf einen Zeitslot plant die Aufgabe ein. Wiederholungen werden aufgefaltet. Farbe = Mitglied |
+| **Canvas / Board** | freie Fläche mit Karten und Zonen (je Person, Raum, Tag). Karte in eine Personen-Zone ziehen = zuweisen, in eine Tages-Zone = einplanen. Zoomen und Schieben mit zwei Fingern |
+| **Eigene Ansichten** | gespeicherte Filter (Person, Kategorie, Status, Art, Zeitraum, mit/ohne Bonus) + Darstellung (Liste, Kanban, Kalender, Canvas) + Gruppierung/Sortierung. Privat oder für den Haushalt freigegeben |
+| **Punkte** | Kontostand, Verlauf (Ledger), Periodenvergleich, Übertragen, Belohnungen einlösen |
+
+### 7.4 Mobile-UX
+
+- Untere Navigationsleiste: **Heute · Kalender · Board · Punkte · Mehr**
+- Schnell-Anlegen über einen schwebenden Button, Wischen zum Erledigen/Übernehmen, Haptik beim Abschluss
+- Große Touch-Ziele (≥ 44 px), Safe Areas, Hell/Dunkel nach System
+- Canvas auf dem Handy: Listen-Fallback für kleine Bildschirme, Canvas im Querformat/Tablet voll
+
+---
+
+## 8. Erinnerungen und Benachrichtigungen
+
+### 8.1 Ereignisse
+
+| Ereignis | Empfänger |
+| --- | --- |
+| Erinnerung vor Fälligkeit (nach Versätzen) | Zuständiger |
+| Überfällig, Nachhaken (eskalierend) | Zuständiger, nach X h auch Admins |
+| Aufgabe zugewiesen / Bonus auf meine Aufgabe | Betroffener |
+| Zur Bestätigung eingereicht | Bestätiger |
+| Bestätigt / abgelehnt | Erlediger |
+| Guthaben erhalten | Empfänger |
+| Periodenende naht, du liegst hinter dem Ziel | Betroffener |
+| Abrechnung bereit / freigegeben, Strafaufgabe erhalten | Admins / alle |
+| Tagesübersicht zur Wunschzeit | jeder, der sie aktiviert hat |
+
+### 8.2 Zustellung (stufenweise)
+
+| Stufe | Weg | Bemerkung |
+| --- | --- | --- |
+| 1 | **Lokale Benachrichtigungen** (`tauri-plugin-notification`), von der App aus synchronisierten Daten geplant | geht ohne Push-Dienst und offline. Deckt Erinnerungen zu eigenen Aufgaben ab |
+| 1 | **In-App-Postfach** + Live-Updates per WebSocket | alles, solange die App offen ist |
+| 2 | **Server-Push**: Android über FCM, iOS über APNs | für Ereignisse anderer (zugewiesen, Bonus, Abrechnung). Braucht ein Firebase-Projekt und einen Apple-Developer-Account. Tauri 2 bringt kein offizielles Push-Plugin mit: vor Stufe 2 prüfen, ob ein Community-Plugin taugt oder ein kleines eigenes Mobile-Plugin (Kotlin/Swift) nötig ist |
+| 2 (opt.) | **UnifiedPush/ntfy** auf dem Hetzner-Server | Android ohne Google-Dienste |
+| 3 (opt.) | E-Mail / Matrix | Tagesübersicht, Abrechnungsbericht |
+
+Je Mitglied: Ruhezeiten, Kanäle je Ereignisart, Tagesübersicht an/aus mit Uhrzeit.
+
+### 8.3 Server-Scheduler
+
+Eine Job-Tabelle in Postgres (`jobs`, abgeholt mit `FOR UPDATE SKIP LOCKED`), abgearbeitet von
+einer Tokio-Schleife im API-Prozess: Wiederholungen auffalten, Erinnerungen auslösen, Eskalation,
+Periodenabschluss. Kein zusätzlicher Dienst nötig, mehrere Instanzen wären später möglich.
+
+---
+
+## 9. Architektur
+
+```
+┌───────────────── Handy / Desktop ─────────────────┐        ┌────────── Hetzner ──────────┐
+│  SvelteKit-UI (Webview)                           │        │  Caddy (TLS, Let's Encrypt) │
+│     │  invoke()                                   │ HTTPS  │        │                    │
+│  Tauri-Rust-Kern                                  │◀──────▶│  punkte-server (axum)       │
+│   ├─ API-Client + Outbox (Offline-Warteschlange)  │  WS    │   ├─ REST /api/v1           │
+│   ├─ lokaler Cache (SQLite)                       │        │   ├─ WebSocket (Live)       │
+│   ├─ Token im OS-Schlüsselbund                    │        │   ├─ Scheduler (Jobs)       │
+│   ├─ lokale Benachrichtigungen                    │        │   └─ punkte-core            │
+│   └─ punkte-core (Vorschau, Validierung)          │        │  PostgreSQL                 │
+└───────────────────────────────────────────────────┘        └─────────────────────────────┘
+```
+
+### 9.1 Repo-Aufbau
+
+```
+/
+├─ Cargo.toml              Rust-Workspace
+├─ crates/core/            punkte-core: Domänentypen, Punkte- und Ausgleichsregeln (ohne IO)
+├─ server/                 punkte-server: axum, sqlx, Migrationen, Scheduler
+│  └─ migrations/
+├─ app/                    SvelteKit-Frontend
+│  └─ src-tauri/           Tauri-Kern (Rust)
+├─ deploy/                 docker-compose, Caddyfile, Dockerfile, Backup-Skript
+└─ docs/
+```
+
+### 9.2 Sync (offline-fähig)
+
+- **Lesen:** Jede haushaltsbezogene Änderung erhöht eine fortlaufende Nummer `change_seq`
+  je Haushalt. Der Client fragt `GET /api/v1/sync?since=<seq>` und bekommt alle Änderungen seitdem.
+  Live-Hinweise per WebSocket stoßen das an.
+- **Schreiben:** Änderungen gehen als **Befehle** mit vom Client erzeugter UUID (Idempotenz) in die
+  Outbox und werden gesendet, sobald Netz da ist. Der Server prüft Regeln (Guthaben, Rechte, Grenzen)
+  und lehnt ggf. ab. Der Client zeigt das an und rollt zurück.
+- **Konflikte:** Stammdaten (Vorlagen, Aufgaben-Felder) nach „letzter gewinnt“ je Feld mit `version`.
+  Das Ledger ist nur anhängend, dort gibt es keine Konflikte.
+- **MVP:** online zuerst mit optimistischer UI und Lese-Cache. Die volle Outbox folgt in M7.
+
+### 9.3 Sicherheit
+
+- Passwörter mit Argon2id. Zugriffstoken (JWT, 15 min) + rotierendes Refresh-Token (gehasht in der DB, je Gerät widerrufbar)
+- Jede Abfrage ist auf den Haushalt beschränkt, Rollenprüfung im Service-Layer
+- Rate-Limiting für Anmeldung und Einladungen
+- Einladungen per Link/QR-Code mit Ablauf und Rolle
+- Server: nur 80/443 offen (Hetzner-Firewall), SSH nur mit Schlüssel (oder nur über Tailscale)
+- Backups: nächtlicher `pg_dump`, mit restic auf eine Hetzner Storage Box oder ans NAS daheim
+
+### 9.4 Datenmodell (Kern, PostgreSQL)
+
+| Tabelle | Wichtige Felder |
+| --- | --- |
+| `users` | id, email (optional bei Kindern), password_hash, display_name, locale |
+| `households` | id, name, timezone, point_policy (jsonb), period_policy (jsonb), change_seq |
+| `memberships` | id, household_id, user_id, role, weight, color, active |
+| `invites` | id, household_id, code_hash, role, expires_at, used_by |
+| `sessions` | id, user_id, device_name, refresh_hash, expires_at, revoked_at |
+| `devices` | id, user_id, platform, push_token, push_provider |
+| `categories` | id, household_id, name, icon, color |
+| `task_templates` | id, household_id, title, kind, points_min/default/max, rrule, assignment (jsonb), approval, reminders (jsonb) |
+| `tasks` | id, household_id, template_id, title, kind, status, assignee_id, due_at, scheduled_start/end, points_* (Kopie), completed_by, completed_at, version |
+| `task_events` | id, task_id, actor_id, type, payload, created_at |
+| `bounties` | id, task_id, pledger_id, amount, status (held/paid/refunded) |
+| `ledger_entries` | siehe §4.5 |
+| `periods` | id, household_id, starts_at, ends_at, status |
+| `settlements` / `settlement_lines` | Abrechnung je Periode und Mitglied (Ziel, Leistung, Abweichung, Folge) |
+| `absences` | member_id, from, to, reason |
+| `rewards` / `reward_redemptions` | Katalog und Einlösungen |
+| `boards` / `board_items` | Canvas: Zonen, Karten (task_id), Position, Größe |
+| `saved_views` | owner_id, shared, filter (jsonb), layout, sort |
+| `notification_prefs` | member_id, quiet_hours, channels (jsonb), digest_time |
+| `jobs` | id, kind, run_at, payload, attempts, locked_until |
+
+---
+
+## 10. Später: Finanzen (Haushaltsbuch)
+
+Eigenes Modul im selben Haushalt: Konten, Buchungen (Einnahme/Ausgabe), Kategorien, Budgets je
+Monat, wiederkehrende Posten, Belege (Foto), Aufteilung zwischen Mitgliedern. Optional eine Brücke:
+Taschengeld als Umrechnung von Guthaben in Euro. Kein Bezug zum Punkte-Ledger, nur dieselben
+Haushalte, Mitglieder und dieselbe Sync-Schicht.
+
+---
+
+## 11. Plattformen und Build
+
+| Ziel | Voraussetzung | Stand auf diesem PC |
+| --- | --- | --- |
+| Windows-Desktop | Rust, WebView2 | ✅ vorhanden |
+| Android | Android Studio (SDK, NDK), JDK 17+, `ANDROID_HOME`/`NDK_HOME`, Rust-Targets `aarch64-linux-android` u. a. | ❌ fehlt noch, siehe README |
+| iOS | macOS mit Xcode, Apple-Developer-Account | ❌ auf Windows nicht möglich. Später per GitHub-Actions-Runner mit macOS |
+| Server-Image | Docker, Build für arm64/amd64 (Hetzner ARM-Instanzen sind günstig) | Docker vorhanden |
+
+---
+
+## 12. Fahrplan
+
+| Meilenstein | Inhalt |
+| --- | --- |
+| **M0** Gerüst | Workspace, `punkte-core` mit Punkte-/Ausgleichsregeln + Tests, axum-Server mit Health und Migration, Tauri+SvelteKit mit mobiler Navigation, Deploy-Dateien |
+| **M1** Konten | Registrierung/Anmeldung, Haushalt anlegen, Einladungen (QR), Rollen, Kinderprofile |
+| **M2** Aufgaben | Vorlagen, RRULE-Wiederholung, Zuweisungsregeln, Status, Heute-Ansicht |
+| **M3** Punkte | Ledger, Bestätigung, Eskalation, Boni, Übertragungen, Punkte-Ansicht |
+| **M4** Ausgleich | Perioden, Abrechnung mit Vorschau, Strafaufgaben, Belohnungskatalog |
+| **M5** Erinnerungen | lokale Benachrichtigungen, In-App-Postfach, WebSocket, danach Push (FCM/APNs) |
+| **M6** Planung | Kalender, Canvas/Board, eigene Ansichten |
+| **M7** Offline + Release | Outbox-Sync, Android-Release (Play Store/APK), iOS über CI |
+| **M8** Finanzen | Haushaltsbuch-Modul |
+
+---
+
+## 13. Offene Fragen
+
+1. **Domain:** Unter welcher Adresse läuft der Server (z. B. eine Subdomain von `oliexe.de`)?
+2. **Kinder:** Haben Kinder eigene Geräte, oder melden Eltern für sie auf dem Familien-Tablet an?
+3. **Bestätigung:** Standardmäßig Pflicht für alle oder nur für Kinder?
+4. **Push über Google/Apple:** In Ordnung, oder lieber nur lokale Erinnerungen + ntfy?
+5. **Ausgleich-Standard:** Welche Voreinstellung für neue Haushalte: wöchentlich, `fair_share`,
+   10 % Toleranz, Strafaufgaben bei Fehlbetrag, Bonus 0,5 × Überschuss?

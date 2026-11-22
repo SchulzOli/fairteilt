@@ -1,0 +1,19 @@
+# Local development: only Postgres, reachable on localhost:5432.
+#   docker compose -f deploy/docker-compose.dev.yml up -d
+# then in server/: cargo run   (reads DATABASE_URL from server/.env)
+name: punkte-dev
+
+services:
+  db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: punkte
+      POSTGRES_USER: punkte
+      POSTGRES_PASSWORD: punkte-dev
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pgdata-dev:/var/lib/postgresql
+
+volumes:
+  pgdata-dev:
