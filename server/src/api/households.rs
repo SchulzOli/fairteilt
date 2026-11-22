@@ -10,18 +10,19 @@ use uuid::Uuid;
 
 use crate::auth::{AuthUser, hash_token, new_invite_code, normalize_invite_code};
 use crate::error::{AppError, AppResult};
+use crate::ratelimit::ClientKey;
 use crate::AppState;
 
-const ANIMALS: &[&str] = &["fox", "owl", "otter", "hedgehog", "bear", "cat", "dog", "whale", "lion"];
+pub(crate) const ANIMALS: &[&str] = &["fox", "owl", "otter", "hedgehog", "bear", "cat", "dog", "whale", "lion"];
 const ROLES: &[&str] = &["admin", "member", "child"];
 const INVITE_TTL_DAYS: i64 = 7;
 
-fn check_animal(animal: &Option<String>) -> AppResult<String> {
+pub(crate) fn check_animal(animal: &Option<String>) -> AppResult<String> {
     let a = animal.clone().unwrap_or_else(|| "fox".into());
     if ANIMALS.contains(&a.as_str()) { Ok(a) } else { Err(AppError::BadRequest("Dieses Tier gibt es nicht.".into())) }
 }
 
-fn check_color(color: &Option<String>) -> AppResult<String> {
+pub(crate) fn check_color(color: &Option<String>) -> AppResult<String> {
     let c = color.clone().unwrap_or_else(|| "#2563eb".into());
     let ok = c.len() == 7 && c.starts_with('#') && c[1..].chars().all(|ch| ch.is_ascii_hexdigit());
     if ok { Ok(c.to_lowercase()) } else { Err(AppError::BadRequest("Farbe bitte als #rrggbb angeben.".into())) }
@@ -78,7 +79,7 @@ pub async fn create(
 }
 
 /// The caller's active membership in a household: (membership id, role).
-async fn membership(state: &AppState, user_id: Uuid, household_id: Uuid) -> AppResult<(Uuid, String)> {
+pub(crate) async fn membership(state: &AppState, user_id: Uuid, household_id: Uuid) -> AppResult<(Uuid, String)> {
     sqlx::query_as("SELECT id, role FROM memberships WHERE household_id = $1 AND user_id = $2 AND active")
         .bind(household_id)
         .bind(user_id)
@@ -145,8 +146,10 @@ pub struct AcceptInviteResponse {
 pub async fn accept_invite(
     State(state): State<AppState>,
     user: AuthUser,
+    client: ClientKey,
     Json(req): Json<AcceptInviteRequest>,
 ) -> AppResult<(StatusCode, Json<AcceptInviteResponse>)> {
+    state.limiter.check(&format!("invite:{}", client.0), 20, std::time::Duration::from_secs(3600))?;
     let invalid = || AppError::BadRequest("Dieser Einladungscode ist ungültig oder abgelaufen.".into());
     let color = check_color(&req.color)?;
     let animal = check_animal(&req.animal)?;

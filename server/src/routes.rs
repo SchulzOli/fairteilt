@@ -2,7 +2,7 @@
 
 use axum::extract::State;
 use axum::http::{HeaderValue, Method, header};
-use axum::routing::{get, post};
+use axum::routing::{get, patch, post, put};
 use axum::{Json, Router};
 use punkte_core::{MemberPeriodInput, PeriodPolicy, PointPolicy, Settlement};
 use serde::{Deserialize, Serialize};
@@ -29,7 +29,13 @@ pub fn router(state: AppState, cors_origins: &[String]) -> Router {
         .route("/me", get(api::auth::me))
         .route("/households", post(api::households::create))
         .route("/households/{id}/invites", post(api::households::create_invite))
-        .route("/invites/accept", post(api::households::accept_invite));
+        .route("/invites/accept", post(api::households::accept_invite))
+        .route("/invites/join", post(api::members::join_without_account))
+        .route("/auth/pin", post(api::members::pin_login))
+        .route("/households/{id}/members", get(api::members::list))
+        .route("/households/{id}/members/{mid}", patch(api::members::update))
+        .route("/households/{id}/members/{mid}/pin", put(api::members::set_pin))
+        .route("/households/{id}/children", post(api::members::create_child));
 
     Router::new()
         .route("/health", get(health))

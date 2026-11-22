@@ -9,6 +9,8 @@ pub struct Config {
     pub cors_origins: Vec<String>,
     /// Secret for signing access tokens (at least 32 characters).
     pub jwt_secret: String,
+    /// Behind a reverse proxy (Caddy): trust `X-Forwarded-For` for rate limiting.
+    pub trust_proxy: bool,
 }
 
 impl Config {
@@ -29,6 +31,7 @@ impl Config {
         if jwt_secret.len() < 32 {
             bail!("JWT_SECRET must be at least 32 characters (e.g. `openssl rand -base64 48`)");
         }
-        Ok(Self { database_url, bind_addr, cors_origins, jwt_secret })
+        let trust_proxy = matches!(std::env::var("TRUST_PROXY").as_deref(), Ok("1") | Ok("true"));
+        Ok(Self { database_url, bind_addr, cors_origins, jwt_secret, trust_proxy })
     }
 }

@@ -17,6 +17,8 @@ pub enum AppError {
     NotFound,
     #[error("{0}")]
     Conflict(String),
+    #[error("too many requests")]
+    TooManyRequests,
     #[error(transparent)]
     Database(#[from] sqlx::Error),
     #[error(transparent)]
@@ -31,6 +33,11 @@ impl IntoResponse for AppError {
             AppError::Forbidden(msg) => (StatusCode::FORBIDDEN, "forbidden", msg.clone()),
             AppError::NotFound => (StatusCode::NOT_FOUND, "not_found", "Nicht gefunden".into()),
             AppError::Conflict(msg) => (StatusCode::CONFLICT, "conflict", msg.clone()),
+            AppError::TooManyRequests => (
+                StatusCode::TOO_MANY_REQUESTS,
+                "too_many_requests",
+                "Zu viele Versuche. Bitte warte kurz und versuch es dann noch einmal.".into(),
+            ),
             AppError::Database(_) | AppError::Other(_) => {
                 tracing::error!(error = %self, "internal error");
                 (StatusCode::INTERNAL_SERVER_ERROR, "internal", "Interner Fehler".into())

@@ -23,7 +23,8 @@ async fn main() -> anyhow::Result<()> {
     MIGRATOR.run(&db).await.context("running migrations")?;
     tracing::info!("migrations up to date");
 
-    let state = AppState::new(db, config.jwt_secret.as_bytes());
+    let mut state = AppState::new(db, config.jwt_secret.as_bytes());
+    state.trust_proxy = config.trust_proxy;
     let scheduler = tokio::spawn(scheduler::run(state.db.clone()));
 
     let listener = TcpListener::bind(&config.bind_addr)
@@ -31,7 +32,8 @@ async fn main() -> anyhow::Result<()> {
         .with_context(|| format!("binding {}", config.bind_addr))?;
     tracing::info!("listening on http://{}", config.bind_addr);
 
-    axum::serve(listener, routes::router(state, &config.cors_origins))
+    let app = routes::router(state, &config.cors_origins);
+    axum::serve(listener, app.into_make_service_with_connect_info::<std::net::SocketAddr>())
         .with_graceful_shutdown(shutdown_signal())
         .await?;
 

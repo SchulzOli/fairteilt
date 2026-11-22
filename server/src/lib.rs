@@ -5,6 +5,7 @@ pub mod api;
 pub mod auth;
 pub mod config;
 pub mod error;
+pub mod ratelimit;
 pub mod routes;
 pub mod scheduler;
 
@@ -15,11 +16,19 @@ use std::sync::Arc;
 pub struct AppState {
     pub db: sqlx::PgPool,
     pub auth: Arc<auth::AuthKeys>,
+    pub limiter: Arc<ratelimit::RateLimiter>,
+    /// Take the client address from `X-Forwarded-For` (only behind a trusted proxy).
+    pub trust_proxy: bool,
 }
 
 impl AppState {
     pub fn new(db: sqlx::PgPool, jwt_secret: &[u8]) -> Self {
-        Self { db, auth: Arc::new(auth::AuthKeys::new(jwt_secret)) }
+        Self {
+            db,
+            auth: Arc::new(auth::AuthKeys::new(jwt_secret)),
+            limiter: Arc::new(ratelimit::RateLimiter::default()),
+            trust_proxy: false,
+        }
     }
 }
 

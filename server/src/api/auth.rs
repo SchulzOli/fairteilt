@@ -1,5 +1,7 @@
 //! Accounts and sessions: register, login, refresh (rotating), logout, me.
 
+use std::time::Duration;
+
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::Json;
@@ -12,6 +14,7 @@ use crate::auth::{
     new_refresh_token, verify_password,
 };
 use crate::error::{AppError, AppResult};
+use crate::ratelimit::ClientKey;
 use crate::AppState;
 
 const MIN_PASSWORD_LEN: usize = 10;
@@ -62,14 +65,14 @@ fn normalize_email(email: &str) -> AppResult<String> {
     Ok(e)
 }
 
-fn device(name: Option<String>) -> String {
+pub(crate) fn device(name: Option<String>) -> String {
     let n = name.unwrap_or_default();
     let n = n.trim();
     if n.is_empty() { "Unbekanntes Gerät".into() } else { n.chars().take(60).collect() }
 }
 
 /// Creates a session for the user and returns fresh tokens.
-async fn start_session(state: &AppState, user: UserDto, device_name: String) -> AppResult<TokenResponse> {
+pub(crate) async fn start_session(state: &AppState, user: UserDto, device_name: String) -> AppResult<TokenResponse> {
     let session_id = Uuid::new_v4();
     let (refresh_token, refresh_hash) = new_refresh_token();
     let expires_at = Utc::now() + REFRESH_TTL;
@@ -85,7 +88,12 @@ async fn start_session(state: &AppState, user: UserDto, device_name: String) -> 
     Ok(TokenResponse { user, access_token, refresh_token, expires_in: ACCESS_TTL.as_secs() })
 }
 
-pub async fn register(State(state): State<AppState>, Json(req): Json<RegisterRequest>) -> AppResult<(StatusCode, Json<TokenResponse>)> {
+pub async fn register(
+    State(state): State<AppState>,
+    client: ClientKey,
+    Json(req): Json<RegisterRequest>,
+) -> AppResult<(StatusCode, Json<TokenResponse>)> {
+    state.limiter.check(&format!("register:{}", client.0), 10, Duration::from_secs(3600))?;
     let email = normalize_email(&req.email)?;
     let name = req.display_name.trim();
     if name.is_empty() || name.chars().count() > 40 {
@@ -113,9 +121,16 @@ pub async fn register(State(state): State<AppState>, Json(req): Json<RegisterReq
     Ok((StatusCode::CREATED, Json(tokens)))
 }
 
-pub async fn login(State(state): State<AppState>, Json(req): Json<LoginRequest>) -> AppResult<Json<TokenResponse>> {
+pub async fn login(
+    State(state): State<AppState>,
+    client: ClientKey,
+    Json(req): Json<LoginRequest>,
+) -> AppResult<Json<TokenResponse>> {
     let wrong = || AppError::BadRequest("E-Mail-Adresse oder Passwort stimmt nicht.".into());
     let email = req.email.trim().to_lowercase();
+    // Per address (slows guessing one account) and per client (slows spraying many).
+    state.limiter.check(&format!("login:{}:{}", client.0, email), 10, Duration::from_secs(900))?;
+    state.limiter.check(&format!("login:{}", client.0), 40, Duration::from_secs(900))?;
     let row: Option<(Uuid, Option<String>, String)> =
         sqlx::query_as("SELECT id, password_hash, display_name FROM users WHERE email = $1")
             .bind(&email)
