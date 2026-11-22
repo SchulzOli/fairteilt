@@ -195,8 +195,8 @@ Die Rechnung steckt in `punkte-core::settlement` und ist mit Tests abgedeckt.
 | **Belohnungskatalog** | Dinge, die man mit Guthaben „kauft“: „Film aussuchen“ (30 G), „30 min länger wach“ (50 G). Optional Freigabe, Bestand, Abkühlzeit |
 | **Belohnungsaufgabe** (`kind = reward`) | beliebte Aufgaben mit Extra-Punkten, freigeschaltet als Belohnung („Kuchen backen“) |
 | **Aufholaufgabe** (`kind = penalty`) | wird beim Ausgleich oder von Admins zugewiesen. LP ja, Guthaben nein, mit Frist. Wird die Frist versäumt, folgt eine Nachfrist und ein Hinweis an die Admins. In der Oberfläche heißt sie immer „Aufholaufgabe“, nie „Strafaufgabe“ |
-| **Familienziel** | gemeinsames LP-Ziel pro Periode mit einer Familienbelohnung (z. B. Ausflug). Dargestellt als Rennen gegen das Maskottchen **Krümel** (Arbeitsname), das gleichmäßig von 0 bis zum Ziel am Periodenende vorrückt. Alle spielen zusammen, es gibt keine Rangliste |
-| **Serie** | Tage in Folge, an denen ein Mitglied seine fälligen Aufgaben erledigt hat (genaue Regel offen). Wird oben in „Heute“ gezeigt |
+| **Familienziel** | gemeinsames LP-Ziel pro Periode mit einer Familienbelohnung (z. B. Ausflug). Dargestellt als Rennen gegen das Maskottchen **Krümel**, das gleichmäßig pro Tag von 0 bis zum Ziel am Periodenende vorrückt. **Schub:** Jede überfällige Aufgabe schiebt Krümel pro Tag um einen Anteil ihrer XP weiter (Standard 25 %, einstellbar). Alle spielen zusammen, es gibt keine Rangliste |
+| **Serie** | Tage in Folge, an denen ein Mitglied **mindestens eine Aufgabe** erledigt hat. Wird oben in „Heute“ gezeigt |
 
 ---
 
@@ -216,9 +216,10 @@ Die Rechnung steckt in `punkte-core::settlement` und ist mit Tests abgedeckt.
 - Zuweisung: `fixed(member)` · `rotation(members)` · `least_loaded(members)` (wer in der Periode
   am wenigsten LP hat) · `open` (wer zuerst übernimmt)
 - **Schritte** (optional): geordnete Liste von Teilschritten, z. B. „Bad putzen“ = Waschbecken,
-  Spiegel, Dusche, Boden, Handtücher. Sie werden der Reihe nach abgehakt, mit dem letzten Schritt
-  ist die Aufgabe erledigt (XP erst am Ende, offen: anteilig pro Schritt). Schritte werden in der
-  Vorlage gespeichert und in jedes Vorkommen kopiert
+  Spiegel, Dusche, Boden, Handtücher. Reihenfolge pro Vorlage: **frei** (jeder hakt ab, wie er mag,
+  z. B. Bad putzen) oder **der Reihe nach** (nur der aktuelle Schritt ist abhakbar, z. B. Spülmaschine:
+  erst einräumen, dann ausräumen). Mit dem letzten Schritt ist die Aufgabe erledigt; **XP gibt es erst
+  dann**. Schritte werden in der Vorlage gespeichert und in jedes Vorkommen kopiert
 - **Nachfrage-Dauer** beim Starten: Standard = geschätzte Dauer der Vorlage, änderbar
 - Bestätigung: Haushaltsregel übernehmen · immer · nie · mit Foto
 - Erinnerungen: Versätze wie `-1d`, `-1h`, `0`, Nachhaken bei Überfälligkeit
@@ -279,9 +280,10 @@ Ohne Bestätigungspflicht geht `done` direkt auf `completed`. Jeder Statuswechse
 | Farben | Indigo = Aktionen, Petrol = Leistungspunkte (Balken), Honig = Guthaben (Münze), Zustand grün/honig/rot. Personenfarben getrennt von Systemfarben |
 | Hell/Dunkel | beide Themen gleichwertig gestaltet. Standard: folgt dem System, Schalter „Hell · Dunkel · System“ unter Familie → Einstellungen (pro Gerät) |
 | Schrift | Bricolage Grotesque für Titel und große Zahlen, Atkinson Hyperlegible Next für Text |
-| Avatare | Tiere zum Aussuchen (Fuchs, Eule, Otter, Igel, Bär, Katze, Hund, Wal, Löwe) in der Personenfarbe. Keine Fotos von Kindern auf dem Server |
+| Avatare | Tiere zum Aussuchen (Fuchs, Eule, Otter, Igel, Bär, Katze, Hund, Wal, Löwe) in der Personenfarbe. Ein Tier darf im Haushalt mehrfach vorkommen (Unterscheidung über die Farbe). Keine Fotos von Kindern auf dem Server |
 | App-Icon | **geteilter Keks**: ein Keks, fair in zwei gleiche Hälften gebrochen, mit zwei Krümeln, auf Indigo. Quelle in `app/icon-src/` (Desktop mit runden Ecken, Android adaptiv aus Vorder- und Hintergrund, iOS mit Indigo-Grund) |
 | Bilder | eigene Icon-Familie: runde Linien, 24er-Raster, 2 px |
+| Klänge | warm & hölzern (Marimba-artig), standardmäßig **leise an**, pro Gerät abschaltbar, getrennt von der Vibration. Lautlos-Modus des Handys wird respektiert. Wandanzeige klingt wie das Handy (außer im Nachtmodus). Momente: Schritt abgehakt (1 leiser Ton), Aufgabe erledigt (kurzes „Ding-Ding!“, 2 Töne aufwärts, < 0,5 s), bestätigt, Guthaben erhalten, Serie verlängert, Krümel überholt (das Familienziel-Motiv auf halbem Weg: Lauf C–D–D#–E–F# landet offen auf G, darunter fächert sich G-Dur auf, ca. 1 s), Familienziel erreicht (abgeleitet vom Überholt-Motiv: derselbe Lauf mit Leitton H, der auf dem hohen C ankommt; darunter fächert sich ein warmer C-Dur-Akkord auf, danach kommt kein weiterer Ton, ca. 1,6 s). Stilvorbild für die großen Momente: Duolingo. **Entschieden (22.11.2026):** „Krümel überholt“ und „Familienziel erreicht“ teilen sich ein Motiv, das aus Kenney „Music Jingles – Pizzicato 02“ (CC0) transkribiert wurde, und werden mit dem eigenen Synth gespielt. Es werden keine Audiodateien mitgeliefert; Kenney wird in den Danksagungen genannt. Gehört mit Kalimba; Tonlage und Stimmung werden beim Einbau final abgestimmt. Klangkette: Tiefpass → Kompressor → Aufholverstärkung, damit die Töne am Handy-Lautsprecher voll klingen, ohne zu übersteuern. Klangfarbe/Tonlage/Stimmung werden im Klang-Spielplatz der Roadmap-Seite ausgewählt. Erzeugt per Web Audio im Webview, keine Audiodateien. Vor der Umsetzung prüfen, wie der Lautlos-Schalter in Android/iOS-Webviews greift |
 | Spiel | Serien und Familienziel (Rennen gegen Krümel). Keine Ranglisten, keine Abzeichen |
 | Punkte-Name | Was man mit Aufgaben verdient, heißt in der Oberfläche **XP**. Guthaben bleibt „G“ mit Münze |
 | Vorbild | Tody: Zustandsbalken, Rhythmus nach Bedarf, Räume, Rennen gegen ein Maskottchen. Figuren und Gestaltung sind eigene Entwürfe |

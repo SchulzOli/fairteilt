@@ -12,10 +12,10 @@ im Familienalltag nutzbar (Familien-Alpha). Umfang grob: S / M / L.
 | --- | --- |
 | Code | CI auf GitHub Actions: `cargo test`, `cargo clippy`, `svelte-check`, Build |
 | Code | TypeScript-Typen aus `punkte-core` erzeugen (ts-rs oder specta) |
-| Code | Design-Grundlage in der App: Tokens (hell + dunkel, Schalter Hell/Dunkel/System), Schriften, Icon-Familie, 9 Tier-Avatare, Zustandsbalken, Navigation mit 4 Tabs |
+| Code | Design-Grundlage in der App: Tokens (hell + dunkel, Schalter Hell/Dunkel/System), Schriften, Icon-Familie, 9 Tier-Avatare, Zustandsbalken, Klang-Bausteine (Marimba-Synth), Navigation mit 4 Tabs |
 | Code | `punkte-core`: Rhythmus „nach Bedarf“ und Zustand (frisch → fällig → überfällig), mit Tests |
 | Code | M1 starten: Registrierung, Login, Sitzungen pro Gerät |
-| Entscheidung | Maskottchen Krümel (Name, Figur, wie es vorrückt), Regel für Serien, Tierauswahl |
+| Entscheidung | Klang auswählen (Klang-Spielplatz auf der Roadmap-Seite). Krümel, Serie, Schritte und Tiere sind entschieden |
 | Betrieb | Hetzner-Cloud-Server bestellen, DNS `fairteilt.oli-tech.eu` setzen (bis zur Alpha) |
 | Betrieb | Tablet für die Wandanzeige festlegen. Firebase vor M5, Apple-Developer-Account vor M7 |
 
@@ -74,4 +74,5 @@ im Familienalltag nutzbar (Familien-Alpha). Umfang grob: S / M / L.
 - **Aufholen statt Strafe:** Im UI heißt es immer „Aufholaufgabe“
 - **Warm & familiär:** Indigo/Petrol/Honig auf warmem Grund, Tier-Avatare, eigene Icon-Familie,
   Bricolage Grotesque + Atkinson Hyperlegible Next
+- **Klänge:** warm & hölzern, leise an, Lautlos wird respektiert. Schritt < Aufgabe < Familienziel
 - **Kinder wachsen hinein:** dieselbe App ohne Admin-Funktionen. Dazu eine Wandanzeige für das Tablet
