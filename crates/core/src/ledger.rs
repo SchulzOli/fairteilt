@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::Points;
 use crate::task::TaskKind;
 
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LedgerKind {
@@ -44,6 +45,7 @@ impl LedgerKind {
 }
 
 /// What one ledger entry does to a member's two accounts.
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LedgerDelta {
     pub kind: LedgerKind,

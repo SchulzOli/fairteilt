@@ -8,7 +8,12 @@ license.workspace = true
 [dependencies]
 serde.workspace = true
 thiserror.workspace = true
+ts-rs = { version = "12.0.1", features = ["uuid-impl"], optional = true }
 uuid.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true
+
+[features]
+# `cargo test -p punkte-core --features ts export_bindings` writes app/src/lib/generated/*.ts
+ts = ["dep:ts-rs"]

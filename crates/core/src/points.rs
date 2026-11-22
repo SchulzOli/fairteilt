@@ -18,6 +18,7 @@ pub enum PointsError {
 }
 
 /// `min ≤ default ≤ max` for a single task or template.
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PointRange {
     pub min: Points,
@@ -47,6 +48,7 @@ impl PointRange {
 }
 
 /// Overdue / unclaimed tasks gain value over time, capped at the task's max.
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Escalation {
     /// Points added per full interval.
@@ -68,6 +70,7 @@ impl Escalation {
 
 /// Who needs another member's approval before a completed task is credited.
 /// Templates can override this per task (always / never / with photo).
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ApprovalRule {
@@ -90,6 +93,7 @@ impl ApprovalRule {
 }
 
 /// Household-wide point rules. Stored as JSON on the household.
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PointPolicy {
     /// Hard lower bound for any task.

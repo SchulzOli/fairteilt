@@ -1,0 +1,4 @@
+[env]
+# ts-rs (punkte-core feature "ts"): where generated TypeScript types go, and map i64 to number.
+TS_RS_EXPORT_DIR = { value = "app/src/lib/generated", relative = true }
+TS_RS_LARGE_INT = "number"

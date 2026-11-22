@@ -21,6 +21,7 @@ use uuid::Uuid;
 
 use crate::Points;
 
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum PeriodLength {
@@ -31,6 +32,7 @@ pub enum PeriodLength {
     CustomDays { days: u16 },
 }
 
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PeriodMode {
@@ -42,6 +44,7 @@ pub enum PeriodMode {
     Both,
 }
 
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum DeficitAction {
@@ -56,6 +59,7 @@ pub enum DeficitAction {
     CarryOver { percent: u32 },
 }
 
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum SurplusAction {
@@ -67,6 +71,7 @@ pub enum SurplusAction {
 }
 
 /// Household-wide settlement rules. Stored as JSON on the household.
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PeriodPolicy {
     pub length: PeriodLength,
@@ -97,6 +102,7 @@ impl Default for PeriodPolicy {
     }
 }
 
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MemberPeriodInput {
     pub member_id: Uuid,
@@ -113,6 +119,7 @@ pub struct MemberPeriodInput {
     pub quota: Option<Points>,
 }
 
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Outcome {
@@ -121,6 +128,7 @@ pub enum Outcome {
     Surplus,
 }
 
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SettlementLine {
     pub member_id: Uuid,
@@ -139,6 +147,7 @@ pub struct SettlementLine {
     pub carry_next: Points,
 }
 
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Settlement {
     pub total_contribution: Points,
