@@ -40,8 +40,10 @@ Copy-Item server/.env.example server/.env; cargo run -p punkte-server
 Tests (Integrationstests brauchen die Entwicklungsdatenbank):
 
 ```powershell
-$env:DATABASE_URL = 'postgres://punkte:punkte-dev@localhost:5432/punkte'; cargo test --workspace
+$env:DATABASE_URL = 'postgres://punkte:punkte-dev@127.0.0.1:5432/punkte'; cargo test --workspace
 ```
+
+`127.0.0.1` statt `localhost`: Unter Windows versucht `localhost` zuerst IPv6 und kostet so rund 2 Sekunden pro Datenbankverbindung.
 
 ```powershell
 pnpm --dir app install; pnpm --dir app tauri dev
@@ -50,7 +52,7 @@ pnpm --dir app install; pnpm --dir app tauri dev
 In der App unter **Mehr → Server** `http://localhost:8080` eintragen und „Verbindung testen“.
 Die Punkte-Ansicht rechnet den Ausgleich offline mit `punkte-core`.
 
-### API (Stand M1)
+### API (Stand M2)
 
 | Route | Zweck |
 | --- | --- |
@@ -67,6 +69,12 @@ Die Punkte-Ansicht rechnet den Ausgleich offline mit `punkte-core`.
 | `GET /api/v1/households/{id}/members` · `PATCH …/members/{mid}` | Mitglieder; Tier/Farbe selbst, Rolle/Gewicht als Admin |
 | `POST /api/v1/households/{id}/children` · `PUT …/members/{mid}/pin` | Kinderprofil anlegen, PIN setzen |
 | `POST /api/v1/auth/pin` | Profilwechsel per PIN, nur von einem Gerät des Haushalts (Sperre nach 5 Fehlversuchen) |
+| `GET` · `POST /api/v1/households/{id}/rooms` · `PATCH` · `DELETE …/rooms/{rid}` | Räume (Kinder nur lesen) |
+| `GET` · `POST /api/v1/households/{id}/templates` | Vorlagen mit Rhythmus, Zuweisung, Schritten; legt die erste Runde an |
+| `GET /api/v1/households/{id}/tasks` · `GET /api/v1/tasks/{tid}` | aktuelle Runden mit Zustand, XP und Schritten |
+| `POST /api/v1/tasks/{tid}/action` | `claim` · `unclaim` · `start` · `pause` · `snooze` · `done` · `cancel` (nur Admins) |
+| `POST /api/v1/tasks/{tid}/steps/{sid}/check` | Schritt abhaken; der letzte erledigt die Aufgabe |
+| `GET /api/v1/households/{id}/live?token=` | WebSocket: `tasks_changed` / `rooms_changed`, wenn sich etwas ändert |
 
 ## App-Icon
 

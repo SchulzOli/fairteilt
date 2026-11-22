@@ -2,22 +2,54 @@
   import Icon from "$lib/ui/Icon.svelte";
   import Avatar from "$lib/ui/Avatar.svelte";
   import ConditionBar from "$lib/ui/ConditionBar.svelte";
-  import { members, rooms, tasks } from "$lib/demo";
+  import { members, tasks } from "$lib/demo";
+  import TaskCard from "$lib/TaskCard.svelte";
+  import TaskSheet from "$lib/TaskSheet.svelte";
+  import { session } from "$lib/session.svelte";
+  import { TASK_ICONS, conditionOf, iconOf, taskStore } from "$lib/tasks.svelte";
+  import type { IconName } from "$lib/ui/Icon.svelte";
 
   type View = "rooms" | "calendar" | "board";
   let view = $state<View>("rooms");
+  let openRoom = $state<string | null>(null);
+  let sheet = $state<{ roomId?: string } | null>(null);
+  let adding = $state(false);
+  let roomName = $state("");
+  let roomIcon = $state<IconName>("sofa");
+  let error = $state("");
 
-  // Rooms: condition of the most urgent task, XP sum.
-  const roomRows = $derived(
-    rooms.map((r) => {
-      const ts = tasks.filter((t) => t.room === r.id);
-      const worst = ts.reduce((m, t) => Math.max(m, t.condition), 0);
-      const overdue = ts.filter((t) => t.condition >= 1).length;
-      const dueSoon = ts.filter((t) => t.condition >= 0.75 && t.condition < 1).length;
-      const hint = overdue ? `${overdue} überfällig` : dueSoon ? `${dueSoon} bald fällig` : "alles im grünen Bereich";
-      return { ...r, count: ts.length, worst, xp: ts.reduce((s, t) => s + t.xp, 0), hint };
-    }),
-  );
+  const planner = $derived(session.membership?.role !== "child");
+
+  // Rooms: condition of the most urgent task (like Tody), XP sum, tasks by urgency.
+  const roomRows = $derived.by(() => {
+    const now = taskStore.now;
+    const groups = [...taskStore.rooms.map((r) => ({ id: r.id, name: r.name, icon: iconOf(r.icon, "sofa") }))];
+    if (taskStore.tasks.some((t) => !t.room_id || !taskStore.rooms.some((r) => r.id === t.room_id))) {
+      groups.push({ id: "", name: "Ohne Raum", icon: "star" });
+    }
+    return groups.map((r) => {
+      const ts = taskStore.tasks
+        .filter((t) => (r.id ? t.room_id === r.id : !t.room_id || !taskStore.rooms.some((x) => x.id === t.room_id)))
+        .sort((a, b) => conditionOf(b, now) - conditionOf(a, now));
+      const worst = ts.reduce((m, t) => Math.max(m, conditionOf(t, now)), 0);
+      const overdue = ts.filter((t) => conditionOf(t, now) >= 1).length;
+      const dueSoon = ts.filter((t) => conditionOf(t, now) >= 0.75 && conditionOf(t, now) < 1).length;
+      const hint = !ts.length ? "noch keine Aufgaben" : overdue ? `${overdue} überfällig` : dueSoon ? `${dueSoon} bald fällig` : "alles im grünen Bereich";
+      return { ...r, tasks: ts, worst, xp: ts.reduce((s, t) => s + t.xp, 0), hint };
+    });
+  });
+
+  async function addRoom(e: SubmitEvent) {
+    e.preventDefault();
+    error = "";
+    try {
+      await taskStore.createRoom(roomName.trim(), roomIcon);
+      roomName = "";
+      adding = false;
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    }
+  }
 
   // Calendar placeholder (M6): week strip and the day's tasks.
   const days = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
@@ -51,18 +83,47 @@
 {#if view === "rooms"}
   <div class="stack">
     {#each roomRows as r (r.id)}
-      <article class="card room">
-        <span class="ic" aria-hidden="true"><Icon name={r.icon} size={22} /></span>
-        <div>
-          <h2>{r.name}</h2>
-          <div class="muted small">{r.count} Aufgaben · {r.hint}</div>
-        </div>
-        <span class="xp-chip">{r.xp} XP</span>
-        <div class="cond"><ConditionBar value={r.worst} /></div>
+      <article class="card room" class:expanded={openRoom === r.id}>
+        <button class="room-head" aria-expanded={openRoom === r.id} onclick={() => (openRoom = openRoom === r.id ? null : r.id)}>
+          <span class="ic" aria-hidden="true"><Icon name={r.icon} size={22} /></span>
+          <span class="name">
+            <strong class="rname">{r.name}</strong>
+            <span class="muted small">{r.tasks.length} {r.tasks.length === 1 ? "Aufgabe" : "Aufgaben"} · {r.hint}</span>
+          </span>
+          <span class="xp-chip">{r.xp} XP</span>
+          <span class="cond"><ConditionBar value={r.worst} /></span>
+        </button>
+        {#if openRoom === r.id}
+          <div class="stack inner">
+            {#each r.tasks as task (task.id)}<TaskCard {task} />{/each}
+            {#if planner}
+              <button class="add-task" onclick={() => (sheet = { roomId: r.id || undefined })}><Icon name="plus" size={18} />Aufgabe in {r.name}</button>
+            {/if}
+          </div>
+        {/if}
       </article>
     {/each}
   </div>
-  <p class="muted small hint">„Bad putzen“ läuft alle 7 Tage ab dem letzten Mal. Wer früher putzt, setzt den Balken zurück.</p>
+  {#if planner}
+    {#if adding}
+      <form class="card stack add-room" onsubmit={addRoom}>
+        <label class="field"><span>Neuer Raum</span><input id="room-name" type="text" bind:value={roomName} maxlength="40" required placeholder="z. B. Kinderzimmer" /></label>
+        <div class="icons">
+          {#each TASK_ICONS as i (i)}
+            <button type="button" class:sel={roomIcon === i} aria-label="Symbol {i}" onclick={() => (roomIcon = i)}><Icon name={i} size={18} /></button>
+          {/each}
+        </div>
+        {#if error}<p class="err" role="alert">{error}</p>{/if}
+        <div class="row">
+          <button type="button" onclick={() => (adding = false)}>Abbrechen</button>
+          <button class="primary" type="submit" disabled={!roomName.trim()}>Raum anlegen</button>
+        </div>
+      </form>
+    {:else}
+      <button class="add-room-btn" onclick={() => (adding = true)}><Icon name="plus" size={18} />Raum hinzufügen</button>
+    {/if}
+  {/if}
+  <p class="muted small hint">Der Balken eines Raums zeigt seine dringendste Aufgabe. Wer früher erledigt, setzt den Balken zurück.</p>
 {:else if view === "calendar"}
   <div class="week" role="tablist" aria-label="Wochentag">
     {#each days as d, i (d)}
@@ -100,6 +161,14 @@
       </div>
     {/each}
   </div>
+{/if}
+
+{#if planner && view === "rooms"}
+  <button class="fab primary" aria-label="Aufgabe anlegen" onclick={() => (sheet = {})}><Icon name="plus" size={24} /></button>
+{/if}
+
+{#if sheet}
+  <TaskSheet roomId={sheet.roomId} onclose={() => (sheet = null)} />
 {/if}
 
 <style>
@@ -153,13 +222,80 @@
   }
 
   .room {
+    padding: 0;
+    overflow: hidden;
+  }
+
+  .room-head {
+    width: 100%;
     display: grid;
     grid-template-columns: 44px 1fr auto;
     gap: var(--space-2) var(--space-3);
     align-items: center;
+    padding: var(--space-4);
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    color: inherit;
+    text-align: left;
   }
 
-  .room h2 {
+  .name {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .inner {
+    padding: 0 var(--space-3) var(--space-3);
+  }
+
+  .add-task,
+  .add-room-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    background: transparent;
+    border: 1px dashed var(--line);
+    color: var(--muted);
+  }
+
+  .add-room-btn {
+    width: 100%;
+    margin-top: var(--space-3);
+  }
+
+  .add-room {
+    margin-top: var(--space-3);
+  }
+
+  .icons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .icons button {
+    width: 40px;
+    min-height: 40px;
+    padding: 0;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+  }
+
+  .icons button.sel {
+    background: var(--primary-soft);
+    border-color: var(--primary);
+    color: var(--primary);
+  }
+
+  .err {
+    color: var(--over);
+  }
+
+  .rname {
+    font-family: var(--font-display);
     font-size: 1.05rem;
   }
 

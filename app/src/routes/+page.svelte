@@ -1,18 +1,26 @@
 <script lang="ts">
   import TaskCard from "$lib/TaskCard.svelte";
+  import TaskSheet, { PRESETS, type TaskPreset } from "$lib/TaskSheet.svelte";
   import Avatar from "$lib/ui/Avatar.svelte";
   import Icon from "$lib/ui/Icon.svelte";
   import Krumel from "$lib/ui/Krumel.svelte";
-  import { familyGoal, myStreakDays, tasks } from "$lib/demo";
+  import { familyGoal, myStreakDays } from "$lib/demo";
   import { session } from "$lib/session.svelte";
+  import { conditionOf, taskStore } from "$lib/tasks.svelte";
   import type { AnimalName } from "$lib/ui/Avatar.svelte";
 
-  let done = $state<string[]>([]);
+  let sheet = $state<{ preset?: TaskPreset } | null>(null);
 
   const meName = $derived(session.me?.user.display_name ?? "");
-  // Demo tasks until M2: "mine" are the example tasks of the first demo member.
-  const mine = $derived(tasks.filter((t) => t.assignee === "Alex" && !done.includes(t.id)));
-  const open = $derived(tasks.filter((t) => !t.assignee && !done.includes(t.id)));
+  const me = $derived(session.membership?.membership_id);
+  const planner = $derived(session.membership?.role !== "child");
+  const byUrgency = $derived(
+    [...taskStore.tasks].sort((a, b) => conditionOf(b, taskStore.now) - conditionOf(a, taskStore.now)),
+  );
+  const running = $derived(byUrgency.filter((t) => t.status === "in_progress" && t.assignee_id === me));
+  const mine = $derived(byUrgency.filter((t) => t.status !== "in_progress" && t.assignee_id === me));
+  const open = $derived(byUrgency.filter((t) => !t.assignee_id));
+  const others = $derived(byUrgency.filter((t) => t.assignee_id && t.assignee_id !== me));
 
   const familyPct = $derived(Math.min(100, (familyGoal.xp / familyGoal.goal) * 100));
   const krumelPct = $derived(Math.min(100, (familyGoal.krumelXp / familyGoal.goal) * 100));
@@ -52,25 +60,63 @@
   </div>
 </section>
 
-<h2 class="section-title">Heute für dich</h2>
-<div class="stack">
-  {#each mine as task (task.id)}
-    <TaskCard {task} ondone={(id) => (done = [...done, id])} />
-  {:else}
-    <p class="muted">Alles erledigt. Danke dir!</p>
-  {/each}
-</div>
+{#if !taskStore.loaded}
+  <p class="muted">Aufgaben laden …</p>
+{:else if taskStore.tasks.length === 0}
+  <section class="card stack empty">
+    <h2 class="sub">Noch keine Aufgaben</h2>
+    {#if planner}
+      <p class="muted">Leg die erste an oder fang mit einem Vorschlag an. Jede Aufgabe bekommt einen Zustandsbalken, der sich mit der Zeit füllt.</p>
+      <div class="presets">
+        {#each PRESETS as p (p.title)}
+          <button onclick={() => (sheet = { preset: p })}><Icon name={p.icon} size={18} />{p.title}</button>
+        {/each}
+      </div>
+    {:else}
+      <p class="muted">Sobald deine Eltern Aufgaben anlegen, tauchen sie hier auf.</p>
+    {/if}
+  </section>
+{:else}
+  {#if running.length}
+    <h2 class="section-title">Läuft gerade</h2>
+    <div class="stack">
+      {#each running as task (task.id)}<TaskCard {task} />{/each}
+    </div>
+  {/if}
 
-<h2 class="section-title">Offen · wer hilft?</h2>
-<div class="stack">
-  {#each open as task (task.id)}
-    <TaskCard {task} ondone={(id) => (done = [...done, id])} />
-  {/each}
-</div>
+  <h2 class="section-title">Für dich</h2>
+  <div class="stack">
+    {#each mine as task (task.id)}
+      <TaskCard {task} />
+    {:else}
+      <p class="muted">{running.length ? "Sonst nichts. Super!" : "Alles erledigt. Danke dir!"}</p>
+    {/each}
+  </div>
 
-<p class="muted small demo">Aufgaben und Rennen sind noch Beispieldaten. Echte Aufgaben kommen mit M2.</p>
+  {#if open.length}
+    <h2 class="section-title">Offen · wer hilft?</h2>
+    <div class="stack">
+      {#each open as task (task.id)}<TaskCard {task} />{/each}
+    </div>
+  {/if}
 
-<button class="fab primary" aria-label="Aufgabe anlegen"><Icon name="plus" size={24} /></button>
+  {#if others.length}
+    <h2 class="section-title">Bei den anderen</h2>
+    <div class="stack">
+      {#each others as task (task.id)}<TaskCard {task} />{/each}
+    </div>
+  {/if}
+{/if}
+
+<p class="muted small demo">Familienziel und Serie sind noch Beispieldaten (kommen mit M3 und M4).</p>
+
+{#if planner}
+  <button class="fab primary" aria-label="Aufgabe anlegen" onclick={() => (sheet = {})}><Icon name="plus" size={24} /></button>
+{/if}
+
+{#if sheet}
+  <TaskSheet preset={sheet.preset} onclose={() => (sheet = null)} />
+{/if}
 
 <style>
   .head {
@@ -168,16 +214,25 @@
     text-align: center;
   }
 
-  .fab {
-    position: fixed;
-    right: var(--space-4);
-    bottom: calc(var(--nav-h) + env(safe-area-inset-bottom) + var(--space-4));
-    width: 56px;
-    height: 56px;
-    border-radius: 18px;
-    padding: 0;
-    display: grid;
-    place-items: center;
-    box-shadow: 0 6px 20px rgb(0 0 0 / 0.22);
+  .sub {
+    font-size: 1.15rem;
+  }
+
+  .empty {
+    margin-top: var(--space-4);
+  }
+
+  .presets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+
+  .presets button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border-radius: 999px;
+    min-height: 40px;
   }
 </style>

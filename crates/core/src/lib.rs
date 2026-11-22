@@ -9,15 +9,23 @@
 //!   never transferable.
 //! - **Guthaben (balance)**: currency, transferable, spendable on rewards and bounties.
 
+pub mod assignment;
+pub mod condition;
 pub mod ledger;
 pub mod points;
+pub mod schedule;
 pub mod settlement;
+pub mod steps;
 pub mod task;
 
 /// Point amounts. Signed because ledger deltas can be negative.
 pub type Points = i64;
 
+pub use assignment::Assignment;
+pub use condition::{ConditionState, condition, state as condition_state};
 pub use ledger::{LedgerDelta, LedgerKind};
+pub use schedule::{Cycle, Schedule, ScheduleError};
+pub use steps::{StepOrder, all_done, can_check};
 pub use points::{ApprovalRule, Escalation, PointPolicy, PointRange, PointsError};
 pub use settlement::{
     DeficitAction, MemberPeriodInput, Outcome, PeriodLength, PeriodMode, PeriodPolicy, Settlement,

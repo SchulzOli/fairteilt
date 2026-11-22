@@ -1,9 +1,11 @@
 //! Task kinds and the task status machine.
 //!
 //! ```text
-//! open ──claim──▶ claimed ──done──▶ submitted ──approve──▶ completed
-//!   │                │                  └──reject──▶ claimed
-//!   └── cancel / expire (from any non-final state) ──▶ cancelled
+//! open ──claim──▶ claimed ──start──▶ in_progress ──done──▶ submitted ──approve──▶ completed
+//!   │               ▲  │                │                     └──reject──▶ claimed
+//!   │               └──┼──── pause ─────┘
+//!   └── start ─────────┘ (starting an open task claims it)
+//!   cancel / expire (from any non-final state) ──▶ cancelled
 //! ```
 
 use serde::{Deserialize, Serialize};
@@ -34,6 +36,8 @@ impl TaskKind {
 pub enum TaskStatus {
     Open,
     Claimed,
+    /// Started: someone is working on it right now (time counts up, no countdown).
+    InProgress,
     Submitted,
     Completed,
     Cancelled,
@@ -52,6 +56,10 @@ pub enum TaskAction {
     Claim,
     /// Release a claimed task back to open.
     Unclaim,
+    /// Start working on it (claims it if needed).
+    Start,
+    /// Stop working for now; stays with the same person.
+    Pause,
     Done,
     Approve,
     Reject,
@@ -73,10 +81,12 @@ impl TaskStatus {
         use TaskStatus as S;
         let next = match (self, action) {
             (S::Open, A::Claim) => S::Claimed,
-            (S::Claimed, A::Unclaim) => S::Open,
+            (S::Claimed | S::InProgress, A::Unclaim) => S::Open,
+            (S::Open | S::Claimed, A::Start) => S::InProgress,
+            (S::InProgress, A::Pause) => S::Claimed,
             // Done straight from Open is allowed: "just did it" without claiming first.
-            (S::Open | S::Claimed, A::Done) if approval_required => S::Submitted,
-            (S::Open | S::Claimed, A::Done) => S::Completed,
+            (S::Open | S::Claimed | S::InProgress, A::Done) if approval_required => S::Submitted,
+            (S::Open | S::Claimed | S::InProgress, A::Done) => S::Completed,
             (S::Submitted, A::Approve) => S::Completed,
             (S::Submitted, A::Reject) => S::Claimed,
             (s, A::Cancel) if !s.is_final() => S::Cancelled,
@@ -112,10 +122,21 @@ mod tests {
 
     #[test]
     fn final_states_are_final() {
-        for a in [A::Claim, A::Done, A::Approve, A::Reject, A::Cancel, A::Unclaim] {
+        for a in [A::Claim, A::Done, A::Approve, A::Reject, A::Cancel, A::Unclaim, A::Start, A::Pause] {
             assert!(S::Completed.apply(a, true).is_err());
             assert!(S::Cancelled.apply(a, true).is_err());
         }
+    }
+
+    #[test]
+    fn start_pause_and_done_while_running() {
+        let s = S::Open.apply(A::Start, false).unwrap();
+        assert_eq!(s, S::InProgress, "starting an open task claims it");
+        assert_eq!(s.apply(A::Pause, false).unwrap(), S::Claimed);
+        assert_eq!(s.apply(A::Done, false).unwrap(), S::Completed);
+        assert_eq!(s.apply(A::Done, true).unwrap(), S::Submitted);
+        assert!(S::Submitted.apply(A::Start, false).is_err());
+        assert!(S::Claimed.apply(A::Pause, false).is_err());
     }
 
     #[test]

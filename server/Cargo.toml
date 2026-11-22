@@ -8,8 +8,9 @@ license.workspace = true
 [dependencies]
 anyhow = "1.0.104"
 argon2 = "0.6.0"
-axum = "0.8.9"
+axum = { version = "0.8.9", features = ["ws"] }
 chrono = { version = "0.4.45", features = ["serde"] }
+chrono-tz = "0.10.4"
 hex = "0.4.3"
 jsonwebtoken = { version = "10", default-features = false, features = ["rust_crypto"] }
 punkte-core.workspace = true
@@ -27,9 +28,11 @@ ts-rs = { version = "12.0.1", features = ["uuid-impl", "chrono-impl"], optional 
 uuid.workspace = true
 
 [dev-dependencies]
+futures-util = { version = "0.3", default-features = false }
 http-body-util = "0.1.5"
+tokio-tungstenite = "0.30.0"
 tower = { version = "0.5.3", features = ["util"] }
 
 [features]
 # `cargo test -p punkte-server --features ts export_bindings` writes app/src/lib/generated/*.ts
-ts = ["dep:ts-rs"]
+ts = ["dep:ts-rs", "punkte-core/ts"]

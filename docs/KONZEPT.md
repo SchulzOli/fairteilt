@@ -212,7 +212,8 @@ Die Rechnung steckt in `punkte-core::settlement` und ist mit Tests abgedeckt.
 - Titel, Beschreibung, **Raum** (Gliederung wie in Tody), Icon aus der eigenen Icon-Familie, geschätzte Dauer
 - Punkte `min/default/max`, `kind` (`regular` · `reward` · `penalty`)
 - Rhythmus, pro Vorlage wählbar:
-  - **fester Termin** als RRULE (RFC 5545), z. B. `FREQ=WEEKLY;BYDAY=TU` („Müll jeden Dienstag“)
+  - **fester Termin**: Wochentage (optional alle N Wochen, z. B. „Müll jeden Dienstag“) oder Tag im Monat.
+    Fällig ist am Ende des Tages in der Zeitzone des Haushalts (`punkte_core::Schedule`, als JSON gespeichert)
   - **nach Bedarf**: Intervall ab der letzten Erledigung, z. B. „Bad alle 7 Tage“. Wer früher
     erledigt, setzt die Uhr zurück
 - **Zustand** jeder Aufgabe: `frisch → fällig → überfällig`, berechnet aus der Zeit seit dem letzten
@@ -391,9 +392,9 @@ Periodenabschluss. Kein zusätzlicher Dienst nötig, mehrere Instanzen wären sp
 | `invites` | id, household_id, code_hash, role, expires_at, used_by |
 | `sessions` | id, user_id, device_name, refresh_hash, expires_at, revoked_at |
 | `devices` | id, user_id, platform, push_token, push_provider |
-| `categories` | id, household_id, name, icon, color |
-| `task_templates` | id, household_id, title, kind, points_min/default/max, rrule, assignment (jsonb), approval, reminders (jsonb) |
-| `tasks` | id, household_id, template_id, title, kind, status (+ `in_progress`), assignee_id, due_at, scheduled_start/end, started_at, remind_at, points_* (Kopie), completed_by, completed_at, version |
+| `rooms` | id, household_id, name, icon, color, position |
+| `task_templates` | id, household_id, title, kind, points_min/default/max, schedule (jsonb), step_order, assignment (jsonb), approval, reminders (jsonb) |
+| `tasks` | id, household_id, template_id, room_id, title, icon, kind, status (+ `in_progress`), assignee_id, cycle_start, due_at, scheduled_start/end, started_at, remind_at, points_* (Kopie), completed_by, completed_at, version |
 | `task_steps` | id, task_id, position, title, done_by, done_at (Vorlagen: `template_steps` mit position, title) |
 | `task_events` | id, task_id, actor_id, type, payload, created_at |
 | `bounties` | id, task_id, pledger_id, amount, status (held/paid/refunded) |
@@ -437,7 +438,7 @@ Ausführlich mit nächsten Schritten und Designentwurf: [ROADMAP.md](ROADMAP.md)
 | --- | --- |
 | **M0** Gerüst | Workspace, `punkte-core` mit Punkte-/Ausgleichsregeln + Tests, axum-Server mit Health und Migration, Tauri+SvelteKit mit mobiler Navigation, Deploy-Dateien |
 | **M1** Konten | Registrierung/Anmeldung, Haushalt anlegen, Einladungen (QR), Rollen, Kinderprofile |
-| **M2** Aufgaben, Räume & Zustand | Vorlagen, Räume, Rhythmus fest (RRULE) oder nach Bedarf, Zustand, Zuweisungsregeln, Heute-Ansicht |
+| **M2** Aufgaben, Räume & Zustand | Vorlagen, Räume, Rhythmus fest oder nach Bedarf, Zustand, Zuweisungsregeln, Heute-Ansicht |
 | **M3** Punkte | Ledger, Bestätigung, Eskalation, Boni, Übertragungen, Punkte-Ansicht |
 | **α** Familien-Alpha | Hetzner-Deployment, Backups, signierte APK, echter Familienalltag |
 | **M4** Ausgleich & Familienziel | Perioden, Abrechnung mit Vorschau, Aufholaufgaben, Familienziel (Rennen gegen Krümel), Belohnungskatalog |

@@ -208,6 +208,13 @@ class Session {
     }
   }
 
+  /** A valid access token for the live WebSocket (renewed when it expires within a minute). */
+  async liveToken(): Promise<string | null> {
+    if (!this.tokens) return null;
+    if (tokenExpiry(this.tokens.access) - Date.now() / 1000 < 60 && !(await this.renew())) return null;
+    return this.tokens?.access || null;
+  }
+
   // ---------- account ----------
   async register(email: string, password: string, displayName: string) {
     await this.adopt(
@@ -341,6 +348,16 @@ class Session {
 }
 
 export const session = new Session();
+
+/** `exp` of a JWT (seconds), 0 when unreadable. */
+function tokenExpiry(jwt: string): number {
+  try {
+    const part = jwt.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+    return Number(JSON.parse(atob(part)).exp) || 0;
+  } catch {
+    return 0;
+  }
+}
 
 /** Reads "FAIRTEILT:K7QF-M2XA" from a scanned QR code, or returns typed input unchanged. */
 export function parseInviteCode(input: string): string {

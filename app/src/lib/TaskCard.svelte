@@ -1,18 +1,28 @@
 <script lang="ts">
-  import type { DemoTask } from "$lib/demo";
-  import { rooms } from "$lib/demo";
-  import Icon from "$lib/ui/Icon.svelte";
-  import ConditionBar from "$lib/ui/ConditionBar.svelte";
+  import { goto } from "$app/navigation";
+  import type { TaskDto } from "$lib/generated";
+  import { session } from "$lib/session.svelte";
   import { feedback } from "$lib/settings.svelte";
+  import { conditionOf, dueText, iconOf, minutesSince, stepsDone, taskStore } from "$lib/tasks.svelte";
+  import Avatar from "$lib/ui/Avatar.svelte";
+  import type { AnimalName } from "$lib/ui/Avatar.svelte";
+  import ConditionBar from "$lib/ui/ConditionBar.svelte";
+  import Icon from "$lib/ui/Icon.svelte";
 
-  let { task, ondone }: { task: DemoTask; ondone?: (id: string) => void } = $props();
+  let { task }: { task: TaskDto } = $props();
 
   let celebrating = $state(false);
+  let earned = $state(0);
+  let error = $state("");
 
-  const roomName = $derived(rooms.find((r) => r.id === task.room)?.name ?? "");
-  const conditionText = $derived(
-    task.condition >= 1 ? "überfällig" : task.condition >= 0.75 ? "bald fällig" : "frisch",
-  );
+  const now = $derived(taskStore.now);
+  const condition = $derived(conditionOf(task, now));
+  const room = $derived(taskStore.roomOf(task));
+  const running = $derived(task.status === "in_progress");
+  const done = $derived(stepsDone(task));
+  const hasSteps = $derived(task.steps.length > 0);
+  const assignee = $derived(session.members.find((m) => m.membership_id === task.assignee_id));
+  const isMine = $derived(task.assignee_id !== null && task.assignee_id === session.membership?.membership_id);
 
   // Confetti pieces fly out of the check button; everything stays inside the card.
   const COLORS = ["var(--coin-bg)", "#d63384", "var(--xp)", "var(--primary)", "#e8660f", "var(--fresh)", "#2563eb", "var(--over)"];
@@ -27,39 +37,63 @@
     round: i % 5 === 2,
   }));
 
-  function complete() {
+  const open = () => goto(`/aufgabe/${task.id}`);
+
+  async function complete() {
     if (celebrating) return;
-    celebrating = true;
-    feedback("done");
-    setTimeout(() => ondone?.(task.id), 1400);
+    // Tasks with steps are finished step by step on their page (XP only at the end).
+    if (hasSteps) return open();
+    error = "";
+    try {
+      celebrating = true;
+      taskStore.hold(1600);
+      const res = await taskStore.action(task.id, "done");
+      earned = res.xp_awarded ?? task.xp;
+      feedback("done");
+    } catch (e) {
+      celebrating = false;
+      error = e instanceof Error ? e.message : String(e);
+    }
   }
 </script>
 
-<article class="task" class:celebrating class:overdue={task.condition >= 1}>
-  <div class="ic" aria-hidden="true"><Icon name={task.icon} size={20} /></div>
+<article class="task" class:celebrating class:overdue={condition >= 1} class:running>
+  <button class="hit" aria-label="Öffnen: {task.title}" onclick={open}></button>
+  <div class="ic" aria-hidden="true"><Icon name={iconOf(task.icon, iconOf(room?.icon))} size={20} /></div>
   <div class="body">
     <h3 class:done={celebrating}>{task.title}</h3>
     <div class="meta">
-      <span>{roomName}</span>
-      <span aria-hidden="true">·</span>
-      <span class:late={task.condition >= 1}>{conditionText}</span>
+      {#if room}<span>{room.name}</span><span aria-hidden="true">·</span>{/if}
+      {#if running && task.started_at}
+        <span class="run"><Icon name="timer" size={14} />läuft seit {minutesSince(task.started_at, now)} Min.</span>
+      {:else}
+        <span class:late={condition >= 1}>{dueText(task, now)}</span>
+      {/if}
+      {#if hasSteps}<span class="steps">{done}/{task.steps.length} Schritte</span>{/if}
       {#if task.kind === "penalty"}<span class="chip aufhol">Aufholaufgabe</span>{/if}
       {#if task.kind === "reward"}<span class="chip reward">Belohnung</span>{/if}
     </div>
+    {#if error}<p class="err" role="alert">{error}</p>{/if}
   </div>
   <div class="right">
     <span class="xp-chip">{task.xp} XP</span>
-    {#if task.bounty}<span class="coin-chip">+{task.bounty}</span>{/if}
+    {#if assignee && !isMine}
+      <Avatar animal={assignee.animal as AnimalName} color={assignee.color} size={22} name={assignee.display_name} />
+    {/if}
   </div>
-  {#if ondone}
+  {#if hasSteps}
+    <button class="check go" aria-label="{running ? 'Weiter' : 'Starten'}: {task.title}" onclick={open}>
+      <Icon name={running ? "chevron" : "play"} size={16} />
+    </button>
+  {:else}
     <button class="check" class:on={celebrating} aria-label="Erledigt: {task.title}" onclick={complete}>
       <Icon name="check" size={18} />
     </button>
   {/if}
-  <div class="cond"><ConditionBar value={task.condition} /></div>
+  <div class="cond"><ConditionBar value={condition} /></div>
 
   {#if celebrating}
-    <span class="fly" aria-hidden="true">+{task.xp} XP</span>
+    <span class="fly" aria-hidden="true">+{earned || task.xp} XP</span>
     <span class="confetti" aria-hidden="true">
       {#each pieces as p, i (i)}
         <i
@@ -84,6 +118,55 @@
     border: 1px solid var(--line);
     border-radius: var(--radius);
     transition: background 0.3s, border-color 0.3s;
+  }
+
+  .hit {
+    position: absolute;
+    inset: 0;
+    min-height: 0;
+    padding: 0;
+    border-radius: inherit;
+    background: transparent;
+    z-index: 0;
+  }
+
+  .ic,
+  .body,
+  .right,
+  .cond {
+    position: relative;
+    z-index: 1;
+    pointer-events: none;
+  }
+
+  .task.running {
+    border-color: color-mix(in srgb, var(--primary) 45%, var(--line));
+  }
+
+  .run {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    color: var(--primary);
+    font-weight: 700;
+  }
+
+  .steps {
+    padding: 0 7px;
+    border-radius: 999px;
+    background: var(--surface-2);
+    font-size: 0.78rem;
+    font-weight: 700;
+  }
+
+  .err {
+    color: var(--over);
+    font-size: 0.85rem;
+  }
+
+  .check.go {
+    color: var(--primary);
+    border-color: color-mix(in srgb, var(--primary) 40%, var(--line));
   }
 
   .task.overdue {

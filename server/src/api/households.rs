@@ -68,6 +68,16 @@ pub async fn create(
         .bind(period_policy)
         .execute(&mut *tx)
         .await?;
+    for (i, (room, icon)) in crate::api::rooms::DEFAULT_ROOMS.iter().enumerate() {
+        sqlx::query("INSERT INTO rooms (id, household_id, name, icon, position) VALUES ($1, $2, $3, $4, $5)")
+            .bind(Uuid::new_v4())
+            .bind(household_id)
+            .bind(room)
+            .bind(icon)
+            .bind(i as i32)
+            .execute(&mut *tx)
+            .await?;
+    }
     sqlx::query("INSERT INTO memberships (id, household_id, user_id, role, color, animal) VALUES ($1, $2, $3, 'admin', $4, $5)")
         .bind(membership_id)
         .bind(household_id)

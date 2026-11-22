@@ -5,6 +5,8 @@
   import Icon, { type IconName } from "$lib/ui/Icon.svelte";
   import { applyTheme, settings } from "$lib/settings.svelte";
   import { session } from "$lib/session.svelte";
+  import CheckIn from "$lib/CheckIn.svelte";
+  import { taskStore } from "$lib/tasks.svelte";
 
   let { children } = $props();
 
@@ -27,6 +29,13 @@
     if (session.status === "ready" && session.membership && (path === "/willkommen" || path === "/einrichten")) void goto("/", { replaceState: true });
   });
 
+  // Tasks and rooms of the active household, live over the WebSocket.
+  $effect(() => {
+    const hid = session.status === "ready" ? session.membership?.household_id : undefined;
+    if (hid) taskStore.start(hid);
+    else taskStore.stop();
+  });
+
   const tabs: { href: string; label: string; icon: IconName }[] = [
     { href: "/", label: "Heute", icon: "sun" },
     { href: "/plan", label: "Plan", icon: "plan" },
@@ -38,7 +47,8 @@
   const showNav = $derived(session.status === "ready" && !!session.membership && !["/willkommen", "/einrichten"].includes(page.url.pathname));
 </script>
 
-<svelte:window onpointerdown={() => session.touch()} onkeydown={() => session.touch()} />
+<svelte:window onpointerdown={() => session.touch()} onkeydown={() => session.touch()} onfocus={() => taskStore.wake()} />
+<svelte:document onvisibilitychange={() => document.visibilityState === "visible" && taskStore.wake()} />
 
 <div class="shell">
   {#if session.profile}
@@ -57,6 +67,7 @@
   </main>
 
   {#if showNav}
+    <CheckIn />
     <nav aria-label="Hauptnavigation">
       {#each tabs as tab (tab.href)}
         <a href={tab.href} class:active={isActive(tab.href)} aria-current={isActive(tab.href) ? "page" : undefined}>

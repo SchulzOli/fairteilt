@@ -8,12 +8,11 @@ im Familienalltag nutzbar (Familien-Alpha). Umfang grob: S / M / L.
 
 ## Nächste Schritte
 
-Erledigt: CI, TypeScript-Typen aus `punkte-core` und Server, Design-Grundlage in der App, **M1**.
+Erledigt: CI, TypeScript-Typen aus `punkte-core` und Server, Design-Grundlage in der App, **M1**, **M2**.
 
 | Wer | Schritt |
 | --- | --- |
-| Code | `punkte-core`: Rhythmus „nach Bedarf“ und Zustand (frisch → fällig → überfällig), mit Tests |
-| Code | M2: Räume, Vorlagen mit Rhythmus und Schritten, Zustand, Aufgabe starten, Heute mit echten Daten |
+| Code | M3: Punktebuch, Bestätigen mit Anpassung, Bonus und Übertragungen, Serie, Punkte-Ansicht mit echten Daten |
 | Entscheidung | Klang auswählen (Klang-Spielplatz auf der Roadmap-Seite). Krümel, Serie, Schritte und Tiere sind entschieden |
 | Betrieb | Hetzner-Cloud-Server bestellen, DNS `fairteilt.oli-tech.eu` setzen (bis zur Alpha) |
 | Betrieb | Tablet für die Wandanzeige festlegen. Firebase vor M5, Apple-Developer-Account vor M7 |
@@ -24,8 +23,8 @@ Erledigt: CI, TypeScript-Typen aus `punkte-core` und Server, Design-Grundlage in
 | --- | --- | --- | --- |
 | ✅ | **M0 Gerüst** | Konzept, `punkte-core`, Server, App-Hülle, Android-Build, Designrichtung | – |
 | ✅ | **M1 Konten & Haushalt** | Ein Admin legt den Haushalt an, ein zweiter tritt per QR-Code bei, ein Kind sucht sich ein Tier aus und meldet sich per PIN an | L |
-| ▶ | **M2 Aufgaben, Räume & Zustand** | „Bad putzen, alle 7 Tage“ wird gelb und rot; Alex startet es, hakt fünf Schritte ab, und Fairteilt fragt freundlich nach, falls er hängen bleibt | L |
-| | **M3 Punkte & Bestätigung** | Kind erledigt, Elternteil bestätigt mit angepassten Punkten, die Serie zählt hoch | M |
+| ✅ | **M2 Aufgaben, Räume & Zustand** | „Bad putzen, alle 7 Tage“ wird gelb und rot; Alex startet es, hakt fünf Schritte ab, und Fairteilt fragt freundlich nach, falls er hängen bleibt | L |
+| ▶ | **M3 Punkte & Bestätigung** | Kind erledigt, Elternteil bestätigt mit angepassten Punkten, die Serie zählt hoch | M |
 | | **α Familien-Alpha** | Läuft auf Hetzner mit Backups, signierte APK, zwei Wochen Alltag ohne Datenverlust | S |
 | | **M4 Ausgleich, Familienziel & Belohnungen** | Monatsabschluss läuft automatisch, Rennen gegen Krümel entscheidet über die Familienbelohnung | M |
 | | **M5 Erinnerungen & Push** | Lokale Erinnerungen beim Kippen auf „fällig“, Postfach, Push über FCM | M |
@@ -52,8 +51,20 @@ Systems (Android: privater App-Speicher). Das M1-Szenario ist als Server-Test un
 
 ### M2 Aufgaben, Räume & Zustand
 
+**Abgeschlossen am 22.11.2026.** `punkte-core`: Rhythmus (einmalig, alle X Tage nach dem letzten Mal,
+Wochentage, Monatstag; feste Termine enden am Ende des Tages in der Zeitzone des Haushalts), Zustand,
+Zuweisung (fest, reihum, wer am wenigsten XP hat, offen), Schritte (beliebig oder der Reihe nach), Status
+„läuft“. Server: Räume (neue Haushalte starten mit fünf), Vorlagen, genau eine aktuelle Runde pro Vorlage,
+Aktionen (übernehmen, starten, pausieren, +10 Min., erledigen, Runde überspringen), Schritte abhaken (der
+letzte erledigt die Aufgabe), XP-Eskalation bei überfälligen Aufgaben, Live-Updates per WebSocket
+(`/households/{id}/live`). App: Heute mit echten Aufgaben und Vorschlägen für den Anfang, Plan · Räume,
+Seite „Aufgabe läuft“ (Zeit zählt hoch, Schritte mit Funkeln, Konfetti am Ende), Blatt „Neue Aufgabe“,
+freundliche Nachfrage nach der geplanten Dauer (Erledigt / +10 Min. / Später). Das M2-Szenario ist als
+Server-Test und in der App geprüft. Systembenachrichtigungen für die Nachfrage kommen mit M5; bis dahin
+erscheint sie, sobald die App offen ist. Punkte werden ab M3 ins Punktebuch gebucht.
+
 - Vorlagen mit Punkten min/default/max, Räume als Gliederung
-- Rhythmus: fester Termin (RRULE) oder „alle X Tage nach dem letzten Mal“
+- Rhythmus: fester Termin (Wochentage, Monatstag) oder „alle X Tage nach dem letzten Mal“
 - Zustand frisch → fällig → überfällig, die Punkte-Eskalation folgt dem Zustand
 - Aufgabe **starten** (Status „läuft“): Zeit zählt nur hoch (kein Countdown), freundliche lokale
   Nachfrage nach der geplanten Dauer (Erledigt / +10 min / Später)

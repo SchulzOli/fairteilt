@@ -35,7 +35,15 @@ pub fn router(state: AppState, cors_origins: &[String]) -> Router {
         .route("/households/{id}/members", get(api::members::list))
         .route("/households/{id}/members/{mid}", patch(api::members::update))
         .route("/households/{id}/members/{mid}/pin", put(api::members::set_pin))
-        .route("/households/{id}/children", post(api::members::create_child));
+        .route("/households/{id}/children", post(api::members::create_child))
+        .route("/households/{id}/rooms", get(api::rooms::list).post(api::rooms::create))
+        .route("/households/{id}/rooms/{rid}", patch(api::rooms::update).delete(api::rooms::delete))
+        .route("/households/{id}/templates", get(api::tasks::list_templates).post(api::tasks::create_template))
+        .route("/households/{id}/tasks", get(api::tasks::list_tasks))
+        .route("/households/{id}/live", get(crate::live::live))
+        .route("/tasks/{tid}", get(api::tasks::get_task))
+        .route("/tasks/{tid}/action", post(api::tasks::action))
+        .route("/tasks/{tid}/steps/{sid}/check", post(api::tasks::check_step));
 
     Router::new()
         .route("/health", get(health))
