@@ -1,19 +1,30 @@
 <script lang="ts">
   import "../app.css";
+  import { goto } from "$app/navigation";
   import { page } from "$app/state";
   import Icon, { type IconName } from "$lib/ui/Icon.svelte";
   import { applyTheme, settings } from "$lib/settings.svelte";
+  import { session } from "$lib/session.svelte";
 
   let { children } = $props();
 
-  // Load per-device settings once, then keep theme and storage in sync.
+  // Per-device settings, then the session (refresh token from secure storage).
   settings.init();
   $effect(() => {
     applyTheme(settings.theme);
-    settings.save();
-    // track sound/vibration too so toggles persist
     void settings.sound;
     void settings.vibration;
+    settings.save();
+  });
+  void session.init();
+
+  // Route guard: signed out → Willkommen; signed in without household → Einrichten.
+  const OPEN = ["/willkommen"];
+  $effect(() => {
+    const path = page.url.pathname;
+    if (session.status === "signed_out" && !OPEN.includes(path)) void goto("/willkommen", { replaceState: true });
+    if (session.status === "ready" && !session.membership && path !== "/einrichten") void goto("/einrichten", { replaceState: true });
+    if (session.status === "ready" && session.membership && (path === "/willkommen" || path === "/einrichten")) void goto("/", { replaceState: true });
   });
 
   const tabs: { href: string; label: string; icon: IconName }[] = [
@@ -24,21 +35,37 @@
   ];
 
   const isActive = (href: string) => (href === "/" ? page.url.pathname === "/" : page.url.pathname.startsWith(href));
+  const showNav = $derived(session.status === "ready" && !!session.membership && !["/willkommen", "/einrichten"].includes(page.url.pathname));
 </script>
 
+<svelte:window onpointerdown={() => session.touch()} onkeydown={() => session.touch()} />
+
 <div class="shell">
-  <main>
-    {@render children()}
+  {#if session.profile}
+    <div class="profile-bar" role="status">
+      <span>Angemeldet als <b>{session.profile.name}</b></span>
+      <button onclick={() => session.returnToDevice()}>Zurück zu {session.profile.deviceUser}</button>
+    </div>
+  {/if}
+
+  <main class:bare={!showNav}>
+    {#if session.status === "loading"}
+      <p class="muted loading">Fairteilt lädt …</p>
+    {:else}
+      {@render children()}
+    {/if}
   </main>
 
-  <nav aria-label="Hauptnavigation">
-    {#each tabs as tab (tab.href)}
-      <a href={tab.href} class:active={isActive(tab.href)} aria-current={isActive(tab.href) ? "page" : undefined}>
-        <Icon name={tab.icon} size={22} />
-        <span>{tab.label}</span>
-      </a>
-    {/each}
-  </nav>
+  {#if showNav}
+    <nav aria-label="Hauptnavigation">
+      {#each tabs as tab (tab.href)}
+        <a href={tab.href} class:active={isActive(tab.href)} aria-current={isActive(tab.href) ? "page" : undefined}>
+          <Icon name={tab.icon} size={22} />
+          <span>{tab.label}</span>
+        </a>
+      {/each}
+    </nav>
+  {/if}
 </div>
 
 <style>
@@ -48,6 +75,27 @@
     flex-direction: column;
   }
 
+  .profile-bar {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding: calc(env(safe-area-inset-top) + var(--space-2)) var(--space-4) var(--space-2);
+    background: var(--primary);
+    color: var(--primary-fg);
+    font-size: 0.9rem;
+  }
+
+  .profile-bar button {
+    min-height: 36px;
+    background: var(--primary-fg);
+    color: var(--primary);
+    font-size: 0.85rem;
+  }
+
   main {
     flex: 1;
     width: 100%;
@@ -55,6 +103,15 @@
     margin: 0 auto;
     padding: calc(env(safe-area-inset-top) + var(--space-4)) var(--space-4)
       calc(var(--nav-h) + env(safe-area-inset-bottom) + var(--space-5));
+  }
+
+  main.bare {
+    padding-bottom: calc(env(safe-area-inset-bottom) + var(--space-5));
+  }
+
+  .loading {
+    text-align: center;
+    margin-top: 30vh;
   }
 
   nav {

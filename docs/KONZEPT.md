@@ -52,6 +52,11 @@ Plattformunabhängig als **Tauri-2-App**, gebaut vor allem fürs Handy. Ein Fina
 
 Grundsatz: **Niemand bestätigt die eigene Aufgabe**, wenn der Haushalt Bestätigung verlangt.
 
+**PIN-Anmeldung (Familien-Tablet):** Eine PIN (4–6 Ziffern, Argon2id-Hash) funktioniert nur von einem
+Gerät, das selbst im selben Haushalt angemeldet ist. Nach 5 Fehlversuchen ist das Profil 5 Minuten
+gesperrt; eine neue PIN durch Admins hebt die Sperre auf. Die Sitzung des Kindes wird auf dem Tablet
+nicht gespeichert und endet nach 2 Minuten ohne Eingabe oder mit „Zurück“.
+
 ---
 
 ## 4. Punktesystem (einstellbar)

@@ -36,6 +36,7 @@ fn check_pin(pin: &str) -> AppResult<()> {
     if ok { Ok(()) } else { Err(AppError::BadRequest("Die PIN besteht aus 4 bis 6 Ziffern.".into())) }
 }
 
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[derive(Serialize, sqlx::FromRow)]
 pub struct MemberDto {
     pub membership_id: Uuid,
@@ -68,6 +69,7 @@ pub async fn list(State(state): State<AppState>, user: AuthUser, Path(household_
     Ok(Json(rows))
 }
 
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[derive(Deserialize)]
 pub struct UpdateMemberRequest {
     pub color: Option<String>,
@@ -137,6 +139,7 @@ pub async fn update(
     Ok(StatusCode::NO_CONTENT)
 }
 
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[derive(Deserialize)]
 pub struct CreateChildRequest {
     pub display_name: String,
@@ -145,6 +148,7 @@ pub struct CreateChildRequest {
     pub pin: Option<String>,
 }
 
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[derive(Serialize)]
 pub struct CreatedMember {
     pub membership_id: Uuid,
@@ -195,6 +199,7 @@ pub async fn create_child(
     Ok((StatusCode::CREATED, Json(CreatedMember { membership_id, user_id })))
 }
 
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[derive(Deserialize)]
 pub struct SetPinRequest {
     /// `null` removes the PIN.
@@ -243,6 +248,7 @@ struct PinTarget {
     pin_locked_until: Option<DateTime<Utc>>,
 }
 
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[derive(Deserialize)]
 pub struct PinLoginRequest {
     pub membership_id: Uuid,
@@ -294,6 +300,7 @@ pub async fn pin_login(State(state): State<AppState>, device_user: AuthUser, Jso
     Ok(Json(start_session(&state, user, device(req.device_name.or(Some("Familien-Tablet".into())))).await?))
 }
 
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[derive(Deserialize)]
 pub struct JoinRequest {
     pub code: String,
@@ -303,6 +310,7 @@ pub struct JoinRequest {
     pub device_name: Option<String>,
 }
 
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[derive(Serialize)]
 pub struct JoinResponse {
     #[serde(flatten)]

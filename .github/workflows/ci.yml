@@ -71,4 +71,5 @@ jobs:
       - name: TypeScript types are up to date
         run: |
           cargo test -p punkte-core --features ts --locked export_bindings
+          cargo test -p punkte-server --features ts --lib --locked export_bindings
           git diff --exit-code -- app/src/lib/generated

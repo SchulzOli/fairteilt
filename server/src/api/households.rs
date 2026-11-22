@@ -28,6 +28,7 @@ pub(crate) fn check_color(color: &Option<String>) -> AppResult<String> {
     if ok { Ok(c.to_lowercase()) } else { Err(AppError::BadRequest("Farbe bitte als #rrggbb angeben.".into())) }
 }
 
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[derive(Deserialize)]
 pub struct CreateHouseholdRequest {
     pub name: String,
@@ -35,6 +36,7 @@ pub struct CreateHouseholdRequest {
     pub animal: Option<String>,
 }
 
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[derive(Serialize)]
 pub struct CreateHouseholdResponse {
     pub household_id: Uuid,
@@ -89,11 +91,13 @@ pub(crate) async fn membership(state: &AppState, user_id: Uuid, household_id: Uu
         .ok_or(AppError::NotFound)
 }
 
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[derive(Deserialize)]
 pub struct CreateInviteRequest {
     pub role: String,
 }
 
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[derive(Serialize)]
 pub struct InviteResponse {
     /// Shown once; only its hash is stored.
@@ -129,6 +133,7 @@ pub async fn create_invite(
     Ok((StatusCode::CREATED, Json(InviteResponse { code, role: req.role, expires_at })))
 }
 
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[derive(Deserialize)]
 pub struct AcceptInviteRequest {
     pub code: String,
@@ -136,6 +141,7 @@ pub struct AcceptInviteRequest {
     pub animal: Option<String>,
 }
 
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[derive(Serialize)]
 pub struct AcceptInviteResponse {
     pub household_id: Uuid,

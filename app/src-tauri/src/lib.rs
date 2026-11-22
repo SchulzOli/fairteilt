@@ -5,6 +5,8 @@
 //! cache and the token in the OS keychain (see docs/KONZEPT.md §9). It also links
 //! `punkte-core`, so rules can be previewed without a connection.
 
+mod secure_store;
+
 use std::time::Duration;
 
 use punkte_core::settlement::settle;
@@ -59,9 +61,19 @@ fn preview_settlement(policy: PeriodPolicy, members: Vec<MemberPeriodInput>) -> 
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![server_health, default_policies, preview_settlement])
+    let builder = tauri::Builder::default().plugin(tauri_plugin_opener::init());
+    // QR scanning (join a household by code) exists on phones only.
+    #[cfg(mobile)]
+    let builder = builder.plugin(tauri_plugin_barcode_scanner::init());
+    builder
+        .invoke_handler(tauri::generate_handler![
+            server_health,
+            default_policies,
+            preview_settlement,
+            secure_store::secure_set,
+            secure_store::secure_get,
+            secure_store::secure_delete
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

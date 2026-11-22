@@ -8,12 +8,12 @@ im Familienalltag nutzbar (Familien-Alpha). Umfang grob: S / M / L.
 
 ## Nächste Schritte
 
-Erledigt: CI, TypeScript-Typen aus `punkte-core`, Design-Grundlage in der App.
+Erledigt: CI, TypeScript-Typen aus `punkte-core` und Server, Design-Grundlage in der App, **M1**.
 
 | Wer | Schritt |
 | --- | --- |
 | Code | `punkte-core`: Rhythmus „nach Bedarf“ und Zustand (frisch → fällig → überfällig), mit Tests |
-| Code | M1 weiter: Kinderprofile mit PIN, Rate-Limit, App-Screens für Anmeldung und Haushalt |
+| Code | M2: Räume, Vorlagen mit Rhythmus und Schritten, Zustand, Aufgabe starten, Heute mit echten Daten |
 | Entscheidung | Klang auswählen (Klang-Spielplatz auf der Roadmap-Seite). Krümel, Serie, Schritte und Tiere sind entschieden |
 | Betrieb | Hetzner-Cloud-Server bestellen, DNS `fairteilt.oli-tech.eu` setzen (bis zur Alpha) |
 | Betrieb | Tablet für die Wandanzeige festlegen. Firebase vor M5, Apple-Developer-Account vor M7 |
@@ -23,8 +23,8 @@ Erledigt: CI, TypeScript-Typen aus `punkte-core`, Design-Grundlage in der App.
 | | Meilenstein | Ziel („fertig, wenn …“) | Umfang |
 | --- | --- | --- | --- |
 | ✅ | **M0 Gerüst** | Konzept, `punkte-core`, Server, App-Hülle, Android-Build, Designrichtung | – |
-| ▶ | **M1 Konten & Haushalt** | Ein Admin legt den Haushalt an, ein zweiter tritt per QR-Code bei, ein Kind sucht sich ein Tier aus und meldet sich per PIN an | L |
-| | **M2 Aufgaben, Räume & Zustand** | „Bad putzen, alle 7 Tage“ wird gelb und rot; Alex startet es, hakt fünf Schritte ab, und Fairteilt fragt freundlich nach, falls er hängen bleibt | L |
+| ✅ | **M1 Konten & Haushalt** | Ein Admin legt den Haushalt an, ein zweiter tritt per QR-Code bei, ein Kind sucht sich ein Tier aus und meldet sich per PIN an | L |
+| ▶ | **M2 Aufgaben, Räume & Zustand** | „Bad putzen, alle 7 Tage“ wird gelb und rot; Alex startet es, hakt fünf Schritte ab, und Fairteilt fragt freundlich nach, falls er hängen bleibt | L |
 | | **M3 Punkte & Bestätigung** | Kind erledigt, Elternteil bestätigt mit angepassten Punkten, die Serie zählt hoch | M |
 | | **α Familien-Alpha** | Läuft auf Hetzner mit Backups, signierte APK, zwei Wochen Alltag ohne Datenverlust | S |
 | | **M4 Ausgleich, Familienziel & Belohnungen** | Monatsabschluss läuft automatisch, Rennen gegen Krümel entscheidet über die Familienbelohnung | M |
@@ -35,10 +35,13 @@ Erledigt: CI, TypeScript-Typen aus `punkte-core`, Design-Grundlage in der App.
 
 ### M1 Konten & Haushalt
 
-**Stand 22.11.2026:** Server-Teil begonnen und getestet: Registrierung, Login (Argon2id), Zugriffstoken
-(JWT, 15 min) + rotierendes Refresh-Token pro Gerät, Abmelden, `/me`, Haushalt mit Standardregeln,
-Einladungscodes (Admin, 7 Tage, einmalig). Offen: Kinderprofile ohne E-Mail mit PIN, Rate-Limit,
-App-Screens (Anmeldung, Assistent, Beitreten per Code/QR), Token im Schlüsselbund.
+**Abgeschlossen am 22.11.2026.** Server: Registrierung/Login (Argon2id, Rate-Limit), JWT (15 min) +
+rotierendes Refresh-Token pro Gerät, Haushalte, Einladungscodes, Mitglieder (Tier, Farbe, Rolle, Gewicht),
+Kinderprofile ohne E-Mail (vom Admin angelegt oder per Kinder-Code auf eigenem Gerät), PIN-Anmeldung nur
+von einem Gerät des Haushalts mit Sperre nach 5 Fehlversuchen. App: Willkommen (Anmelden, Registrieren,
+Kinder-Code), Einrichten (anlegen/beitreten, QR-Scan am Handy), Familie (Mitglieder, Einladen mit QR,
+Kinderprofil, PIN), Profilwechsel am Tablet (Rückkehr nach 2 min), Refresh-Token im Schlüsselbund des
+Systems (Android: privater App-Speicher). Das M1-Szenario ist als Server-Test und in der App geprüft.
 
 
 - Server: Registrierung und Login (E-Mail + Passwort, Argon2id), Zugriffstoken + rotierendes

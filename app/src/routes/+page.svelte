@@ -3,11 +3,15 @@
   import Avatar from "$lib/ui/Avatar.svelte";
   import Icon from "$lib/ui/Icon.svelte";
   import Krumel from "$lib/ui/Krumel.svelte";
-  import { familyGoal, me, myStreakDays, tasks } from "$lib/demo";
+  import { familyGoal, myStreakDays, tasks } from "$lib/demo";
+  import { session } from "$lib/session.svelte";
+  import type { AnimalName } from "$lib/ui/Avatar.svelte";
 
   let done = $state<string[]>([]);
 
-  const mine = $derived(tasks.filter((t) => t.assignee === me.name && !done.includes(t.id)));
+  const meName = $derived(session.me?.user.display_name ?? "");
+  // Demo tasks until M2: "mine" are the example tasks of the first demo member.
+  const mine = $derived(tasks.filter((t) => t.assignee === "Alex" && !done.includes(t.id)));
   const open = $derived(tasks.filter((t) => !t.assignee && !done.includes(t.id)));
 
   const familyPct = $derived(Math.min(100, (familyGoal.xp / familyGoal.goal) * 100));
@@ -19,10 +23,10 @@
 
 <header class="head">
   <div class="row">
-    <Avatar animal={me.animal} color={me.color} size={44} name={me.name} />
+    <Avatar animal={(session.membership?.animal ?? "fox") as AnimalName} color={session.membership?.color ?? "#2563eb"} size={44} name={meName} />
     <div>
       <div class="muted small">{today}</div>
-      <h1 class="page-title">Hallo {me.name}</h1>
+      <h1 class="page-title">Hallo {meName}</h1>
     </div>
   </div>
   <span class="streak" title="Serie: Tage mit mindestens einer erledigten Aufgabe">
@@ -64,7 +68,7 @@
   {/each}
 </div>
 
-<p class="muted small demo">Beispieldaten. Die echte Anbindung folgt mit M1–M3.</p>
+<p class="muted small demo">Aufgaben und Rennen sind noch Beispieldaten. Echte Aufgaben kommen mit M2.</p>
 
 <button class="fab primary" aria-label="Aufgabe anlegen"><Icon name="plus" size={24} /></button>
 

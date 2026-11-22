@@ -19,6 +19,7 @@ use crate::AppState;
 
 const MIN_PASSWORD_LEN: usize = 10;
 
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[derive(Deserialize)]
 pub struct RegisterRequest {
     pub email: String,
@@ -27,6 +28,7 @@ pub struct RegisterRequest {
     pub device_name: Option<String>,
 }
 
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[derive(Deserialize)]
 pub struct LoginRequest {
     pub email: String,
@@ -34,11 +36,13 @@ pub struct LoginRequest {
     pub device_name: Option<String>,
 }
 
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[derive(Deserialize)]
 pub struct RefreshRequest {
     pub refresh_token: String,
 }
 
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[derive(Serialize)]
 pub struct UserDto {
     pub id: Uuid,
@@ -46,6 +50,7 @@ pub struct UserDto {
     pub display_name: String,
 }
 
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[derive(Serialize)]
 pub struct TokenResponse {
     pub user: UserDto,
@@ -189,6 +194,7 @@ async fn load_user(state: &AppState, user_id: Uuid) -> AppResult<UserDto> {
     Ok(UserDto { id, email, display_name })
 }
 
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[derive(Serialize, sqlx::FromRow)]
 pub struct MembershipDto {
     pub membership_id: Uuid,
@@ -201,6 +207,7 @@ pub struct MembershipDto {
     pub joined_at: DateTime<Utc>,
 }
 
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[derive(Serialize)]
 pub struct MeResponse {
     pub user: UserDto,

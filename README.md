@@ -50,7 +50,7 @@ pnpm --dir app install; pnpm --dir app tauri dev
 In der App unter **Mehr → Server** `http://localhost:8080` eintragen und „Verbindung testen“.
 Die Punkte-Ansicht rechnet den Ausgleich offline mit `punkte-core`.
 
-### API (Stand M1, erster Teil)
+### API (Stand M1)
 
 | Route | Zweck |
 | --- | --- |
@@ -63,6 +63,10 @@ Die Punkte-Ansicht rechnet den Ausgleich offline mit `punkte-core`.
 | `POST /api/v1/households` | Haushalt mit Standardregeln anlegen (Ersteller wird Admin) |
 | `POST /api/v1/households/{id}/invites` | Einladungscode erzeugen (nur Admins, 7 Tage gültig) |
 | `POST /api/v1/invites/accept` | mit Code beitreten, Tier und Farbe wählen |
+| `POST /api/v1/invites/join` | Kind ohne E-Mail tritt mit Kinder-Code auf eigenem Gerät bei |
+| `GET /api/v1/households/{id}/members` · `PATCH …/members/{mid}` | Mitglieder; Tier/Farbe selbst, Rolle/Gewicht als Admin |
+| `POST /api/v1/households/{id}/children` · `PUT …/members/{mid}/pin` | Kinderprofil anlegen, PIN setzen |
+| `POST /api/v1/auth/pin` | Profilwechsel per PIN, nur von einem Gerät des Haushalts (Sperre nach 5 Fehlversuchen) |
 
 ## App-Icon
 
