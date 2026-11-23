@@ -6,6 +6,7 @@ pub mod auth;
 pub mod config;
 pub mod error;
 pub mod live;
+pub mod period;
 pub mod ratelimit;
 pub mod routes;
 pub mod scheduler;

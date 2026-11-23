@@ -308,7 +308,10 @@ fn default_range(policy: &PointPolicy) -> PointRange {
 
 /// XP per member in the current calendar month (household time zone), for "least loaded".
 async fn month_load(tx: &mut Transaction<'_, Postgres>, household_id: Uuid, tz: Tz, now: DateTime<Utc>) -> AppResult<Vec<(Uuid, i64)>> {
-    let month_start = month_start(tz, now);
+    // XP in the running period (the calendar month as a fallback before the first period).
+    let since: Option<DateTime<Utc>> =
+        sqlx::query_scalar("SELECT starts_at FROM periods WHERE household_id = $1 AND status = 'running'").bind(household_id).fetch_optional(&mut **tx).await?;
+    let month_start = since.unwrap_or_else(|| month_start(tz, now));
     let rows: Vec<(Uuid, i64)> = sqlx::query_as(
         "SELECT completed_by, COALESCE(SUM(points_awarded), 0)::BIGINT FROM tasks
          WHERE household_id = $1 AND status = 'completed' AND completed_at >= $2 AND completed_by IS NOT NULL
@@ -853,6 +856,9 @@ pub async fn action(
     }
     tx.commit().await?;
     notify(&state, hid, &outcome);
+    if outcome.credited() {
+        crate::period::after_credit(&state, hid).await;
+    }
     if req.action == TaskCommand::Cancel {
         state.live.notify(hid, r#"{"type":"points_changed"}"#);
     }
@@ -908,6 +914,9 @@ pub async fn check_step(
     }
     tx.commit().await?;
     notify(&state, hid, &outcome);
+    if outcome.credited() {
+        crate::period::after_credit(&state, hid).await;
+    }
     respond(&state, task_id, &hh, outcome).await
 }
 
@@ -994,6 +1003,9 @@ pub async fn review(
     };
     tx.commit().await?;
     notify(&state, hid, &outcome);
+    if outcome.credited() {
+        crate::period::after_credit(&state, hid).await;
+    }
     state.live.notify_json(hid, personal);
     respond(&state, task_id, &hh, outcome).await
 }

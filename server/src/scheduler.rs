@@ -1,14 +1,16 @@
 //! Background job loop on top of the `jobs` table.
 //!
 //! Jobs are claimed with `FOR UPDATE SKIP LOCKED`, so several server instances could run
-//! side by side later. Handlers for reminders, recurrence expansion and period settlement
-//! are added per milestone (M2–M5); unknown kinds fail and are retried with backoff.
+//! side by side later. M4: `close_period` (end of a period: draft settlement, race decided)
+//! and `approve_settlement` (automatic approval). Unknown kinds fail and are retried with backoff.
 
 use std::time::Duration;
 
 use serde_json::Value;
 use sqlx::PgPool;
 use uuid::Uuid;
+
+use crate::AppState;
 
 const POLL_INTERVAL: Duration = Duration::from_secs(5);
 const LOCK_SECS: i64 = 60;
@@ -22,12 +24,13 @@ struct Job {
     max_attempts: i32,
 }
 
-pub async fn run(db: PgPool) {
+pub async fn run(state: AppState) {
     tracing::info!("scheduler started");
+    let db = state.db.clone();
     loop {
         match claim(&db).await {
             Ok(Some(job)) => {
-                let result = dispatch(&db, &job).await;
+                let result = dispatch(&state, &job).await;
                 if let Err(err) = finish(&db, &job, result).await {
                     tracing::error!(%err, job = %job.id, "could not record job result");
                 }
@@ -38,6 +41,17 @@ pub async fn run(db: PgPool) {
         }
         tokio::time::sleep(POLL_INTERVAL).await;
     }
+}
+
+/// Runs every job that is due right now, then returns how many ran (tests, maintenance).
+pub async fn run_due(state: &AppState) -> anyhow::Result<usize> {
+    let mut n = 0;
+    while let Some(job) = claim(&state.db).await? {
+        let result = dispatch(state, &job).await;
+        finish(&state.db, &job, result).await?;
+        n += 1;
+    }
+    Ok(n)
 }
 
 async fn claim(db: &PgPool) -> sqlx::Result<Option<Job>> {
@@ -62,13 +76,45 @@ async fn claim(db: &PgPool) -> sqlx::Result<Option<Job>> {
     .await
 }
 
-async fn dispatch(_db: &PgPool, job: &Job) -> anyhow::Result<()> {
+fn id_in(payload: &Value, key: &str) -> anyhow::Result<Uuid> {
+    let raw = payload.get(key).and_then(Value::as_str).ok_or_else(|| anyhow::anyhow!("payload without {key}"))?;
+    Ok(raw.parse()?)
+}
+
+async fn dispatch(state: &AppState, job: &Job) -> anyhow::Result<()> {
     match job.kind.as_str() {
         "noop" => {
             tracing::debug!(payload = %job.payload, "noop job");
             Ok(())
         }
-        // M2: "expand_recurrence", M5: "send_reminder", M4: "close_period" …
+        "close_period" => {
+            let period = id_in(&job.payload, "period_id")?;
+            let hid: Option<Uuid> = sqlx::query_scalar("SELECT household_id FROM periods WHERE id = $1").bind(period).fetch_optional(&state.db).await?;
+            if let Some(settlement) = crate::period::close_period(&state.db, period).await.map_err(|e| anyhow::anyhow!("{e:?}"))?
+                && let Some(hid) = hid
+            {
+                tracing::info!(%period, %settlement, "period closed");
+                state.live.notify_json(hid, serde_json::json!({ "type": "period_closed", "settlement_id": settlement }));
+            }
+            Ok(())
+        }
+        "approve_settlement" => {
+            let settlement = id_in(&job.payload, "settlement_id")?;
+            if crate::period::approve_settlement(&state.db, settlement, None).await.map_err(|e| anyhow::anyhow!("{e:?}"))? {
+                let hid: Option<Uuid> = sqlx::query_scalar(
+                    "SELECT p.household_id FROM settlements s JOIN periods p ON p.id = s.period_id WHERE s.id = $1",
+                )
+                .bind(settlement)
+                .fetch_optional(&state.db)
+                .await?;
+                if let Some(hid) = hid {
+                    tracing::info!(%settlement, "settlement approved automatically");
+                    state.live.notify_json(hid, serde_json::json!({ "type": "settlement_approved", "settlement_id": settlement }));
+                }
+            }
+            Ok(())
+        }
+        // M5: "send_reminder" …
         other => anyhow::bail!("no handler for job kind '{other}'"),
     }
 }

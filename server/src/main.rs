@@ -25,7 +25,7 @@ async fn main() -> anyhow::Result<()> {
 
     let mut state = AppState::new(db, config.jwt_secret.as_bytes());
     state.trust_proxy = config.trust_proxy;
-    let scheduler = tokio::spawn(scheduler::run(state.db.clone()));
+    let scheduler = tokio::spawn(scheduler::run(state.clone()));
 
     let listener = TcpListener::bind(&config.bind_addr)
         .await

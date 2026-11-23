@@ -1,7 +1,7 @@
 <script lang="ts">
   // Punkte (KONZEPT §7.3): own account, transfers, history; the family's accounts in member
   // order (no ranking). XP measure work, G (Guthaben) can be given away.
-  import SettlementPreview from "$lib/SettlementPreview.svelte";
+  import SettlementCard from "$lib/SettlementCard.svelte";
   import type { LedgerEntryDto, ReverseResponse, TransferDto } from "$lib/generated";
   import { session } from "$lib/session.svelte";
   import { feedback } from "$lib/settings.svelte";
@@ -121,6 +121,14 @@
         return `Von ${memberName(e.counterpart_id)}`;
       case "transfer_out":
         return `An ${memberName(e.counterpart_id)}`;
+      case "reward_redeem":
+        return e.balance_delta < 0 ? `Belohnung: ${e.task_title ?? ""}` : `Belohnung zurück: ${e.task_title ?? ""}`;
+      case "settlement_bonus":
+        return "Bonus aus dem Abschluss";
+      case "penalty_deduction":
+        return "Abzug aus dem Abschluss";
+      case "settlement_zero_sum":
+        return "Ausgleich aus dem Abschluss";
       case "manual_adjust":
         return e.task_title ? `Korrektur: „${e.task_title}“` : "Korrektur";
       default:
@@ -185,6 +193,19 @@
   {/if}
   {#if error}<p class="err" role="alert">{error}</p>{/if}
 </section>
+
+<a class="card rewards-link" href="/belohnungen">
+  <span class="coin" aria-hidden="true">G</span>
+  <span><b>Belohnungen</b><br /><span class="muted small">Guthaben einlösen: Film aussuchen, länger aufbleiben …</span></span>
+  <Icon name="chevron" size={18} />
+</a>
+
+{#if taskStore.period?.settlements.length}
+  <h2 class="section-title">Abschluss</h2>
+  <div class="stack">
+    {#each taskStore.period.settlements.slice(0, 2) as s (s.id)}<SettlementCard settlement={s} />{/each}
+  </div>
+{/if}
 
 {#if session.isAdmin && pending.length}
   <h2 class="section-title">Freigeben</h2>
@@ -266,10 +287,6 @@
   {/each}
 </div>
 
-<details class="preview">
-  <summary>Ausgleich ausprobieren (Vorschau)</summary>
-  <SettlementPreview />
-</details>
 
 <style>
   .account {
@@ -519,13 +536,19 @@
     color: var(--over);
   }
 
-  .preview {
-    margin-top: var(--space-5);
+  .rewards-link {
+    display: grid;
+    grid-template-columns: 40px 1fr auto;
+    align-items: center;
+    gap: var(--space-3);
+    margin-top: var(--space-3);
+    color: inherit;
+    text-decoration: none;
   }
 
-  .preview summary {
-    cursor: pointer;
-    color: var(--muted);
-    font-weight: 700;
+  .rewards-link .coin {
+    width: 40px;
+    height: 40px;
+    font-size: 1.1rem;
   }
 </style>

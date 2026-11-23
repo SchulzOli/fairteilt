@@ -11,6 +11,7 @@
 
 pub mod assignment;
 pub mod condition;
+pub mod goal;
 pub mod ledger;
 pub mod points;
 pub mod schedule;
@@ -23,6 +24,7 @@ pub mod task;
 pub type Points = i64;
 
 pub use assignment::Assignment;
+pub use goal::{GoalPolicy, RaceStatus, decide as decide_race, krumel_position, overdue_boost, period_bounds, suggest_target};
 pub use condition::{ConditionState, condition, state as condition_state};
 pub use ledger::{LedgerDelta, LedgerKind};
 pub use schedule::{Cycle, Schedule, ScheduleError};

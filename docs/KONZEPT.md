@@ -387,7 +387,7 @@ Periodenabschluss. Kein zusätzlicher Dienst nötig, mehrere Instanzen wären sp
 | Tabelle | Wichtige Felder |
 | --- | --- |
 | `users` | id, email (optional bei Kindern), password_hash, display_name, locale |
-| `households` | id, name, timezone, point_policy (jsonb), period_policy (jsonb), change_seq |
+| `households` | id, name, timezone, point_policy (jsonb), period_policy (jsonb), goal_policy (jsonb), change_seq |
 | `memberships` | id, household_id, user_id, role, weight, color, active |
 | `invites` | id, household_id, code_hash, role, expires_at, used_by |
 | `sessions` | id, user_id, device_name, refresh_hash, expires_at, revoked_at |
@@ -400,10 +400,11 @@ Periodenabschluss. Kein zusätzlicher Dienst nötig, mehrere Instanzen wären sp
 | `bounties` | id, task_id, pledger_id, amount, status (held/paid/refunded) |
 | `transfers` | id, household_id, from_id, to_id, amount, note, status (done/pending/declined), decided_by |
 | `ledger_entries` | siehe §4.5 |
-| `periods` | id, household_id, starts_at, ends_at, status |
-| `settlements` / `settlement_lines` | Abrechnung je Periode und Mitglied (Ziel, Leistung, Abweichung, Folge) |
+| `periods` | id, household_id, starts_at, ends_at, status (running/settling/settled, höchstens einer läuft) |
+| `family_goals` | period_id, target, reward, boost_percent, status (running/won/lost), decided_at |
+| `settlements` / `settlement_lines` | Abrechnung je Periode und Mitglied (Ziel, Leistung, Abweichung, Folge), auto_approve_at; Aufholaufgaben verweisen per `tasks.settlement_id` |
 | `absences` | member_id, from, to, reason |
-| `rewards` / `reward_redemptions` | Katalog und Einlösungen |
+| `rewards` / `reward_redemptions` | Katalog (Preis, Freigabe, Bestand, Abkühlzeit) und Einlösungen (Preis, Status, Entscheidung) |
 | `boards` / `board_items` | Canvas: Zonen, Karten (task_id), Position, Größe |
 | `saved_views` | owner_id, shared, filter (jsonb), layout, sort |
 | `notification_prefs` | member_id, quiet_hours, channels (jsonb), digest_time |

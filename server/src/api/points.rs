@@ -13,7 +13,7 @@ use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 
 use crate::api::households::membership;
-use crate::api::tasks::{household, month_start};
+use crate::api::tasks::household;
 use crate::auth::AuthUser;
 use crate::error::{AppError, AppResult};
 use crate::AppState;
@@ -109,7 +109,7 @@ pub async fn accounts(State(state): State<AppState>, user: AuthUser, Path(househ
          GROUP BY m.id, m.seq ORDER BY m.seq",
     )
     .bind(household_id)
-    .bind(month_start(hh.tz, now))
+    .bind(crate::period::period_start(&state.db, household_id).await?)
     .fetch_all(&state.db)
     .await?;
 
@@ -155,7 +155,7 @@ pub struct LedgerEntryDto {
     pub balance_delta: i64,
     pub note: Option<String>,
     pub created_at: DateTime<Utc>,
-    /// Task title for task entries.
+    /// Task title (task entries) or reward title (redemptions).
     pub task_title: Option<String>,
     /// The other person of a transfer.
     pub counterpart_id: Option<Uuid>,
@@ -187,7 +187,7 @@ pub async fn history(
     }
     let rows = sqlx::query_as::<_, LedgerEntryDto>(
         "SELECT l.id, l.kind, l.contribution_delta, l.balance_delta, COALESCE(l.note, tr.note) AS note, l.created_at,
-                t.title AS task_title,
+                COALESCE(t.title, rw.title) AS task_title,
                 CASE WHEN l.kind = 'transfer_out' THEN tr.to_id WHEN l.kind = 'transfer_in' THEN tr.from_id END AS counterpart_id,
                 l.created_by,
                 EXISTS (SELECT 1 FROM ledger_entries c WHERE c.ref_type = 'ledger' AND c.ref_id = l.id) AS reversed
@@ -195,6 +195,8 @@ pub async fn history(
          LEFT JOIN ledger_entries orig ON l.ref_type = 'ledger' AND orig.id = l.ref_id
          LEFT JOIN tasks t ON t.id = CASE WHEN l.ref_type = 'task' THEN l.ref_id WHEN orig.ref_type = 'task' THEN orig.ref_id END
          LEFT JOIN transfers tr ON l.ref_type = 'transfer' AND tr.id = l.ref_id
+         LEFT JOIN reward_redemptions rr ON l.ref_type = 'redemption' AND rr.id = l.ref_id
+         LEFT JOIN rewards rw ON rw.id = rr.reward_id
          WHERE l.household_id = $1 AND l.member_id = $2 AND ($3::timestamptz IS NULL OR l.created_at < $3)
          ORDER BY l.created_at DESC, l.id LIMIT $4",
     )
@@ -368,7 +370,7 @@ pub async fn create_transfer(
     }
     lock_member(&mut tx, me).await?;
     let have = balance(&mut tx, me).await?;
-    let sent = sent_this_period(&mut tx, me, month_start(hh.tz, Utc::now()), None).await?;
+    let sent = sent_this_period(&mut tx, me, crate::period::period_start(&state.db, household_id).await?, None).await?;
     hh.policy.check_transfer(req.amount, have, sent).map_err(|e| AppError::BadRequest(e.to_string()))?;
 
     let pending = role == "child" && hh.policy.child_transfer_needs_approval;
@@ -447,7 +449,7 @@ pub async fn decide_transfer(
     let status = if req.approve {
         lock_member(&mut tx, t.from_id).await?;
         let have = balance(&mut tx, t.from_id).await?;
-        let sent = sent_this_period(&mut tx, t.from_id, month_start(hh.tz, Utc::now()), Some(t.id)).await?;
+        let sent = sent_this_period(&mut tx, t.from_id, crate::period::period_start(&state.db, household_id).await?, Some(t.id)).await?;
         hh.policy.check_transfer(t.amount, have, sent).map_err(|e| AppError::BadRequest(e.to_string()))?;
         execute(&mut tx, household_id, &t, me).await?;
         "done"

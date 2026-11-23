@@ -54,7 +54,9 @@ export function applyTheme(theme: Theme) {
 /** Feedback for a moment: sound (if enabled) and a short vibration (if enabled and supported). */
 export function feedback(id: SoundId) {
   if (settings.sound) playSound(id);
-  if (settings.vibration && typeof navigator !== "undefined" && "vibrate" in navigator) {
+  // Browsers only allow vibration after the user has touched the page once.
+  const touched = typeof navigator !== "undefined" && (navigator as Navigator & { userActivation?: { hasBeenActive: boolean } }).userActivation?.hasBeenActive !== false;
+  if (settings.vibration && touched && "vibrate" in navigator) {
     navigator.vibrate(id === "step" ? 15 : id === "goal" || id === "overtake" ? [30, 40, 60] : 35);
   }
 }

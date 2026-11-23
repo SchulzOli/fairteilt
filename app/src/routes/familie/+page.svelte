@@ -119,6 +119,7 @@
   {#if session.members.some((m) => m.has_pin && !isMe(m))}
     <a class="btnlike" href="/profil">Profil wechseln (Tablet)</a>
   {/if}
+  <a class="btnlike" href="/regeln">Regeln des Haushalts</a>
 </div>
 
 {#if panel}

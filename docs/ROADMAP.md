@@ -8,12 +8,12 @@ im Familienalltag nutzbar (Familien-Alpha). Umfang grob: S / M / L.
 
 ## Nächste Schritte
 
-Erledigt: CI, TypeScript-Typen aus `punkte-core` und Server, Design-Grundlage in der App, **M1**, **M2**, **M3**.
+Erledigt: CI, TypeScript-Typen aus `punkte-core` und Server, Design-Grundlage in der App, **M1**, **M2**, **M3**, **M4**.
 
 | Wer | Schritt |
 | --- | --- |
 | Code | Familien-Alpha: Deployment auf Hetzner durchspielen, signierte APK, Backup und Wiederherstellung testen |
-| Code | M4: Monatsabschluss, Familienziel gegen Krümel, Belohnungskatalog |
+| Code | M5: Erinnerungen und Push (lokal beim Kippen auf „fällig“, Postfach, FCM), Warnung vor Monatsende |
 | Entscheidung | Klang auswählen (Klang-Spielplatz auf der Roadmap-Seite). Krümel, Serie, Schritte und Tiere sind entschieden |
 | Betrieb | Hetzner-Cloud-Server bestellen, DNS `fairteilt.oli-tech.eu` setzen (bis zur Alpha) |
 | Betrieb | Tablet für die Wandanzeige festlegen. Firebase vor M5, Apple-Developer-Account vor M7 |
@@ -27,7 +27,7 @@ Erledigt: CI, TypeScript-Typen aus `punkte-core` und Server, Design-Grundlage in
 | ✅ | **M2 Aufgaben, Räume & Zustand** | „Bad putzen, alle 7 Tage“ wird gelb und rot; Alex startet es, hakt fünf Schritte ab, und Fairteilt fragt freundlich nach, falls er hängen bleibt | L |
 | ✅ | **M3 Punkte & Bestätigung** | Kind erledigt, Elternteil bestätigt mit angepassten Punkten, die Serie zählt hoch | M |
 | ▶ | **α Familien-Alpha** | Läuft auf Hetzner mit Backups, signierte APK, zwei Wochen Alltag ohne Datenverlust | S |
-| | **M4 Ausgleich, Familienziel & Belohnungen** | Monatsabschluss läuft automatisch, Rennen gegen Krümel entscheidet über die Familienbelohnung | M |
+| ✅ | **M4 Ausgleich, Familienziel & Belohnungen** | Monatsabschluss läuft automatisch, Rennen gegen Krümel entscheidet über die Familienbelohnung | M |
 | | **M5 Erinnerungen & Push** | Lokale Erinnerungen beim Kippen auf „fällig“, Postfach, Push über FCM | M |
 | | **M6 Plan & Wandanzeige** | Kalender, Board, eigene Ansichten, Tablet-Wandanzeige mit PIN-Abhaken | L |
 | | **M7 Offline & Stores** | Offline-Warteschlange, Play Store, iOS über CI, Datenexport und Löschen | L |
@@ -98,6 +98,21 @@ Server-Test und in der App geprüft. Bis M4 zählt der Kalendermonat als Periode
 - App: Bestätigen-Blatt, Punkte-Ansicht mit Verlauf
 
 ### M4 Ausgleich, Familienziel & Belohnungen
+
+**Abgeschlossen am 23.11.2026.** `punkte-core`: Zeiträume in der Zeitzone des Haushalts (Monat ab Tag X,
+Woche ab Wochentag, alle X Tage), Krümels Lauf (gleichmäßig bis zum Ziel am Ende, Schub durch überfällige
+Aufgaben), Entscheidung des Rennens, Zielvorschlag aus dem letzten Zeitraum. Server: Jeder Haushalt hat
+einen laufenden Zeitraum mit Familienziel; der Scheduler schließt ihn am Ende automatisch als Entwurf ab
+(Ziel, Leistung, Abweichung, Übertrag je Mitglied, Abwesenheiten zählen), entscheidet das Rennen und
+öffnet den nächsten. Admins geben frei, sonst geschieht das nach der eingestellten Zeit: Bonus, Abzug
+(nie unter 0), Nullsummen-Ausgleich und Aufholaufgaben aus den Vorlagen mit Frist von 7 Tagen. Das Rennen
+wird bei jeder Gutschrift geprüft: Wer zuerst ankommt, entscheidet über die Familienbelohnung.
+Belohnungskatalog mit Freigabe, Bestand und Abkühlzeit; abgelehnte Einlösungen bekommen ihr Guthaben
+zurück. Haushaltsregeln (Punkte, Guthaben, Abschluss, Familienziel) lesen alle, ändern Admins. App:
+echtes Rennen in Heute mit Klängen beim Überholen und beim Sieg, Familienziel-Blatt für Admins, Abschluss
+in Punkte („Wer lag wo?“, Freigabe), Seite Belohnungen, Seite Regeln. Das M4-Szenario ist als
+Server-Test und in der App geprüft. Die Warnung vor dem Ende des Zeitraums und Benachrichtigungen kommen
+mit M5; Abwesenheiten werden berücksichtigt, haben aber noch keine Oberfläche.
 
 - Periodenabschluss mit Entwurf, Freigabe, Übertrag und Aufholaufgaben
 - Familienziel pro Monat, Krümel rückt gleichmäßig bis zum Ziel am Monatsende vor

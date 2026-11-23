@@ -1,6 +1,7 @@
 // Tasks and rooms of the active household, kept current over the live WebSocket (M2).
 import type {
   AccountDto,
+  PeriodDto,
   CreateTemplateRequest,
   CreateTemplateResponse,
   RoomDto,
@@ -19,6 +20,8 @@ class TaskStore {
   rooms = $state<RoomDto[]>([]);
   /** Accounts (G, XP, streak) of all members, in member order. */
   accounts = $state<AccountDto[]>([]);
+  /** Running period: race against Krümel and the latest settlements. */
+  period = $state<PeriodDto | null>(null);
   loaded = $state(false);
   /** Counts reloads: pages with their own data (history) reload when it changes. */
   version = $state(0);
@@ -41,8 +44,9 @@ class TaskStore {
     this.stop();
     this.hid = hid;
     this.clock = setInterval(() => (this.now = Date.now()), 1000);
-    void this.load();
-    void session.loadMembers();
+    // Offline at start: the live channel reconnects and reloads once the server is back.
+    void this.load().catch(() => {});
+    void session.loadMembers().catch(() => {});
     void this.connect();
   }
 
@@ -57,6 +61,7 @@ class TaskStore {
     this.tasks = [];
     this.rooms = [];
     this.accounts = [];
+    this.period = null;
     this.loaded = false;
     this.live = false;
   }
@@ -65,10 +70,11 @@ class TaskStore {
     const hid = this.hid;
     if (!hid) return;
     if (Date.now() < this.holdUntil) return this.scheduleReload();
-    const [tasks, rooms, accounts] = await Promise.all([
+    const [tasks, rooms, accounts, period] = await Promise.all([
       session.request<TaskDto[]>("GET", `/households/${hid}/tasks`),
       session.request<RoomDto[]>("GET", `/households/${hid}/rooms`),
       session.request<AccountDto[]>("GET", `/households/${hid}/accounts`),
+      session.request<PeriodDto>("GET", `/households/${hid}/period`),
     ]);
     if (hid !== this.hid) return;
     const before = this.myAccount;
@@ -76,6 +82,8 @@ class TaskStore {
     this.rooms = rooms;
     this.accounts = accounts;
     this.celebrateStreak(before);
+    this.celebrateOvertake(this.period, period);
+    this.period = period;
     this.loaded = true;
     this.version++;
   }
@@ -114,6 +122,17 @@ class TaskStore {
         this.retry = 0;
       } else if (type === "tasks_changed" || type === "rooms_changed" || type === "points_changed") {
         this.scheduleReload();
+      } else if (type === "goal_won") {
+        notices.show(`Geschafft! Ihr habt Krümel geschlagen`, "streak", `Familienbelohnung: ${event.reward}`, "goal");
+        this.scheduleReload();
+      } else if (type === "goal_lost") {
+        notices.show("Krümel war diesmal schneller", "info", "Nächste Runde, neues Glück.");
+        this.scheduleReload();
+      } else if (type === "period_closed") {
+        if (session.isAdmin) notices.show("Der Abschluss ist fertig", "info", "Unter Punkte ansehen und freigeben.");
+        this.scheduleReload();
+      } else if (type === "settlement_approved" || type === "rewards_changed") {
+        this.scheduleReload();
       } else if (event.member) {
         this.personal(event);
         this.scheduleReload();
@@ -147,10 +166,24 @@ class TaskStore {
       case "transfer_declined":
         notices.show(`Deine ${e.g} G an ${memberName(e.to ?? null)} wurden nicht freigegeben`, "info");
         break;
+      case "redemption_approved":
+        notices.show(`„${e.task}“ ist freigegeben`, "coin", `${who} hat zugestimmt. Viel Spaß!`, "confirm");
+        break;
+      case "redemption_rejected":
+        notices.show(`„${e.task}“ diesmal nicht`, "info", `Deine ${e.g} G sind wieder da.`);
+        break;
       case "reversed":
         notices.show(`${who} hat „${e.task ?? "eine Aufgabe"}“ zurückgenommen`, "info", note);
         break;
     }
+  }
+
+  /** The family just passed Krümel (same period): the overtake motif. */
+  private celebrateOvertake(before: PeriodDto | null, now: PeriodDto) {
+    if (!before || before.id !== now.id || now.goal.status !== "running") return;
+    const was = before.goal.family_xp - before.goal.krumel_xp;
+    const is = now.goal.family_xp - now.goal.krumel_xp;
+    if (was <= 0 && is > 0) setTimeout(() => notices.show("Ihr habt Krümel überholt!", "streak", undefined, "overtake"), 900);
   }
 
   /** The streak grew (own task done or confirmed): a small celebration after the task's own one. */
@@ -246,6 +279,7 @@ interface LiveEvent {
   g?: number;
   note?: string | null;
   to?: string;
+  reward?: string;
 }
 
 export const taskStore = new TaskStore();

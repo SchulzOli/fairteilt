@@ -2,7 +2,7 @@
 
 export type LedgerEntryDto = { id: string, kind: string, contribution_delta: number, balance_delta: number, note: string | null, created_at: string, 
 /**
- * Task title for task entries.
+ * Task title (task entries) or reward title (redemptions).
  */
 task_title: string | null, 
 /**

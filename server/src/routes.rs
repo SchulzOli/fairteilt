@@ -50,7 +50,17 @@ pub fn router(state: AppState, cors_origins: &[String]) -> Router {
         .route("/households/{id}/ledger", get(api::points::history))
         .route("/households/{id}/ledger/{eid}/reverse", post(api::points::reverse))
         .route("/households/{id}/transfers", get(api::points::list_transfers).post(api::points::create_transfer))
-        .route("/transfers/{xid}/decide", post(api::points::decide_transfer));
+        .route("/transfers/{xid}/decide", post(api::points::decide_transfer))
+        .route("/households/{id}/period", get(api::period::current))
+        .route("/households/{id}/settlements", get(api::period::list))
+        .route("/settlements/{sid}/approve", post(api::period::approve))
+        .route("/households/{id}/rules", get(api::period::rules).put(api::period::update_rules))
+        .route("/households/{id}/goal", put(api::period::update_goal))
+        .route("/households/{id}/rewards", get(api::rewards::list).post(api::rewards::create))
+        .route("/households/{id}/rewards/{rid}", patch(api::rewards::update).delete(api::rewards::archive))
+        .route("/rewards/{rid}/redeem", post(api::rewards::redeem))
+        .route("/households/{id}/redemptions", get(api::rewards::redemptions))
+        .route("/redemptions/{xid}/decide", post(api::rewards::decide));
 
     Router::new()
         .route("/health", get(health))

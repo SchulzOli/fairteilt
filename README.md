@@ -50,9 +50,9 @@ pnpm --dir app install; pnpm --dir app tauri dev
 ```
 
 In der App unter **Mehr → Server** `http://localhost:8080` eintragen und „Verbindung testen“.
-Die Punkte-Ansicht rechnet den Ausgleich offline mit `punkte-core`.
+Die Vorschau „Abschluss ausprobieren“ unter Regeln rechnet den Ausgleich offline mit `punkte-core` (im Tauri-Kern).
 
-### API (Stand M3)
+### API (Stand M4)
 
 | Route | Zweck |
 | --- | --- |
@@ -80,6 +80,11 @@ Die Punkte-Ansicht rechnet den Ausgleich offline mit `punkte-core`.
 | `GET /api/v1/households/{id}/ledger` | Verlauf des eigenen Kontos (Admins: `?member=`), `before` + `limit` zum Blättern |
 | `POST /api/v1/households/{id}/ledger/{eid}/reverse` | Admins nehmen eine Gutschrift per Gegenbuchung zurück (mit Begründung) |
 | `GET` · `POST /api/v1/households/{id}/transfers` · `POST /api/v1/transfers/{xid}/decide` | Guthaben übertragen, Freigabe für Kinder |
+| `GET /api/v1/households/{id}/period` | laufender Zeitraum mit Rennen gegen Krümel und den letzten Abschlüssen |
+| `GET /api/v1/households/{id}/settlements` · `POST /api/v1/settlements/{sid}/approve` | Abschlüsse, Freigabe durch Admins |
+| `GET` · `PUT /api/v1/households/{id}/rules` · `PUT …/goal` | Regeln des Haushalts (Punkte, Abschluss, Familienziel); Familienziel allein |
+| `GET` · `POST /api/v1/households/{id}/rewards` · `PATCH` · `DELETE …/rewards/{rid}` | Belohnungskatalog |
+| `POST /api/v1/rewards/{rid}/redeem` · `GET …/households/{id}/redemptions` · `POST /api/v1/redemptions/{xid}/decide` | Einlösen, Freigabe |
 | `GET /api/v1/households/{id}/live?token=` | WebSocket: `tasks_changed` / `rooms_changed` / `points_changed`; persönlich (`member`): `credited`, `returned`, `received`, `transfer_declined`, `reversed` |
 
 ## App-Icon

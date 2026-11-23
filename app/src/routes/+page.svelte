@@ -4,7 +4,7 @@
   import Avatar from "$lib/ui/Avatar.svelte";
   import Icon from "$lib/ui/Icon.svelte";
   import Krumel from "$lib/ui/Krumel.svelte";
-  import { familyGoal } from "$lib/demo";
+  import GoalSheet from "$lib/GoalSheet.svelte";
   import { session } from "$lib/session.svelte";
   import { conditionOf, taskStore } from "$lib/tasks.svelte";
   import type { AnimalName } from "$lib/ui/Avatar.svelte";
@@ -25,9 +25,21 @@
   const others = $derived(rest.filter((t) => t.assignee_id && t.assignee_id !== me));
   const streak = $derived(taskStore.myAccount?.streak ?? { days: 0, today: false });
 
-  const familyPct = $derived(Math.min(100, (familyGoal.xp / familyGoal.goal) * 100));
-  const krumelPct = $derived(Math.min(100, (familyGoal.krumelXp / familyGoal.goal) * 100));
-  const ahead = $derived(familyGoal.xp >= familyGoal.krumelXp);
+  let goalSheet = $state(false);
+  const goal = $derived(taskStore.period?.goal);
+  const familyPct = $derived(goal ? Math.min(100, (goal.family_xp / goal.target) * 100) : 0);
+  const krumelPct = $derived(goal ? Math.min(100, (goal.krumel_xp / goal.target) * 100) : 0);
+  const ahead = $derived(goal ? goal.family_xp >= goal.krumel_xp : true);
+  const daysLeft = $derived(
+    taskStore.period ? Math.max(0, Math.ceil((Date.parse(taskStore.period.ends_at) - taskStore.now) / 86_400_000)) : 0,
+  );
+  const raceText = $derived.by(() => {
+    if (!goal) return "";
+    if (goal.status === "won") return `Geschafft! ${goal.reward} gehört euch`;
+    if (goal.status === "lost") return "Krümel war schneller. Nächstes Mal!";
+    const behind = goal.krumel_xp - goal.family_xp;
+    return `${ahead ? "Ihr liegt vorn" : behind < 10 ? "Krümel knapp vorn" : "Krümel liegt vorn"} · noch ${daysLeft} ${daysLeft === 1 ? "Tag" : "Tage"}`;
+  });
 
   const today = new Intl.DateTimeFormat("de-DE", { weekday: "long", day: "numeric", month: "long" }).format(new Date());
 </script>
@@ -46,10 +58,15 @@
   </span>
 </header>
 
-<section class="card race" aria-label="Familienziel">
+{#if goal}
+<section class="card race" class:won={goal.status === "won"} aria-label="Familienziel">
   <div class="row between">
     <strong>Familie gegen Krümel</strong>
-    <span class="coin-chip">{familyGoal.reward}</span>
+    {#if session.isAdmin}
+      <button class="reward" onclick={() => (goalSheet = true)} aria-label="Familienziel ändern: {goal.reward}"><span class="coin-chip">{goal.reward}</span></button>
+    {:else}
+      <span class="coin-chip">{goal.reward}</span>
+    {/if}
   </div>
   <div class="track" aria-hidden="true">
     <span class="lane"></span>
@@ -59,10 +76,11 @@
     <span class="goal"><Icon name="flag" size={20} /></span>
   </div>
   <div class="row between small muted">
-    <span>{familyGoal.xp} / {familyGoal.goal} XP</span>
-    <span>{ahead ? "Ihr liegt vorn" : "Krümel knapp vorn"} · noch {familyGoal.daysLeft} Tage</span>
+    <span>{goal.family_xp} / {goal.target} XP</span>
+    <span class:result={goal.status !== "running"}>{raceText}</span>
   </div>
 </section>
+{/if}
 
 {#if !taskStore.loaded}
   <p class="muted">Aufgaben laden …</p>
@@ -119,7 +137,9 @@
   {/if}
 {/if}
 
-<p class="muted small demo">Das Familienziel ist noch ein Beispiel. Das echte Rennen gegen Krümel kommt mit M4.</p>
+{#if goalSheet}
+  <GoalSheet onclose={() => (goalSheet = false)} />
+{/if}
 
 {#if planner}
   <button class="fab primary" aria-label="Aufgabe anlegen" onclick={() => (sheet = {})}><Icon name="plus" size={24} /></button>
@@ -225,9 +245,21 @@
     color: var(--coin);
   }
 
-  .demo {
-    margin-top: var(--space-5);
-    text-align: center;
+  .reward {
+    padding: 0;
+    min-height: 0;
+    background: transparent;
+    border: none;
+  }
+
+  .race.won {
+    border-color: color-mix(in srgb, var(--coin) 50%, var(--line));
+    background: color-mix(in srgb, var(--coin-soft) 45%, var(--surface));
+  }
+
+  .result {
+    color: var(--fg);
+    font-weight: 700;
   }
 
   .sub {

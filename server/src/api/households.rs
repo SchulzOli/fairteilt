@@ -87,6 +87,8 @@ pub async fn create(
         .execute(&mut *tx)
         .await?;
     tx.commit().await?;
+    // The first period (and family goal) starts today.
+    crate::period::ensure_period(&state.db, household_id).await?;
     Ok((StatusCode::CREATED, Json(CreateHouseholdResponse { household_id, membership_id })))
 }
 
