@@ -1,7 +1,7 @@
 # Testversionen über Firebase App Distribution
 
 Die Familie bekommt neue Android-Versionen über **Firebase App Distribution**: Jeder Lauf des
-Workflows **Apps** baut eine signierte APK und schickt sie an die Testergruppe `familie`. Auf den
+Workflows **Apps** baut eine signierte APK und schickt sie an die Testergruppe `testgruppe1` („TestGruppe1“). Auf den
 Handys meldet die App „Firebase App Tester“ das Update. Für den Play Store gilt weiter
 [PLAY-STORE.md](PLAY-STORE.md).
 
@@ -9,8 +9,8 @@ Handys meldet die App „Firebase App Tester“ das Update. Für den Play Store 
 
 1. **App Distribution aktivieren:** Firebase Console → Projekt → *Ausführen & Überwachen* →
    **App Distribution** → Android-App `eu.olitech.fairteilt` wählen → *Jetzt starten*.
-2. **Gruppe anlegen:** Reiter *Tester und Gruppen* → *Gruppe hinzufügen*, Name „Familie“,
-   Alias `familie`. Tester per E-Mail (Google-Konto) hinzufügen oder unter *Einladungslinks* einen
+2. **Gruppe anlegen:** Reiter *Tester und Gruppen* → *Gruppe hinzufügen*, Name „TestGruppe1“
+   (Alias `testgruppe1`; fehlt die Gruppe, legt der Workflow sie selbst an, aber ohne Tester). Tester per E-Mail (Google-Konto) hinzufügen oder unter *Einladungslinks* einen
    Link für die Gruppe erzeugen und nur in der Familie teilen.
 3. **Dienstkonto nur fürs Verteilen** (nicht das Server-Dienstkonto, das mehr darf):
    [Google Cloud Console](https://console.cloud.google.com) → oben das Firebase-Projekt wählen →
@@ -43,10 +43,10 @@ Oder auf GitHub: *Actions* → **Apps** → *Run workflow*. Dort lassen sich ein
 | Feld | Standard | Bedeutung |
 | --- | --- | --- |
 | `distribute` | an | APK an App Distribution schicken |
-| `groups` | `familie` | Testergruppen (Aliase, durch Komma getrennt) |
+| `groups` | `testgruppe1` | Testergruppen (Aliase, durch Komma getrennt) |
 | `release_notes` | leer | Text für die Tester; leer = letzte Commit-Nachricht |
 
-Ein Git-Tag `v*` (z. B. `v0.2.0`) baut und verteilt ebenfalls an `familie`. Jeder Build bekommt
+Ein Git-Tag `v*` (z. B. `v0.2.0`) baut und verteilt ebenfalls an `testgruppe1`. Jeder Build bekommt
 einen eigenen `versionCode` (100000 + Laufnummer des Workflows), sonst würden die Handys ihn
 nicht als Update erkennen. Der angezeigte Versionsname bleibt `version` aus `tauri.conf.json`.
 Die Versionshinweise enthalten Build-Nummer und Commit.

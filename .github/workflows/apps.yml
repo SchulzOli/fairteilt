@@ -22,7 +22,7 @@ on:
         default: true
       groups:
         description: "Testergruppen in App Distribution (Aliase, durch Komma getrennt)"
-        default: "familie"
+        default: "testgruppe1"
       release_notes:
         description: "Versionshinweise (leer = letzte Commit-Nachricht)"
         default: ""
@@ -111,7 +111,7 @@ jobs:
           && (github.event_name == 'push' || inputs.distribute)
         env:
           FIREBASE_APP_DISTRIBUTION_KEY: ${{ secrets.FIREBASE_APP_DISTRIBUTION_KEY }}
-          GROUPS: ${{ inputs.groups || 'familie' }}
+          GROUPS: ${{ inputs.groups || 'testgruppe1' }}
           NOTES: ${{ inputs.release_notes }}
         run: |
           key="$RUNNER_TEMP/distribution-key.json"
