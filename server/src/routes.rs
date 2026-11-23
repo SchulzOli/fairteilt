@@ -75,7 +75,14 @@ pub fn router(state: AppState, cors_origins: &[String]) -> Router {
         .route("/households/{id}/calendar", get(api::plan::calendar))
         .route("/households/{id}/board", get(api::plan::board).put(api::plan::move_card))
         .route("/households/{id}/views", get(api::plan::views).post(api::plan::create_view))
-        .route("/views/{vid}", put(api::plan::update_view).delete(api::plan::delete_view));
+        .route("/views/{vid}", put(api::plan::update_view).delete(api::plan::delete_view))
+        .route("/templates/{tid}/trigger", post(api::tasks::trigger_template))
+        .route("/households/{id}/shopping", get(api::shopping::overview))
+        .route("/households/{id}/lists", post(api::shopping::create_list))
+        .route("/lists/{lid}", patch(api::shopping::rename_list).delete(api::shopping::delete_list))
+        .route("/lists/{lid}/items", post(api::shopping::add_item))
+        .route("/items/{iid}", patch(api::shopping::update_item).delete(api::shopping::delete_item))
+        .route("/items/{iid}/check", post(api::shopping::check_item));
 
     Router::new()
         .route("/health", get(health))

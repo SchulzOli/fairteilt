@@ -1,5 +1,5 @@
 //! Rhythm of a task template (KONZEPT §7.1): once, "every X days after the last time",
-//! weekly on fixed weekdays, or monthly on a day.
+//! weekly on fixed weekdays, monthly on a day, or "auf Abruf" (M8: rests until triggered).
 //!
 //! Every recurring template has exactly one current round (`Cycle`) with a start and a
 //! due time. Completing a round creates the next one; its start is the completion time,
@@ -23,6 +23,10 @@ pub enum Schedule {
     Weekly { weekdays: Vec<u8>, every_weeks: u32 },
     /// Due on this day of the month (clamped to the month's length, e.g. 31 → 30 in April).
     Monthly { day: u8 },
+    /// "Auf Abruf" (M8): no round until something triggers it (a shopping list that is no
+    /// longer empty, or "Ist wieder nötig"). The round is due `due_after_days` later, or has
+    /// no due date at all.
+    OnCall { due_after_days: Option<u32> },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
@@ -35,7 +39,13 @@ pub enum ScheduleError {
     EveryWeeks,
     #[error("Der Tag im Monat muss zwischen 1 und 31 liegen.")]
     MonthDay,
+    #[error("„Fällig nach“ muss zwischen 1 und 30 Tagen liegen.")]
+    DueAfter,
 }
+
+/// Share of a round that counts as "fällig" (condition ≥ 0.75, see `condition.rs`): an urgent
+/// trigger starts the round right there.
+const URGENT_HOURS: i64 = 6;
 
 /// One round of a recurring task.
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
@@ -85,7 +95,23 @@ impl Schedule {
             }
             Schedule::Monthly { day } if (1..=31).contains(day) => Ok(()),
             Schedule::Monthly { .. } => Err(ScheduleError::MonthDay),
+            Schedule::OnCall { due_after_days: Some(d) } if !(1..=30).contains(d) => Err(ScheduleError::DueAfter),
+            Schedule::OnCall { .. } => Ok(()),
         }
+    }
+
+    pub fn is_on_call(&self) -> bool {
+        matches!(self, Schedule::OnCall { .. })
+    }
+
+    /// The round that a trigger opens at `now` (only for "auf Abruf"). Urgent: the round is
+    /// "fällig" right away (yellow, not yet overdue) and due a few hours later.
+    pub fn triggered_cycle(&self, now: DateTime<Utc>, urgent: bool) -> Option<(DateTime<Utc>, Option<DateTime<Utc>>)> {
+        let Schedule::OnCall { due_after_days } = self else { return None };
+        if urgent {
+            return Some(urgent_cycle(now));
+        }
+        Some((now, due_after_days.map(|d| now + Duration::days(i64::from(d)))))
     }
 
     pub fn is_recurring(&self) -> bool {
@@ -123,6 +149,7 @@ impl Schedule {
             Schedule::Interval { days } => now + Duration::days(i64::from(*days)),
             Schedule::Weekly { weekdays, .. } => end_of_day(Self::next_weekday_on_or_after(weekdays, today), tz),
             Schedule::Monthly { day } => end_of_day(Self::next_month_day_on_or_after(*day, today), tz),
+            Schedule::OnCall { .. } => return None,
         };
         Some(Cycle { start: now, due })
     }
@@ -141,6 +168,8 @@ impl Schedule {
                 end_of_day(Self::next_weekday_on_or_after(weekdays, from), tz)
             }
             Schedule::Monthly { day } => end_of_day(Self::next_month_day_on_or_after(*day, base + Duration::days(1)), tz),
+            // The next round comes only from a new trigger.
+            Schedule::OnCall { .. } => return None,
         };
         Some(Cycle { start: done_at, due })
     }
@@ -161,6 +190,11 @@ impl Schedule {
         }
         out
     }
+}
+
+/// Start and due of a round that is "fällig" at `now`: condition 0.75 (see `condition.rs`).
+pub fn urgent_cycle(now: DateTime<Utc>) -> (DateTime<Utc>, Option<DateTime<Utc>>) {
+    (now - Duration::hours(3 * URGENT_HOURS), Some(now + Duration::hours(URGENT_HOURS)))
 }
 
 #[cfg(test)]
@@ -190,6 +224,26 @@ mod tests {
         let next = w.upcoming(utc("2026-11-24T22:59:59Z"), utc("2027-01-01T00:00:00Z"), Berlin, 3);
         assert_eq!(next.iter().map(|c| local(c.due)).collect::<Vec<_>>(), ["Fri 2026-11-27 23:59", "Tue 2026-12-01 23:59", "Fri 2026-12-04 23:59"]);
         assert!(Schedule::Once.upcoming(due, utc("2027-01-01T00:00:00Z"), Berlin, 5).is_empty());
+    }
+
+    #[test]
+    fn on_call_rests_until_triggered() {
+        let s = Schedule::OnCall { due_after_days: Some(2) };
+        let now = utc("2026-11-24T16:00:00Z");
+        assert!(s.validate().is_ok());
+        assert!(s.is_on_call() && s.is_recurring());
+        assert!(s.first_cycle(now, Berlin).is_none());
+        assert!(s.next_cycle(now, now, Berlin).is_none());
+        assert!(s.upcoming(now, utc("2027-01-01T00:00:00Z"), Berlin, 5).is_empty());
+        assert_eq!(s.triggered_cycle(now, false), Some((now, Some(utc("2026-11-26T16:00:00Z")))));
+        // Urgent: due in 6 hours and already "fällig" (condition 0.75).
+        let (start, due) = s.triggered_cycle(now, true).unwrap();
+        assert_eq!(crate::condition(start, due, now), 0.75);
+        assert_eq!(Schedule::OnCall { due_after_days: None }.triggered_cycle(now, false), Some((now, None)));
+        assert_eq!(Schedule::OnCall { due_after_days: Some(0) }.validate(), Err(ScheduleError::DueAfter));
+        assert!(Schedule::Interval { days: 3 }.triggered_cycle(now, false).is_none());
+        let json = serde_json::to_string(&s).unwrap();
+        assert_eq!(json, r#"{"type":"on_call","due_after_days":2}"#);
     }
 
     #[test]

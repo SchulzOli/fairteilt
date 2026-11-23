@@ -14,12 +14,38 @@
   import Krumel from "$lib/ui/Krumel.svelte";
   import PinPad from "$lib/ui/PinPad.svelte";
   import { sameDay } from "$lib/plan/views";
+  import { itemKey, shopping } from "$lib/shopping.svelte";
 
   let flow = $state<{ task: TaskDto; who: MemberDto | null } | null>(null);
   let busy = $state(false);
   let error = $state<string | null>(null);
   let cheer = $state<{ id: string; text: string } | null>(null);
   let lock: WakeLockSentinel | null = null;
+  /** Writing something on the shopping list: tap your animal (no PIN, it books nothing). */
+  let writing = $state<{ who: MemberDto | null; text: string } | null>(null);
+  let added = $state<string[]>([]);
+
+  const list = $derived(shopping.current);
+  const toBuy = $derived(list ? list.items.filter((i) => !i.checked_at) : []);
+  const listTask = $derived(list?.task_id ? taskStore.tasks.find((t) => t.id === list.task_id) : undefined);
+  const wallSuggestions = $derived.by(() => {
+    const on = new Set(toBuy.map((i) => itemKey(i.name)));
+    const typed = writing ? itemKey(writing.text) : "";
+    return (shopping.data?.suggestions ?? []).filter((s) => !on.has(itemKey(s.name)) && (!typed || itemKey(s.name).startsWith(typed))).slice(0, 10);
+  });
+
+  async function write(text: string) {
+    if (!writing?.who || !list || !text.trim()) return;
+    error = null;
+    try {
+      await shopping.add(list.id, text, { asMember: writing.who.membership_id });
+      added = [...added, text.trim()];
+      writing.text = "";
+      feedback("step");
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
+    }
+  }
 
   const now = $derived(taskStore.now);
   const hour = $derived(new Date(now).getHours());
@@ -147,9 +173,58 @@
         </div>
       </section>
     {/each}
+    {#if list}
+      <section class="col shop" style="--mc: var(--primary)">
+        <h2><span class="shop-ic"><Icon name="cart" size={22} /></span><span>{list.name}</span></h2>
+        <p class="small muted">
+          {#if listTask?.assignee_id}{session.members.find((m) => m.membership_id === listTask.assignee_id)?.display_name ?? "Jemand"} kauft ein{:else if listTask}Wer geht einkaufen?{:else}Nichts zu kaufen{/if}
+        </p>
+        <ul class="shop-items">
+          {#each toBuy.slice(0, 12) as i (i.id)}
+            <li class:urgent={i.urgent}>{i.name}{#if i.note}<span class="small muted"> · {i.note}</span>{/if}</li>
+          {/each}
+          {#if toBuy.length > 12}<li class="small muted">und {toBuy.length - 12} weitere</li>{/if}
+        </ul>
+        <button class="primary write" onclick={() => ((writing = { who: null, text: "" }), (added = []))}><Icon name="plus" size={20} />Aufschreiben</button>
+      </section>
+    {/if}
   </div>
   {#if cheer && !columns.some((c) => c.tasks.some((t) => t.id === cheer?.id))}<p class="toast">{cheer.text}</p>{/if}
 </div>
+
+{#if writing}
+  <div class="backdrop" role="presentation" onclick={(e) => e.target === e.currentTarget && (writing = null)}>
+    <div class="sheet stack dialog" role="dialog" aria-modal="true" aria-labelledby="write-title">
+      <h2 id="write-title">Was fehlt?</h2>
+      {#if !writing.who}
+        <p class="muted">Wer schreibt auf?</p>
+        <div class="who">
+          {#each session.members as m (m.membership_id)}
+            <button class="animal" onclick={() => writing && (writing.who = m)}>
+              <Avatar animal={m.animal as AnimalName} color={m.color} size={64} />
+              <span>{m.display_name}</span>
+            </button>
+          {/each}
+        </div>
+        <p class="muted small">Aufschreiben geht ohne PIN, es gibt dafür keine XP.</p>
+      {:else}
+        <form class="row" onsubmit={(e) => (e.preventDefault(), void write(writing?.text ?? ""))}>
+          <Avatar animal={writing.who.animal as AnimalName} color={writing.who.color} size={40} />
+          <input type="text" bind:value={writing.text} maxlength="60" placeholder="z. B. Milch" aria-label="Artikel" />
+          <button class="primary" type="submit" disabled={!writing.text.trim()}>Dazu</button>
+        </form>
+        {#if wallSuggestions.length}
+          <div class="sugg">
+            {#each wallSuggestions as s (s.name)}<button onclick={() => write(s.name)}>+ {s.name}</button>{/each}
+          </div>
+        {/if}
+        {#if added.length}<p class="small">Aufgeschrieben: {added.join(", ")}</p>{/if}
+        {#if error}<p class="err" role="alert">{error}</p>{/if}
+      {/if}
+      <button onclick={() => (writing = null)}>{added.length ? "Fertig" : "Abbrechen"}</button>
+    </div>
+  </div>
+{/if}
 
 {#if flow}
   <div class="backdrop" role="presentation" onclick={(e) => e.target === e.currentTarget && (flow = null)}>
@@ -403,6 +478,54 @@
 
   @keyframes pop {
     from { transform: scale(0.9); opacity: 0; }
+  }
+
+  .shop-ic {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: var(--primary-soft);
+    color: var(--primary);
+  }
+
+  .shop-items {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    margin: 0;
+    padding: 0 0 0 var(--space-4);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-weight: 700;
+  }
+
+  .shop-items li.urgent::marker {
+    color: var(--over);
+  }
+
+  .write {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+
+  .err {
+    color: var(--over);
+  }
+
+  .sugg {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .sugg button {
+    min-height: 40px;
+    border-radius: 999px;
   }
 
   .done-all {

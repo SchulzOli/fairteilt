@@ -16,6 +16,7 @@ pub mod ledger;
 pub mod points;
 pub mod schedule;
 pub mod settlement;
+pub mod shopping;
 pub mod steps;
 pub mod streak;
 pub mod task;
@@ -28,6 +29,7 @@ pub use goal::{GoalPolicy, RaceStatus, decide as decide_race, krumel_position, o
 pub use condition::{ConditionState, condition, state as condition_state};
 pub use ledger::{LedgerDelta, LedgerKind};
 pub use schedule::{Cycle, Schedule, ScheduleError};
+pub use shopping::{ItemError, Section, clean_name, clean_note, item_key, merge_note};
 pub use steps::{StepOrder, all_done, can_check};
 pub use points::{ApprovalRule, Escalation, PointPolicy, PointRange, PointsError, TemplateApproval};
 pub use streak::{Streak, streak};

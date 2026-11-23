@@ -8,7 +8,7 @@ im Familienalltag nutzbar (Familien-Alpha). Umfang grob: S / M / L.
 
 ## Nächste Schritte
 
-Erledigt: CI, TypeScript-Typen aus `punkte-core` und Server, Design-Grundlage in der App, **M1** bis **M7**, Push über Firebase eingerichtet.
+Erledigt: CI, TypeScript-Typen aus `punkte-core` und Server, Design-Grundlage in der App, **M1** bis **M8**, Push über Firebase eingerichtet.
 
 | Wer | Schritt |
 | --- | --- |
@@ -33,7 +33,7 @@ Erledigt: CI, TypeScript-Typen aus `punkte-core` und Server, Design-Grundlage in
 | ✅ | **M5 Erinnerungen & Push** | Lokale Erinnerungen beim Kippen auf „fällig“, Postfach, Push über FCM | M |
 | ✅ | **M6 Plan & Wandanzeige** | Kalender, Board, eigene Ansichten, Tablet-Wandanzeige mit PIN-Abhaken | L |
 | ✅ | **M7 Offline & Stores** | Offline-Warteschlange, Play Store, iOS über CI, Datenexport und Löschen | L |
-| | **M8 Haushaltsbuch** | Ausgaben, Budgets und Belege in denselben Haushalten | L |
+| ✅ | **M8 Einkaufsliste** | Alle setzen Artikel auf die Liste (ohne XP); dadurch erscheint „Einkaufen“ als Aufgabe auf Abruf, die XP bringt und nie neu eingerichtet werden muss | M |
 
 ### M1 Konten & Haushalt
 
@@ -167,6 +167,28 @@ Release-Signierung über `keystore.properties` oder Secrets, Workflow **Apps** b
 iOS für den Simulator. Store-Texte und Datensicherheit in [store/PLAY-STORE.md](store/PLAY-STORE.md),
 Datenschutzerklärung als [Entwurf](DATENSCHUTZ.md). **Offen, braucht Konten:** Play-Console-Konto und
 Upload-Schlüssel, Apple-Developer-Konto (signiertes iOS, APNs).
+
+### M8 Einkaufsliste
+
+**Abgeschlossen am 23.11.2026** (Entwurf auf der Roadmap-Seite abgesegnet, alle Vorschläge übernommen).
+Neuer Rhythmus **„auf Abruf“** (`Schedule::OnCall { due_after_days }`): Die Vorlage hat keine offene
+Runde, bis sie ausgelöst wird, von Hand („Ist wieder nötig“ unter Plan · Räume) oder von ihrer Liste.
+Je Vorlage höchstens eine Runde; fällig nach X Tagen (Einkaufen: 2), „dringend“ macht sofort fällig.
+Jeder Haushalt hat die Liste „Supermarkt“ mit der Aufgabe „Einkaufen“, Erwachsene legen weitere an
+(jede mit eigener Aufgabe „… einkaufen“). **Aufschreiben darf jeder, auch Kinder, ohne XP und ohne
+Serie**; gleiche Artikel werden zusammengefasst, Vorschläge kommen aus dem Verlauf (mit Abteilung).
+Kinder ändern nur, was sie selbst aufgeschrieben haben. Der erste Artikel ruft „Einkaufen“. Abhaken
+legt in den Wagen und startet den Einkauf für die Person, die dran ist (oder für jeden, wenn offen);
+wer nicht dran ist, hat es nebenbei mitgebracht: Der Artikel verschwindet ohne XP, und eine leere
+Liste schließt die Runde still. **„Einkauf fertig“** ist das normale Erledigen: feste XP der Vorlage
+(Kinder mit Okay), der Wagen wandert in den Verlauf, Übriges ruft sofort die nächste Runde. Ohne
+abgehakte Artikel gibt es kein „fertig“. Neues auf der Liste während des Einkaufs: Postfach/Push
+„Mia: Bananen noch mit?“ an die einkaufende Person und live markiert. App: Navigationspunkt
+**Liste** (fünf unten, mit Zähler), Einkaufsmodus auf der Aufgabenseite (nach Abteilungen, Bildschirm
+bleibt an), Schild „auf Abruf“ auf den Karten, Kachel auf der Wandanzeige (Aufschreiben per Tier, ohne
+PIN). Alles läuft über die Offline-Warteschlange (Artikel-IDs vergibt die App). Export enthält Listen
+und Verlauf. Server-Seite als Test geprüft, Liste, Einkauf, „auf Abruf“ und Wandanzeige in der App.
+Keine Preise, kein Haushaltsbuch.
 
 ## Design (Kurzfassung, Details in KONZEPT §7.5)
 

@@ -70,6 +70,9 @@ pub async fn export_me(State(state): State<AppState>, user: AuthUser) -> AppResu
                 "SELECT json_agg(json_build_object('reward', r.title, 'cost', x.cost, 'status', x.status, 'created_at', x.created_at))
                  FROM reward_redemptions x JOIN rewards r ON r.id = x.reward_id WHERE x.member_id = $1", mid).await?,
             "inbox": json_of(&mut conn, "SELECT json_agg(n ORDER BY n.created_at) FROM notifications n WHERE n.member_id = $1", mid).await?,
+            "shopping_items_added": json_of(&mut conn,
+                "SELECT json_agg(json_build_object('name', i.name, 'note', i.note, 'added_at', i.added_at) ORDER BY i.added_at)
+                 FROM shopping_items i WHERE i.added_by = $1", mid).await?,
             "notification_prefs": json_of(&mut conn, "SELECT json_agg(p) FROM notification_prefs p WHERE p.member_id = $1", mid).await?,
         }));
     }
@@ -97,7 +100,7 @@ pub async fn export_household(State(state): State<AppState>, user: AuthUser, Pat
         "SELECT json_build_object('id', id, 'name', name, 'timezone', timezone, 'point_policy', point_policy, 'period_policy', period_policy,
                                   'goal_policy', goal_policy, 'created_at', created_at) FROM households WHERE id = $1",
     ).bind(h).fetch_one(&mut *conn).await?);
-    let tables: [(&str, &'static str); 15] = [
+    let tables: [(&str, &'static str); 18] = [
         ("members", "SELECT json_agg(json_build_object('id', m.id, 'name', u.display_name, 'role', m.role, 'color', m.color, 'animal', m.animal,
                          'weight', m.weight, 'active', m.active, 'joined_at', m.joined_at) ORDER BY m.seq)
                      FROM memberships m JOIN users u ON u.id = m.user_id WHERE m.household_id = $1"),
@@ -117,6 +120,9 @@ pub async fn export_household(State(state): State<AppState>, user: AuthUser, Pat
         ("redemptions", "SELECT json_agg(x ORDER BY x.created_at) FROM reward_redemptions x JOIN rewards r ON r.id = x.reward_id WHERE r.household_id = $1"),
         ("views", "SELECT json_agg(json_build_object('name', v.name, 'shared', v.shared, 'filter', v.filter, 'layout', v.layout, 'sort', v.sort))
                    FROM saved_views v WHERE v.household_id = $1 AND v.shared"),
+        ("shopping_lists", "SELECT json_agg(l ORDER BY l.position, l.created_at) FROM shopping_lists l WHERE l.household_id = $1"),
+        ("shopping_items", "SELECT json_agg(i ORDER BY i.added_at) FROM shopping_items i JOIN shopping_lists l ON l.id = i.list_id WHERE l.household_id = $1"),
+        ("shopping_history", "SELECT json_agg(h ORDER BY h.times DESC, h.name) FROM shopping_history h WHERE h.household_id = $1"),
     ];
     for (name, sql) in tables {
         out.insert(name.into(), json_of(&mut conn, sql, h).await?);

@@ -4,8 +4,8 @@ Stand: 22.11.2026 · Status: Entwurf v0.2 (offene Fragen entschieden, §13)
 
 **Fairteilt** ist eine Familien-App für Haushaltsaufgaben mit einstellbarem Punktesystem, periodischem Ausgleich,
 Belohnungen und Aufholaufgaben, Erinnerungen sowie Kalender- und Canvas-Planung.
-Plattformunabhängig als **Tauri-2-App**, gebaut vor allem fürs Handy. Ein Finanzteil
-(Einnahmen, Ausgaben, Budgets) folgt später, das Datenmodell lässt Platz dafür.
+Plattformunabhängig als **Tauri-2-App**, gebaut vor allem fürs Handy. Als Nächstes folgt eine
+gemeinsame Einkaufsliste (§10); ein Finanzteil ist nicht mehr geplant.
 
 ---
 
@@ -19,7 +19,7 @@ Plattformunabhängig als **Tauri-2-App**, gebaut vor allem fürs Handy. Ein Fina
 | App-Kennung | Name **Fairteilt**, Kennung `eu.olitech.fairteilt` | passt zur Domain `oli-tech.eu`. Nach dem ersten Store-Release nicht mehr änderbar |
 | Firebase | **FCM** (Android-Push) und **App Distribution** (Testversionen an die Familie), optional später **Hosting** für eine Web-Version | Backend und Datenbank bleiben auf Hetzner: Firebase führt keinen Rust-Container mit Postgres aus (nur über Cloud Run + Cloud SQL, teurer) |
 | Gemeinsame Logik | Rust-Crate `punkte-core` (rein, ohne IO) | dieselbe Punkte- und Ausgleichslogik auf dem Server und (für Offline-Vorschau) in der App, gut testbar |
-| Umfang v1 | Aufgaben, Punkte, Ausgleich, Belohnungen/Strafen, Erinnerungen, Kalender/Canvas | Finanzen kommen später (eigenes Modul, siehe §10) |
+| Umfang v1 | Aufgaben, Punkte, Ausgleich, Belohnungen/Strafen, Erinnerungen, Kalender/Canvas, danach Einkaufsliste (§10) | Ein Finanzmodul (Haushaltsbuch) ist nicht mehr geplant |
 
 ---
 
@@ -216,6 +216,8 @@ Die Rechnung steckt in `punkte-core::settlement` und ist mit Tests abgedeckt.
     Fällig ist am Ende des Tages in der Zeitzone des Haushalts (`punkte_core::Schedule`, als JSON gespeichert)
   - **nach Bedarf**: Intervall ab der letzten Erledigung, z. B. „Bad alle 7 Tage“. Wer früher
     erledigt, setzt die Uhr zurück
+  - **auf Abruf** (M8): keine Runde, bis jemand sie braucht („Ist wieder nötig“ oder eine
+    Einkaufsliste, die nicht mehr leer ist); optional fällig X Tage danach, siehe §10
 - **Zustand** jeder Aufgabe: `frisch → fällig → überfällig`, berechnet aus der Zeit seit dem letzten
   Mal bzw. bis zum Termin. Die Eskalation der Punkte (§4.2) setzt mit „überfällig“ ein. Dargestellt
   als Zustandsbalken grün → honig → rot. Ein Raum zeigt den Zustand seiner dringendsten Aufgabe
@@ -416,12 +418,16 @@ Periodenabschluss. Kein zusätzlicher Dienst nötig, mehrere Instanzen wären sp
 
 ---
 
-## 10. Später: Finanzen (Haushaltsbuch)
+## 10. Einkaufsliste und Aufgaben auf Abruf (M8)
 
-Eigenes Modul im selben Haushalt: Konten, Buchungen (Einnahme/Ausgabe), Kategorien, Budgets je
-Monat, wiederkehrende Posten, Belege (Foto), Aufteilung zwischen Mitgliedern. Optional eine Brücke:
-Taschengeld als Umrechnung von Guthaben in Euro. Kein Bezug zum Punkte-Ledger, nur dieselben
-Haushalte, Mitglieder und dieselbe Sync-Schicht.
+Gemeinsame Einkaufslisten, auf die jedes Mitglied Artikel setzt (ohne XP). Jede Liste hängt an einer
+Vorlage mit dem Rhythmus **auf Abruf** (`Schedule::OnCall`): Sie hat keine offene Runde, bis sie
+ausgelöst wird, von Hand („Ist wieder nötig“) oder weil die Liste nicht mehr leer ist. Die Runde
+„Einkaufen“ verhält sich dann wie jede Aufgabe (Zuweisung, XP, Bestätigung, Bonus). „Einkauf fertig“
+räumt die abgehakten Artikel ab, übrig gebliebene lösen gleich die nächste Runde aus. Aufschreiben
+geht für alle ohne XP; Abhaken legt in den Wagen, wenn man selbst einkauft, sonst ist der Artikel
+„nebenbei mitgebracht“ und verschwindet ohne XP. Umsetzung: [ROADMAP.md › M8](ROADMAP.md#m8-einkaufsliste).
+Das frühere Finanzmodul (Haushaltsbuch) ist gestrichen.
 
 ---
 
@@ -451,7 +457,7 @@ Ausführlich mit nächsten Schritten und Designentwurf: [ROADMAP.md](ROADMAP.md)
 | **M5** Erinnerungen | lokale Benachrichtigungen, In-App-Postfach, WebSocket, danach Push (FCM/APNs) |
 | **M6** Plan & Wandanzeige | Kalender, Board, eigene Ansichten, Tablet-Wandanzeige |
 | **M7** Offline + Release | Outbox-Sync, Android-Release (Play Store/APK), iOS über CI |
-| **M8** Finanzen | Haushaltsbuch-Modul |
+| **M8** Einkaufsliste | gemeinsame Listen, Aufgaben auf Abruf („Einkaufen“ mit XP, Artikel hinzufügen ohne XP) |
 
 ---
 

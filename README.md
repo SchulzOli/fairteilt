@@ -52,7 +52,7 @@ pnpm --dir app install; pnpm --dir app tauri dev
 In der App unter **Mehr → Server** `http://localhost:8080` eintragen und „Verbindung testen“.
 Die Vorschau „Abschluss ausprobieren“ unter Regeln rechnet den Ausgleich offline mit `punkte-core` (im Tauri-Kern).
 
-### API (Stand M7)
+### API (Stand M8)
 
 | Route | Zweck |
 | --- | --- |
@@ -72,7 +72,12 @@ Die Vorschau „Abschluss ausprobieren“ unter Regeln rechnet den Ausgleich off
 | `POST /api/v1/households/{id}/children` · `PUT …/members/{mid}/pin` | Kinderprofil anlegen, PIN setzen |
 | `POST /api/v1/auth/pin` | Profilwechsel per PIN, nur von einem Gerät des Haushalts (Sperre nach 5 Fehlversuchen) |
 | `GET` · `POST /api/v1/households/{id}/rooms` · `PATCH` · `DELETE …/rooms/{rid}` | Räume (Kinder nur lesen) |
-| `GET` · `POST /api/v1/households/{id}/templates` | Vorlagen mit Rhythmus, Zuweisung, Schritten; legt die erste Runde an |
+| `GET` · `POST /api/v1/households/{id}/templates` | Vorlagen mit Rhythmus, Zuweisung, Schritten; legt die erste Runde an (außer „auf Abruf“) |
+| `POST /api/v1/templates/{tid}/trigger` | „Ist wieder nötig“: öffnet eine Runde einer Vorlage „auf Abruf“ |
+| `GET /api/v1/households/{id}/shopping` | Einkaufslisten mit Artikeln, offener Runde und Vorschlägen |
+| `POST /api/v1/households/{id}/lists` · `PATCH` · `DELETE /api/v1/lists/{lid}` | Listen (Erwachsene), jede mit eigener Aufgabe |
+| `POST /api/v1/lists/{lid}/items` · `PATCH` · `DELETE /api/v1/items/{iid}` | Aufschreiben (ohne XP, gleiche Artikel zusammengefasst), Notiz, Abteilung, dringend |
+| `POST /api/v1/items/{iid}/check` | in den Wagen (startet den Einkauf) oder „nebenbei mitgebracht“ |
 | `GET /api/v1/households/{id}/tasks` · `GET /api/v1/tasks/{tid}` | aktuelle Runden mit Zustand, XP und Schritten |
 | `POST /api/v1/tasks/{tid}/action` | `claim` · `unclaim` · `start` · `pause` · `snooze` · `done` · `cancel` (nur Admins) |
 | `POST /api/v1/tasks/{tid}/steps/{sid}/check` | Schritt abhaken; der letzte erledigt die Aufgabe |
@@ -95,7 +100,7 @@ Die Vorschau „Abschluss ausprobieren“ unter Regeln rechnet den Ausgleich off
 | `GET` · `PUT /api/v1/households/{id}/board` | Kartenpositionen auf dem gemeinsamen Board |
 | `GET` · `POST /api/v1/households/{id}/views` · `PUT` · `DELETE /api/v1/views/{vid}` | eigene Ansichten |
 | Kopf `Idempotency-Key` | bei jedem Schreibaufruf erlaubt: Wiederholungen bekommen die gespeicherte Antwort (`idempotent-replay: true`), 7 Tage |
-| `GET /api/v1/households/{id}/live?token=` | WebSocket: `tasks_changed` / `rooms_changed` / `points_changed`; persönlich (`member`): `credited`, `returned`, `received`, `transfer_declined`, `reversed` |
+| `GET /api/v1/households/{id}/live?token=` | WebSocket: `tasks_changed` / `rooms_changed` / `points_changed` / `list_changed`; persönlich (`member`): `credited`, `returned`, `received`, `transfer_declined`, `reversed` |
 
 ## Push einrichten (Firebase)
 

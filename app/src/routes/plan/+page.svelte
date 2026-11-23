@@ -9,6 +9,9 @@
   import { session } from "$lib/session.svelte";
   import { TASK_ICONS, conditionOf, iconOf, taskStore } from "$lib/tasks.svelte";
   import type { IconName } from "$lib/ui/Icon.svelte";
+  import type { TemplateDto, TriggerResponse } from "$lib/generated";
+  import { shopping } from "$lib/shopping.svelte";
+  import { goto } from "$app/navigation";
 
   type View = "rooms" | "calendar" | "board" | "views";
   const VIEW_KEY = "fairteilt.plan";
@@ -39,6 +42,38 @@
   let error = $state("");
 
   const planner = $derived(session.membership?.role !== "child");
+
+  // "Auf Abruf" (M8): templates that rest until someone says "Ist wieder nötig". Shopping
+  // tasks are left out: their list calls them.
+  let templates = $state<TemplateDto[]>([]);
+  let calling = $state<string | null>(null);
+  $effect(() => {
+    void taskStore.version;
+    const hid = session.membership?.household_id;
+    if (hid) session.request<TemplateDto[]>("GET", `/households/${hid}/templates`).then((t) => (templates = t), () => {});
+  });
+  const resting = $derived(
+    templates.filter(
+      (t) =>
+        t.schedule.type === "on_call" &&
+        !shopping.lists.some((l) => l.template_id === t.id) &&
+        !taskStore.tasks.some((x) => x.template_id === t.id),
+    ),
+  );
+
+  async function call(t: TemplateDto) {
+    calling = t.id;
+    error = "";
+    try {
+      const res = await session.request<TriggerResponse>("POST", `/templates/${t.id}/trigger`);
+      taskStore.scheduleReload();
+      void goto(`/aufgabe/${res.task_id}`);
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    } finally {
+      calling = null;
+    }
+  }
 
   // Rooms: condition of the most urgent task (like Tody), XP sum, tasks by urgency.
   const roomRows = $derived.by(() => {
@@ -106,6 +141,22 @@
       </article>
     {/each}
   </div>
+  {#if resting.length}
+    <h2 class="section-title">Auf Abruf</h2>
+    <div class="stack">
+      {#each resting as t (t.id)}
+        <div class="card resting">
+          <span class="ic" aria-hidden="true"><Icon name={iconOf(t.icon, "star")} size={20} /></span>
+          <span class="name">
+            <strong>{t.title}</strong>
+            <span class="muted small">ruht · {t.points.default} XP, wenn es wieder nötig ist</span>
+          </span>
+          <button class="primary" disabled={calling === t.id} onclick={() => call(t)}>Ist wieder nötig</button>
+        </div>
+      {/each}
+    </div>
+    {#if error && !adding}<p class="err" role="alert">{error}</p>{/if}
+  {/if}
   {#if planner}
     {#if adding}
       <form class="card stack add-room" onsubmit={addRoom}>
@@ -164,6 +215,32 @@
   .room {
     padding: 0;
     overflow: hidden;
+  }
+
+  .resting {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-3);
+  }
+
+  .resting .ic {
+    width: 38px;
+    height: 38px;
+    border-radius: 13px;
+    background: var(--surface-2);
+    display: grid;
+    place-items: center;
+  }
+
+  .resting .name {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .resting button {
+    font-size: 0.85rem;
   }
 
   .room-head {

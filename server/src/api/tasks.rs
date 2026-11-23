@@ -143,10 +143,14 @@ pub struct TaskDto {
     /// Planned in the calendar (M6).
     pub scheduled_start: Option<DateTime<Utc>>,
     pub scheduled_end: Option<DateTime<Utc>>,
+    /// The template rests between rounds and is triggered when needed ("auf Abruf", M8).
+    pub on_call: bool,
+    /// The shopping list this round works off (M8): done = "Einkauf fertig".
+    pub list_id: Option<Uuid>,
 }
 
 #[derive(sqlx::FromRow)]
-struct TaskRow {
+pub(crate) struct TaskRow {
     id: Uuid,
     template_id: Option<Uuid>,
     title: String,
@@ -170,9 +174,11 @@ struct TaskRow {
     bounty: i64,
     approved_by: Option<Uuid>,
     review_note: Option<String>,
-    household_id: Uuid,
+    pub(crate) household_id: Uuid,
     scheduled_start: Option<DateTime<Utc>>,
     scheduled_end: Option<DateTime<Utc>>,
+    on_call: bool,
+    pub(crate) list_id: Option<Uuid>,
 }
 
 /// Columns of `TaskRow`, as a macro so queries stay literal (static) SQL strings.
@@ -181,7 +187,9 @@ macro_rules! task_columns {
         "id, template_id, title, icon, room_id, kind, status, assignee_id, cycle_start, due_at,
          points_min, points_default, points_max, started_at, remind_at, duration_min, step_order, completed_at, completed_by, points_awarded,
          (SELECT COALESCE(SUM(b.amount), 0) FROM bounties b WHERE b.task_id = tasks.id AND b.status = 'held')::BIGINT AS bounty,
-         approved_by, review_note, household_id, scheduled_start, scheduled_end"
+         approved_by, review_note, household_id, scheduled_start, scheduled_end,
+         COALESCE((SELECT tt.schedule->>'type' = 'on_call' FROM task_templates tt WHERE tt.id = tasks.template_id), false) AS on_call,
+         (SELECT l.id FROM shopping_lists l WHERE l.template_id = tasks.template_id AND NOT l.archived LIMIT 1) AS list_id"
     };
 }
 
@@ -227,6 +235,8 @@ fn to_dto(t: TaskRow, steps: Vec<TaskStepDto>, policy: &PointPolicy, now: DateTi
         review_note: t.review_note,
         scheduled_start: t.scheduled_start,
         scheduled_end: t.scheduled_end,
+        on_call: t.on_call,
+        list_id: t.list_id,
     }
 }
 
@@ -306,10 +316,11 @@ pub struct TemplateDto {
 #[derive(Serialize)]
 pub struct CreateTemplateResponse {
     pub template_id: Uuid,
-    pub task: TaskDto,
+    /// The first round; none for "auf Abruf" templates (they wait for a trigger).
+    pub task: Option<TaskDto>,
 }
 
-fn default_range(policy: &PointPolicy) -> PointRange {
+pub(crate) fn default_range(policy: &PointPolicy) -> PointRange {
     let d = policy.default_points;
     PointRange { min: (d / 2).max(policy.task_min).min(d), default: d, max: (d * 3 / 2).min(policy.task_max).max(d) }
 }
@@ -337,7 +348,7 @@ async fn active_members(tx: &mut Transaction<'_, Postgres>, household_id: Uuid) 
 }
 
 /// Creates the current round of a template: picks the assignee, copies the steps.
-async fn spawn_round(
+pub(crate) async fn spawn_round(
     tx: &mut Transaction<'_, Postgres>,
     template_id: Uuid,
     cycle_start: DateTime<Utc>,
@@ -502,17 +513,104 @@ pub async fn create_template(
             .await?;
     }
     let now = Utc::now();
-    let (start, due) = match req.schedule.first_cycle(now, hh.tz) {
-        Some(Cycle { start, due }) => (start, Some(due)),
-        None => (now, req.due_at),
+    // "Auf Abruf" rests until it is needed.
+    let task_id = if req.schedule.is_on_call() {
+        None
+    } else {
+        let (start, due) = match req.schedule.first_cycle(now, hh.tz) {
+            Some(Cycle { start, due }) => (start, Some(due)),
+            None => (now, req.due_at),
+        };
+        let id = spawn_round(&mut tx, template_id, start, due, now, hh.tz, Some(creator)).await?;
+        record_event(&mut tx, id, creator, "created", serde_json::json!({})).await?;
+        Some(id)
     };
-    let task_id = spawn_round(&mut tx, template_id, start, due, now, hh.tz, Some(creator)).await?;
-    record_event(&mut tx, task_id, creator, "created", serde_json::json!({})).await?;
     tx.commit().await?;
 
     state.live.notify(household_id, r#"{"type":"tasks_changed"}"#);
-    let task = load_dto(&state, task_id, &hh.policy).await?;
+    let task = match task_id {
+        Some(id) => Some(load_dto(&state, id, &hh.policy).await?),
+        None => None,
+    };
     Ok((StatusCode::CREATED, Json(CreateTemplateResponse { template_id, task })))
+}
+
+/// Opens a round of an "auf Abruf" template, unless one is already open. Urgent: the round is
+/// due right away (an already open round is moved up). Returns the new round, if any.
+pub(crate) async fn trigger(
+    tx: &mut Transaction<'_, Postgres>,
+    template_id: Uuid,
+    tz: Tz,
+    actor: Option<Uuid>,
+    urgent: bool,
+) -> AppResult<Option<Uuid>> {
+    let now = Utc::now();
+    let row: Option<(serde_json::Value, bool)> =
+        sqlx::query_as("SELECT schedule, archived FROM task_templates WHERE id = $1 FOR UPDATE").bind(template_id).fetch_optional(&mut **tx).await?;
+    let Some((schedule, archived)) = row else { return Ok(None) };
+    let schedule: Schedule = serde_json::from_value(schedule).unwrap_or(Schedule::Once);
+    if archived || !schedule.is_on_call() {
+        return Ok(None);
+    }
+    let open: Option<(Uuid, Option<DateTime<Utc>>)> = sqlx::query_as(
+        "SELECT id, due_at FROM tasks WHERE template_id = $1 AND status NOT IN ('completed', 'cancelled') LIMIT 1",
+    )
+    .bind(template_id)
+    .fetch_optional(&mut **tx)
+    .await?;
+    if let Some((task_id, due)) = open {
+        let (start, urgent_due) = punkte_core::schedule::urgent_cycle(now);
+        if urgent && due.is_none_or(|d| urgent_due.is_some_and(|u| u < d)) {
+            sqlx::query("UPDATE tasks SET cycle_start = $2, due_at = $3, updated_at = now() WHERE id = $1")
+                .bind(task_id)
+                .bind(start)
+                .bind(urgent_due)
+                .execute(&mut **tx)
+                .await?;
+        }
+        return Ok(None);
+    }
+    let Some((start, due)) = schedule.triggered_cycle(now, urgent) else { return Ok(None) };
+    let task_id = spawn_round(tx, template_id, start, due, now, tz, actor).await?;
+    if let Some(actor) = actor {
+        record_event(tx, task_id, actor, "triggered", serde_json::json!({ "urgent": urgent })).await?;
+    }
+    Ok(Some(task_id))
+}
+
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+#[derive(Serialize)]
+pub struct TriggerResponse {
+    /// The round that is now open (new or the one that already was).
+    pub task_id: Uuid,
+    pub created: bool,
+}
+
+/// "Ist wieder nötig": anyone in the household may call an "auf Abruf" task.
+pub async fn trigger_template(State(state): State<AppState>, user: AuthUser, Path(template_id): Path<Uuid>) -> AppResult<Json<TriggerResponse>> {
+    let hid: Uuid = sqlx::query_scalar("SELECT household_id FROM task_templates WHERE id = $1 AND NOT archived")
+        .bind(template_id)
+        .fetch_optional(&state.db)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    let (me, _) = membership(&state, user.user_id, hid).await?;
+    let hh = household(&state.db, hid).await?;
+    let mut tx = state.db.begin().await?;
+    let schedule: serde_json::Value = sqlx::query_scalar("SELECT schedule FROM task_templates WHERE id = $1").bind(template_id).fetch_one(&mut *tx).await?;
+    if !serde_json::from_value::<Schedule>(schedule).is_ok_and(|s| s.is_on_call()) {
+        return Err(AppError::Conflict("Diese Aufgabe kommt nach ihrem Rhythmus, nicht auf Abruf.".into()));
+    }
+    let created = trigger(&mut tx, template_id, hh.tz, Some(me), false).await?;
+    let task_id = match created {
+        Some(id) => id,
+        None => sqlx::query_scalar("SELECT id FROM tasks WHERE template_id = $1 AND status NOT IN ('completed', 'cancelled') LIMIT 1")
+            .bind(template_id)
+            .fetch_one(&mut *tx)
+            .await?,
+    };
+    tx.commit().await?;
+    state.live.notify(hid, r#"{"type":"tasks_changed"}"#);
+    Ok(Json(TriggerResponse { task_id, created: created.is_some() }))
 }
 
 pub async fn list_templates(State(state): State<AppState>, user: AuthUser, Path(household_id): Path<Uuid>) -> AppResult<Json<Vec<TemplateDto>>> {
@@ -690,6 +788,10 @@ async fn finish(
     now: DateTime<Utc>,
 ) -> AppResult<Outcome> {
     let xp = current_xp(&hh.policy, task, now);
+    // "Einkauf fertig": what is in the cart leaves the list (M8).
+    if task.list_id.is_some() {
+        crate::api::shopping::clear_cart(tx, task, now).await?;
+    }
     let submitted = approval_required(tx, task, actor_role, hh).await?;
     sqlx::query(
         "UPDATE tasks SET status = $5, completed_by = $2, completed_at = $3, points_awarded = $4, review_note = NULL,
@@ -739,7 +841,7 @@ async fn credit(tx: &mut Transaction<'_, Postgres>, task: &TaskRow, member: Uuid
 }
 
 /// A round that will not be done (skipped): bounties go back to who set them.
-async fn refund_bounties(tx: &mut Transaction<'_, Postgres>, task: &TaskRow, by: Uuid) -> AppResult<()> {
+pub(crate) async fn refund_bounties(tx: &mut Transaction<'_, Postgres>, task: &TaskRow, by: Uuid) -> AppResult<()> {
     let held: Vec<(Uuid, i64)> =
         sqlx::query_as("UPDATE bounties SET status = 'refunded' WHERE task_id = $1 AND status = 'held' RETURNING pledger_id, amount")
             .bind(task.id)
@@ -763,6 +865,13 @@ async fn next_round(
     let schedule: serde_json::Value =
         sqlx::query_scalar("SELECT schedule FROM task_templates WHERE id = $1 AND NOT archived").bind(template_id).fetch_one(&mut **tx).await?;
     let schedule: Schedule = serde_json::from_value(schedule).unwrap_or(Schedule::Once);
+    if schedule.is_on_call() {
+        // Items left on the list call the next round right away.
+        if crate::api::shopping::has_open_items(tx, template_id).await? {
+            return trigger(tx, template_id, hh.tz, actor, false).await;
+        }
+        return Ok(None);
+    }
     let prev_due = task.due_at.unwrap_or(done_at);
     match schedule.next_cycle(done_at, prev_due, hh.tz) {
         Some(c) => Ok(Some(spawn_round(tx, template_id, c.start, Some(c.due), Utc::now(), hh.tz, actor).await?)),
@@ -770,7 +879,7 @@ async fn next_round(
     }
 }
 
-async fn lock_task(tx: &mut Transaction<'_, Postgres>, task_id: Uuid) -> AppResult<TaskRow> {
+pub(crate) async fn lock_task(tx: &mut Transaction<'_, Postgres>, task_id: Uuid) -> AppResult<TaskRow> {
     // Lock first (FOR UPDATE does not combine with the aggregate column), then read.
     let found: Option<Uuid> = sqlx::query_scalar("SELECT id FROM tasks WHERE id = $1 FOR UPDATE").bind(task_id).fetch_optional(&mut **tx).await?;
     found.ok_or(AppError::NotFound)?;

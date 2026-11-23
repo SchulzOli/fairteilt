@@ -11,6 +11,7 @@
   import * as reminders from "$lib/reminders";
   import { registerPush } from "$lib/push";
   import { outbox } from "$lib/outbox.svelte";
+  import { shopping } from "$lib/shopping.svelte";
 
   let { children } = $props();
 
@@ -40,6 +41,16 @@
     else taskStore.stop();
   });
 
+  // Shopping lists (M8): loaded with the household, reloaded on `list_changed`.
+  $effect(() => {
+    const hid = session.status === "ready" ? session.membership?.household_id : undefined;
+    if (hid) shopping.start(hid);
+    else shopping.stop();
+  });
+  $effect(() => {
+    if (taskStore.listVersion > 0) void shopping.load().catch(() => {});
+  });
+
   // Local reminders for my own tasks (bald fällig, check-in), planned after every reload.
   $effect(() => {
     void taskStore.version;
@@ -58,7 +69,10 @@
     void outbox.flush();
     taskStore.wake();
   };
-  outbox.onFlushed = () => taskStore.scheduleReload();
+  outbox.onFlushed = () => {
+    taskStore.scheduleReload();
+    void shopping.load().catch(() => {});
+  };
   $effect(() => {
     if (session.status === "ready" && !session.offline) void outbox.flush();
     // Signed out: queued changes of that account are dropped with its offline copy.
@@ -83,6 +97,7 @@
 
   const tabs: { href: string; label: string; icon: IconName }[] = [
     { href: "/", label: "Heute", icon: "sun" },
+    { href: "/liste", label: "Liste", icon: "cart" },
     { href: "/plan", label: "Plan", icon: "plan" },
     { href: "/punkte", label: "Punkte", icon: "star" },
     { href: "/familie", label: "Familie", icon: "family" },
@@ -124,7 +139,10 @@
     <nav aria-label="Hauptnavigation">
       {#each tabs as tab (tab.href)}
         <a href={tab.href} class:active={isActive(tab.href)} aria-current={isActive(tab.href) ? "page" : undefined}>
-          <Icon name={tab.icon} size={22} />
+          <span class="ic">
+            <Icon name={tab.icon} size={22} />
+            {#if tab.href === "/liste" && shopping.openCount > 0}<b class="badge" aria-label="{shopping.openCount} Artikel">{shopping.openCount}</b>{/if}
+          </span>
           <span>{tab.label}</span>
         </a>
       {/each}
@@ -194,7 +212,7 @@
     position: fixed;
     inset: auto 0 0 0;
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(5, 1fr);
     height: calc(var(--nav-h) + env(safe-area-inset-bottom));
     padding-bottom: env(safe-area-inset-bottom);
     background: color-mix(in srgb, var(--surface) 94%, transparent);
@@ -217,5 +235,25 @@
 
   nav a.active {
     color: var(--primary);
+  }
+
+  nav .ic {
+    position: relative;
+    display: grid;
+  }
+
+  .badge {
+    position: absolute;
+    top: -6px;
+    left: 14px;
+    min-width: 17px;
+    height: 17px;
+    padding: 0 5px;
+    border-radius: 999px;
+    background: var(--over);
+    color: #fff;
+    font-size: 0.68rem;
+    line-height: 17px;
+    text-align: center;
   }
 </style>

@@ -164,8 +164,10 @@ async fn m2_bathroom_scenario(db: PgPool) {
     assert_eq!(created["task"]["xp"], 10, "household default points");
 
     let (_, templates) = call(&app, "GET", &format!("/api/v1/households/{hid}/templates"), Some(&sam), None).await;
-    assert_eq!(templates[0]["steps"].as_array().unwrap().len(), 5);
-    assert_eq!(templates[0]["assignment"]["next"], 0, "rotation went Alex, Sam, back to Alex");
+    // Every household also has "Einkaufen" (M8); look the bathroom up by name.
+    let bath = templates.as_array().unwrap().iter().find(|t| t["title"] == "Bad putzen").unwrap();
+    assert_eq!(bath["steps"].as_array().unwrap().len(), 5);
+    assert_eq!(bath["assignment"]["next"], 0, "rotation went Alex, Sam, back to Alex");
 }
 
 #[sqlx::test(migrator = "punkte_server::MIGRATOR")]

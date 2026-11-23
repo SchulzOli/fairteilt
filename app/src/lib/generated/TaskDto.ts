@@ -29,4 +29,12 @@ review_note: string | null,
 /**
  * Planned in the calendar (M6).
  */
-scheduled_start: string | null, scheduled_end: string | null, };
+scheduled_start: string | null, scheduled_end: string | null, 
+/**
+ * The template rests between rounds and is triggered when needed ("auf Abruf", M8).
+ */
+on_call: boolean, 
+/**
+ * The shopping list this round works off (M8): done = "Einkauf fertig".
+ */
+list_id: string | null, };

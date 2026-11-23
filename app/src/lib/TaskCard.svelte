@@ -9,6 +9,7 @@
   import ConditionBar from "$lib/ui/ConditionBar.svelte";
   import Icon from "$lib/ui/Icon.svelte";
   import ReviewSheet from "$lib/ReviewSheet.svelte";
+  import { shopping } from "$lib/shopping.svelte";
 
   let { task }: { task: TaskDto } = $props();
 
@@ -23,6 +24,10 @@
   const running = $derived(task.status === "in_progress");
   const done = $derived(stepsDone(task));
   const hasSteps = $derived(task.steps.length > 0);
+  // Shopping (M8): finished in the shopping mode, where the cart is checked off.
+  const list = $derived(shopping.listOf(task));
+  const toBuy = $derived(list ? list.items.filter((i) => !i.checked_at).length : 0);
+  const guided = $derived(hasSteps || !!task.list_id);
   const assignee = $derived(session.members.find((m) => m.membership_id === task.assignee_id));
   const isMine = $derived(task.assignee_id !== null && task.assignee_id === session.membership?.membership_id);
   const submitted = $derived(task.status === "submitted");
@@ -47,8 +52,9 @@
 
   async function complete() {
     if (celebrating) return;
-    // Tasks with steps are finished step by step on their page (XP only at the end).
-    if (hasSteps) return open();
+    // Tasks with steps are finished step by step on their page (XP only at the end), shopping
+    // in the shopping mode.
+    if (guided) return open();
     error = "";
     try {
       celebrating = true;
@@ -84,6 +90,8 @@
         <span class:late={condition >= 1}>{dueText(task, now)}</span>
       {/if}
       {#if hasSteps}<span class="steps">{done}/{task.steps.length} Schritte</span>{/if}
+      {#if list}<span class="steps">{toBuy} Artikel</span>{/if}
+      {#if task.on_call}<span class="chip oncall">auf Abruf</span>{/if}
       {#if task.kind === "penalty"}<span class="chip aufhol">Aufholaufgabe</span>{/if}
       {#if task.kind === "reward"}<span class="chip reward">Belohnung</span>{/if}
     </div>
@@ -103,9 +111,9 @@
     {:else}
       <span class="check waiting" aria-hidden="true"><Icon name="timer" size={18} /></span>
     {/if}
-  {:else if hasSteps}
+  {:else if guided}
     <button class="check go" aria-label="{running ? 'Weiter' : 'Starten'}: {task.title}" onclick={open}>
-      <Icon name={running ? "chevron" : "play"} size={16} />
+      <Icon name={running ? "chevron" : task.list_id ? "cart" : "play"} size={16} />
     </button>
   {:else}
     <button class="check" class:on={celebrating} aria-label="Erledigt: {task.title}" onclick={complete}>
@@ -276,6 +284,11 @@
   .chip.aufhol {
     background: var(--over-soft);
     color: var(--over);
+  }
+
+  .chip.oncall {
+    background: var(--primary-soft);
+    color: var(--primary);
   }
 
   .chip.reward {

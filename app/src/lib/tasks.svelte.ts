@@ -30,6 +30,8 @@ class TaskStore {
   version = $state(0);
   /** Connected to the live channel. */
   live = $state(false);
+  /** Counts changes of the shopping lists (live `list_changed`, reconnects). */
+  listVersion = $state(0);
   /** Ticks every second: elapsed time and condition bars move without reloading. */
   now = $state(Date.now());
 
@@ -186,8 +188,13 @@ class TaskStore {
         this.live = true;
         void outbox.flush();
         // After a reconnect we may have missed events.
-        if (this.retry > 0) this.scheduleReload();
+        if (this.retry > 0) {
+          this.scheduleReload();
+          this.listVersion++;
+        }
         this.retry = 0;
+      } else if (type === "list_changed") {
+        this.listVersion++;
       } else if (type === "tasks_changed" || type === "rooms_changed" || type === "points_changed") {
         this.scheduleReload();
       } else if (type === "goal_won") {
@@ -333,7 +340,7 @@ class TaskStore {
 
   async createTemplate(req: CreateTemplateRequest): Promise<CreateTemplateResponse> {
     const res = await session.request<CreateTemplateResponse>("POST", `/households/${this.hid}/templates`, req);
-    this.tasks = [...this.tasks, res.task];
+    if (res.task) this.tasks = [...this.tasks, res.task];
     this.scheduleReload();
     return res;
   }
@@ -440,7 +447,7 @@ export function iconOf(name: string | null | undefined, fallback: IconName = "st
 }
 
 /** Icons offered for tasks and rooms. */
-export const TASK_ICONS: IconName[] = ["bath", "kitchen", "dish", "cutlery", "bin", "vacuum", "shirt", "window", "plant", "sofa", "star"];
+export const TASK_ICONS: IconName[] = ["bath", "kitchen", "dish", "cutlery", "bin", "vacuum", "shirt", "window", "plant", "sofa", "cart", "glass", "star"];
 
 export const stepsDone = (t: TaskDto) => t.steps.filter((s) => s.done_at !== null).length;
 

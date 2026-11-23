@@ -7,6 +7,8 @@
   import ConditionBar from "$lib/ui/ConditionBar.svelte";
   import Icon from "$lib/ui/Icon.svelte";
   import ReviewSheet from "$lib/ReviewSheet.svelte";
+  import { bySection, shopping } from "$lib/shopping.svelte";
+  import ItemRow from "$lib/shop/ItemRow.svelte";
 
   const id = $derived(page.params.id ?? "");
 
@@ -40,6 +42,25 @@
   const balance = $derived(taskStore.myAccount?.balance ?? 0);
   const nextTask = $derived(finished?.next ? taskStore.tasks.find((t) => t.id === finished!.next) : undefined);
 
+  // Shopping mode (M8): the list of this round's task, grouped as in the shop.
+  const list = $derived(task ? shopping.listOf(task) : undefined);
+  const toBuy = $derived(list ? list.items.filter((i) => !i.checked_at) : []);
+  const inCart = $derived(list ? list.items.filter((i) => i.checked_at) : []);
+  /** Bought this trip (kept for the thank-you after "Einkauf fertig"). */
+  let bought = $state(0);
+  let leftOver = $state<string[]>([]);
+  /** Written down by someone else while I am in the shop. */
+  const isFresh = (addedAt: string, by: string | null) =>
+    !!task?.started_at && by !== me && Date.parse(addedAt) > Date.parse(task.started_at);
+
+  // In the shop the screen stays on.
+  $effect(() => {
+    if (!list || !running || typeof navigator === "undefined" || !("wakeLock" in navigator)) return;
+    let lock: WakeLockSentinel | null = null;
+    navigator.wakeLock.request("screen").then((l) => (lock = l), () => {});
+    return () => void lock?.release().catch(() => {});
+  });
+
   // Not in the current list (e.g. opened from a link after it was done): fetch it.
   $effect(() => {
     if (taskStore.loaded && !taskStore.tasks.some((t) => t.id === id) && !local) {
@@ -71,6 +92,8 @@
 
   const complete = () =>
     act(async () => {
+      bought = inCart.length;
+      leftOver = toBuy.map((i) => i.name);
       const res = await taskStore.action(id, "done");
       local = res.task;
       finished = { xp: res.xp_awarded ?? 0, next: res.next_task_id, submitted: res.submitted, bounty: res.bounty_paid, queued: isQueued(res) };
@@ -158,8 +181,10 @@
         <h2>Prima!</h2>
         <p class="muted">Ein Erwachsener schaut noch kurz drüber, dann bekommst du deine {task.xp} XP.</p>
       {:else}
-        <h2>Geschafft!</h2>
+        <h2>{list ? "Einkauf fertig, danke!" : "Geschafft!"}</h2>
         <span class="xp-burst">+{finished.xp} XP{finished.bounty ? ` · +${finished.bounty} G` : ""}</span>
+        {#if list && bought}<p class="muted">{bought} Artikel gekauft.</p>{/if}
+        {#if list && leftOver.length}<p class="muted">Bleibt auf der Liste: {leftOver.join(", ")}. „{task.title}“ kommt gleich wieder.</p>{/if}
         {#if nextTask}<p class="muted">{nextText(nextTask)}</p>{/if}
       {/if}
       <a class="btnlike primary" href="/">Zurück zu Heute</a>
@@ -184,20 +209,57 @@
           <span class="clock">{clock(task.started_at, now)}</span>
           <span class="muted small">Die Zeit zählt nur hoch.{checkinIn !== null ? ` In ${checkinIn} Min. fragt Fairteilt kurz nach.` : ""}</span>
         </div>
-        <div class="two">
-          <button disabled={busy} onclick={pause}><Icon name="pause" size={18} />Pause</button>
-          <button class="primary" disabled={busy || openSteps > 0} onclick={complete}><Icon name="check" size={18} />Erledigt</button>
-        </div>
-        {#if openSteps > 0}<p class="muted small center">Noch {openSteps} {openSteps === 1 ? "Schritt" : "Schritte"}, dann ist sie erledigt.</p>{/if}
+        {#if list}
+          <div class="two">
+            <button disabled={busy} onclick={pause}><Icon name="pause" size={18} />Pause</button>
+            <button class="primary" disabled={busy || (inCart.length === 0 && toBuy.length > 0)} onclick={complete}><Icon name="check" size={18} />Einkauf fertig</button>
+          </div>
+          <p class="muted small center">{inCart.length} von {inCart.length + toBuy.length} im Wagen. Was übrig bleibt, kommt beim nächsten Mal.</p>
+        {:else}
+          <div class="two">
+            <button disabled={busy} onclick={pause}><Icon name="pause" size={18} />Pause</button>
+            <button class="primary" disabled={busy || openSteps > 0} onclick={complete}><Icon name="check" size={18} />Erledigt</button>
+          </div>
+          {#if openSteps > 0}<p class="muted small center">Noch {openSteps} {openSteps === 1 ? "Schritt" : "Schritte"}, dann ist sie erledigt.</p>{/if}
+        {/if}
       {:else}
-        <button class="primary go" disabled={busy} onclick={start}><Icon name="play" size={20} />Los geht's</button>
+        <button class="primary go" disabled={busy} onclick={start}><Icon name={list ? "cart" : "play"} size={20} />{list ? "Einkauf starten" : "Los geht's"}</button>
         <div class="two">
           {#if task.status === "open"}<button disabled={busy} onclick={claim}>Übernehmen</button>{/if}
-          {#if task.steps.length === 0}<button disabled={busy} onclick={complete}><Icon name="check" size={18} />Schon erledigt</button>{/if}
+          {#if task.steps.length === 0 && !list}<button disabled={busy} onclick={complete}><Icon name="check" size={18} />Schon erledigt</button>{/if}
         </div>
+        {#if list}<p class="muted small center">Abhaken legt in den Wagen. XP gibt es mit „Einkauf fertig“.</p>{/if}
       {/if}
       {#if error}<p class="err" role="alert">{error}</p>{/if}
     </section>
+
+    {#if list}
+      <section class="shop" aria-label="Einkaufsliste {list.name}">
+        <div class="row between">
+          <h2 class="sub">{list.name}</h2>
+          <a class="muted small" href="/liste">Liste bearbeiten</a>
+        </div>
+        {#if toBuy.length + inCart.length > 0}
+          <div class="progress" style="--n:{toBuy.length + inCart.length}" aria-hidden="true">
+            {#each { length: toBuy.length + inCart.length } as _, i (i)}<i class:on={i < inCart.length}></i>{/each}
+          </div>
+        {/if}
+        {#each bySection(toBuy) as g (g.section)}
+          <h3 class="section-title">{g.label}</h3>
+          <ul class="items">
+            {#each g.items as item (item.id)}<ItemRow {item} mode="cart" fresh={isFresh(item.added_at, item.added_by)} />{/each}
+          </ul>
+        {:else}
+          <p class="muted">{inCart.length ? "Alles im Wagen!" : "Nichts mehr auf der Liste."}</p>
+        {/each}
+        {#if inCart.length}
+          <h3 class="section-title">Im Wagen</h3>
+          <ul class="items">
+            {#each inCart as item (item.id)}<ItemRow {item} mode="cart" />{/each}
+          </ul>
+        {/if}
+      </section>
+    {/if}
 
     {#if task.steps.length}
       <section class="card">
@@ -262,6 +324,41 @@
 {/if}
 
 <style>
+  .shop {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    margin-top: var(--space-3);
+  }
+
+  .shop .section-title {
+    margin: var(--space-3) 0 0;
+  }
+
+  .shop .items {
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+
+  .progress {
+    display: grid;
+    grid-template-columns: repeat(var(--n), 1fr);
+    gap: 3px;
+  }
+
+  .progress i {
+    height: 6px;
+    border-radius: 3px;
+    background: var(--surface-2);
+  }
+
+  .progress i.on {
+    background: var(--primary);
+  }
+
   .chips {
     display: flex;
     flex-direction: column;

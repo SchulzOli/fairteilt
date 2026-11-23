@@ -10,4 +10,5 @@ pub mod plan;
 pub mod points;
 pub mod rewards;
 pub mod rooms;
+pub mod shopping;
 pub mod tasks;

@@ -35,7 +35,7 @@
 
   let { onclose, preset, roomId }: { onclose: () => void; preset?: TaskPreset; roomId?: string } = $props();
 
-  type Rhythm = "once" | "interval" | "weekly";
+  type Rhythm = "once" | "interval" | "weekly" | "on_call";
   type Who = "open" | "fixed" | "rotation" | "least_loaded";
   const WEEKDAYS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
 
@@ -50,6 +50,8 @@
   let rhythm = $state<Rhythm>("interval");
   let days = $state(init.preset?.days ?? 7);
   let weekdays = $state<number[]>([]);
+  /** "Auf Abruf": due this many days after it was called (0 = no due date). */
+  let dueAfter = $state(2);
   let xp = $state(init.preset?.xp ?? 10);
   let who = $state<Who>("open");
   let people = $state<string[]>([]);
@@ -78,6 +80,7 @@
   function schedule(): Schedule {
     if (rhythm === "once") return { type: "once" };
     if (rhythm === "weekly") return { type: "weekly", weekdays: [...weekdays].sort(), every_weeks: 1 };
+    if (rhythm === "on_call") return { type: "on_call", due_after_days: dueAfter > 0 ? dueAfter : null };
     return { type: "interval", days };
   }
 
@@ -157,6 +160,7 @@
         <div class="seg" role="radiogroup" aria-label="Rhythmus">
           <button type="button" role="radio" aria-checked={rhythm === "interval"} class:sel={rhythm === "interval"} onclick={() => (rhythm = "interval")}>Alle X Tage</button>
           <button type="button" role="radio" aria-checked={rhythm === "weekly"} class:sel={rhythm === "weekly"} onclick={() => (rhythm = "weekly")}>Wochentage</button>
+          <button type="button" role="radio" aria-checked={rhythm === "on_call"} class:sel={rhythm === "on_call"} onclick={() => (rhythm = "on_call")}>Auf Abruf</button>
           <button type="button" role="radio" aria-checked={rhythm === "once"} class:sel={rhythm === "once"} onclick={() => (rhythm = "once")}>Einmal</button>
         </div>
         {#if rhythm === "interval"}
@@ -167,6 +171,15 @@
             <button type="button" aria-label="Mehr Tage" onclick={() => (days = Math.min(365, days + 1))}>+</button>
             <span>{days === 1 ? "Tag" : "Tage"} nach dem letzten Mal</span>
           </div>
+        {:else if rhythm === "on_call"}
+          <div class="stepper">
+            <span>fällig</span>
+            <button type="button" aria-label="Früher fällig" onclick={() => (dueAfter = Math.max(0, dueAfter - 1))}>−</button>
+            <b>{dueAfter === 0 ? "–" : dueAfter}</b>
+            <button type="button" aria-label="Später fällig" onclick={() => (dueAfter = Math.min(30, dueAfter + 1))}>+</button>
+            <span>{dueAfter === 0 ? "ohne Termin" : dueAfter === 1 ? "Tag nach dem Abruf" : "Tage nach dem Abruf"}</span>
+          </div>
+          <p class="muted small">Ruht, bis jemand unter Plan · Räume „Ist wieder nötig“ tippt. Einkaufen kommt von selbst, sobald etwas auf der Liste steht.</p>
         {:else if rhythm === "weekly"}
           <div class="chips">
             {#each WEEKDAYS as d, i (d)}
