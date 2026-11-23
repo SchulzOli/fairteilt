@@ -133,6 +133,7 @@ async fn dispatch(state: &AppState, job: &Job) -> anyhow::Result<()> {
         "send_push" => crate::inbox::deliver(state, id_in(&job.payload, "notification_id")?).await,
         "reminders" => {
             let n = crate::inbox::sweep_reminders(state).await.map_err(|e| anyhow::anyhow!("{e:?}"))?;
+            crate::idempotency::prune(&state.db).await?;
             if n > 0 {
                 tracing::info!(n, "reminders written");
             }

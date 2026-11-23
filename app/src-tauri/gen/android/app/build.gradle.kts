@@ -25,6 +25,14 @@ val firebaseValues: Map<String, String> = file("google-services.json").takeIf { 
     )
 } ?: emptyMap()
 
+// Release signing (Play Store upload key): keystore.properties next to this file (never
+// committed) or, in CI, the ANDROID_KEYSTORE_* environment variables. Without it the release
+// build stays unsigned.
+val keystoreProperties = Properties().apply {
+    file("keystore.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
+}
+fun signing(key: String, env: String): String? = keystoreProperties.getProperty(key) ?: System.getenv(env)
+
 val tauriProperties = Properties().apply {
     val propFile = file("tauri.properties")
     if (propFile.exists()) {
@@ -44,6 +52,14 @@ android {
         versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0")
         firebaseValues.forEach { (name, value) -> resValue("string", name, value) }
     }
+    signingConfigs {
+        create("release") {
+            signing("storeFile", "ANDROID_KEYSTORE_PATH")?.let { storeFile = file(it) }
+            storePassword = signing("storePassword", "ANDROID_KEYSTORE_PASSWORD")
+            keyAlias = signing("keyAlias", "ANDROID_KEY_ALIAS")
+            keyPassword = signing("keyPassword", "ANDROID_KEY_PASSWORD")
+        }
+    }
     buildTypes {
         getByName("debug") {
             manifestPlaceholders["usesCleartextTraffic"] = "true"
@@ -58,6 +74,9 @@ android {
             }
         }
         getByName("release") {
+            if (signing("storeFile", "ANDROID_KEYSTORE_PATH") != null) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             optimization {
                enable = true
             }

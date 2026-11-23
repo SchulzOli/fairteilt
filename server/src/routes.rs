@@ -17,7 +17,8 @@ pub fn router(state: AppState, cors_origins: &[String]) -> Router {
     let cors = CorsLayer::new()
         .allow_origin(origins)
         .allow_methods([Method::GET, Method::POST, Method::PUT, Method::PATCH, Method::DELETE])
-        .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION]);
+        .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION, header::HeaderName::from_static("idempotency-key")])
+        .expose_headers([header::CONTENT_DISPOSITION]);
 
     let v1 = Router::new()
         .route("/meta", get(meta))
@@ -26,14 +27,17 @@ pub fn router(state: AppState, cors_origins: &[String]) -> Router {
         .route("/auth/login", post(api::auth::login))
         .route("/auth/refresh", post(api::auth::refresh))
         .route("/auth/logout", post(api::auth::logout))
-        .route("/me", get(api::auth::me))
+        .route("/me", get(api::auth::me).delete(api::account::delete_me))
+        .route("/me/export", get(api::account::export_me))
+        .route("/households/{id}/export", get(api::account::export_household))
+        .route("/households/{id}/delete", post(api::account::delete_household))
         .route("/households", post(api::households::create))
         .route("/households/{id}/invites", post(api::households::create_invite))
         .route("/invites/accept", post(api::households::accept_invite))
         .route("/invites/join", post(api::members::join_without_account))
         .route("/auth/pin", post(api::members::pin_login))
         .route("/households/{id}/members", get(api::members::list))
-        .route("/households/{id}/members/{mid}", patch(api::members::update))
+        .route("/households/{id}/members/{mid}", patch(api::members::update).delete(api::account::remove_member))
         .route("/households/{id}/members/{mid}/pin", put(api::members::set_pin))
         .route("/households/{id}/children", post(api::members::create_child))
         .route("/households/{id}/rooms", get(api::rooms::list).post(api::rooms::create))
@@ -75,7 +79,7 @@ pub fn router(state: AppState, cors_origins: &[String]) -> Router {
 
     Router::new()
         .route("/health", get(health))
-        .nest("/api/v1", v1)
+        .nest("/api/v1", v1.layer(axum::middleware::from_fn_with_state(state.clone(), crate::idempotency::layer)))
         .layer(TraceLayer::new_for_http())
         .layer(cors)
         .with_state(state)

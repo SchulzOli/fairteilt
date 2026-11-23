@@ -3,7 +3,7 @@
   import type { TaskDto } from "$lib/generated";
   import { session } from "$lib/session.svelte";
   import { feedback } from "$lib/settings.svelte";
-  import { conditionOf, dueText, iconOf, memberName, minutesSince, stepsDone, taskStore } from "$lib/tasks.svelte";
+  import { conditionOf, dueText, iconOf, isQueued, memberName, minutesSince, stepsDone, taskStore } from "$lib/tasks.svelte";
   import Avatar from "$lib/ui/Avatar.svelte";
   import type { AnimalName } from "$lib/ui/Avatar.svelte";
   import ConditionBar from "$lib/ui/ConditionBar.svelte";
@@ -54,7 +54,9 @@
       celebrating = true;
       taskStore.hold(1600);
       const res = await taskStore.action(task.id, "done");
-      earned = res.submitted
+      earned = isQueued(res)
+        ? "Gespeichert · kommt gleich an"
+        : res.submitted
         ? "Prima! Wartet aufs OK"
         : `+${res.xp_awarded ?? task.xp} XP${res.bounty_paid ? ` · +${res.bounty_paid} G` : ""}`;
       // A submitted task stays in the list (waiting for an adult): end the celebration.

@@ -1,5 +1,7 @@
 <script lang="ts">
   import { unregisterPush } from "$lib/push";
+  import { saveExport } from "$lib/download";
+  import { goto } from "$app/navigation";
   import QRCode from "qrcode";
   import type { InviteResponse, MemberDto } from "$lib/generated";
   import { ApiError, session } from "$lib/session.svelte";
@@ -35,6 +37,40 @@
       busy = false;
     }
   }
+
+  // ---------- your data (M7) ----------
+  let dataPanel = $state<null | "account" | "household">(null);
+  let password = $state("");
+  let confirmName = $state("");
+  let saved = $state("");
+
+  const exportMine = () => run(async () => void (saved = `Gespeichert: ${await saveExport("/me/export", "fairteilt-meine-daten")}`));
+  const exportHousehold = () =>
+    run(async () => void (saved = `Gespeichert: ${await saveExport(`/households/${session.membership!.household_id}/export`, "fairteilt-haushalt")}`));
+
+  const deleteAccount = () =>
+    run(async () => {
+      await unregisterPush();
+      await session.request("DELETE", "/me", { password });
+      await session.signOut().catch(() => {});
+      void goto("/willkommen");
+    });
+
+  const deleteHousehold = () =>
+    run(async () => {
+      await session.request("POST", `/households/${session.membership!.household_id}/delete`, { confirm_name: confirmName });
+      dataPanel = null;
+      await session.loadMe();
+      void goto("/");
+    });
+
+  const removeMember = (m: MemberDto) =>
+    run(async () => {
+      if (!confirm(`${m.display_name} aus dem Haushalt entfernen? ${m.has_email ? "Das Konto bleibt bestehen." : "Das Kinderprofil wird gelöscht."}`)) return;
+      await session.request("DELETE", `/households/${session.membership!.household_id}/members/${m.membership_id}`);
+      panel = null;
+      await session.loadMembers();
+    });
 
   // ---------- invite ----------
   let inviteRole = $state<"member" | "child" | "admin">("member");
@@ -174,6 +210,9 @@
         <input id="edit-pin" type="password" inputmode="numeric" pattern={"[0-9]{4,6}"} bind:value={editPin} placeholder="4 Ziffern, leer lassen = unverändert" />
       </label>
       <button class="primary" onclick={() => saveMember(m)} disabled={busy}>Speichern</button>
+      {#if session.isAdmin && !isMe(m)}
+        <button class="danger" onclick={() => removeMember(m)} disabled={busy}>Aus dem Haushalt entfernen</button>
+      {/if}
     {/if}
     {#if error}<p class="err" role="alert">{error}</p>{/if}
     <button class="link" onclick={() => (panel = null)}>Schließen</button>
@@ -205,7 +244,63 @@
   <button onclick={async () => { await unregisterPush(); await session.signOut(); }}>Abmelden</button>
 </div>
 
+<h2 class="section-title">Deine Daten</h2>
+<div class="card stack">
+  <p class="muted small">Alles, was Fairteilt über dich speichert, als Datei (JSON). Admins können den ganzen Haushalt sichern.</p>
+  <button onclick={exportMine} disabled={busy}>Meine Daten herunterladen</button>
+  {#if session.isAdmin}<button onclick={exportHousehold} disabled={busy}>Haushalt exportieren</button>{/if}
+  {#if saved}<p class="ok small" role="status">{saved}</p>{/if}
+
+  {#if dataPanel === "account"}
+    <div class="stack danger-zone">
+      <b>Konto löschen</b>
+      <p class="small">Name, E-Mail, Passwort, PIN, Geräte und dein Postfach werden gelöscht. Deine erledigten Aufgaben bleiben im Haushalt als „Gelöschtes Konto“. Bist du allein im Haushalt, wird er mitgelöscht.</p>
+      <label class="field"><span>Passwort zur Bestätigung</span><input id="delete-password" type="password" bind:value={password} autocomplete="current-password" /></label>
+      <div class="row">
+        <button onclick={() => (dataPanel = null)}>Abbrechen</button>
+        <button class="danger-solid" disabled={busy || !password} onclick={deleteAccount}>Endgültig löschen</button>
+      </div>
+    </div>
+  {:else if dataPanel === "household"}
+    <div class="stack danger-zone">
+      <b>Haushalt „{session.membership?.household_name}“ löschen</b>
+      <p class="small">Alle Aufgaben, Punkte, Abschlüsse, Belohnungen und Kinderprofile dieses Haushalts verschwinden. Das lässt sich nicht rückgängig machen.</p>
+      <label class="field"><span>Zur Bestätigung den Namen eintippen</span><input id="delete-name" type="text" bind:value={confirmName} /></label>
+      <div class="row">
+        <button onclick={() => (dataPanel = null)}>Abbrechen</button>
+        <button class="danger-solid" disabled={busy || confirmName.trim() !== session.membership?.household_name.trim()} onclick={deleteHousehold}>Haushalt löschen</button>
+      </div>
+    </div>
+  {:else}
+    {#if session.me?.user.email}<button class="danger" onclick={() => ((dataPanel = "account"), (password = ""))}>Konto löschen …</button>{/if}
+    {#if session.isAdmin}<button class="danger" onclick={() => ((dataPanel = "household"), (confirmName = ""))}>Haushalt löschen …</button>{/if}
+  {/if}
+  {#if error && dataPanel}<p class="err" role="alert">{error}</p>{/if}
+</div>
+
 <style>
+  .danger {
+    color: var(--over);
+    background: transparent;
+  }
+
+  .danger-solid {
+    background: var(--over);
+    border-color: var(--over);
+    color: #fff;
+  }
+
+  .danger-zone {
+    padding: var(--space-3);
+    border-radius: var(--radius-sm);
+    border: 1px solid color-mix(in srgb, var(--over) 45%, var(--line));
+    background: color-mix(in srgb, var(--over-soft) 40%, transparent);
+  }
+
+  .ok {
+    color: var(--ok);
+  }
+
   .small {
     font-size: 0.85rem;
     margin: 0;

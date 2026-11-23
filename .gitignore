@@ -12,4 +12,5 @@ firebase-service-account*.json
 /deploy/secrets/
 GoogleService-Info.plist
 *.jks
+keystore.properties
 *.keystore

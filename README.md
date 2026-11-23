@@ -52,7 +52,7 @@ pnpm --dir app install; pnpm --dir app tauri dev
 In der App unter **Mehr → Server** `http://localhost:8080` eintragen und „Verbindung testen“.
 Die Vorschau „Abschluss ausprobieren“ unter Regeln rechnet den Ausgleich offline mit `punkte-core` (im Tauri-Kern).
 
-### API (Stand M6)
+### API (Stand M7)
 
 | Route | Zweck |
 | --- | --- |
@@ -61,12 +61,14 @@ Die Vorschau „Abschluss ausprobieren“ unter Regeln rechnet den Ausgleich off
 | `POST /api/v1/preview/settlement` | Ausgleich durchrechnen: `{ policy, members }` → `Settlement` |
 | `POST /api/v1/auth/register` · `/login` | Konto anlegen / anmelden → Zugriffstoken (15 min) + Refresh-Token |
 | `POST /api/v1/auth/refresh` · `/logout` | Refresh-Token tauschen (rotierend) / Gerät abmelden |
-| `GET /api/v1/me` | eigenes Konto und Haushalte |
+| `GET /api/v1/me` · `DELETE /api/v1/me` | eigenes Konto und Haushalte; Konto löschen (`{ password }`) |
+| `GET /api/v1/me/export` | alle Daten zum eigenen Konto als JSON-Datei |
 | `POST /api/v1/households` | Haushalt mit Standardregeln anlegen (Ersteller wird Admin) |
 | `POST /api/v1/households/{id}/invites` | Einladungscode erzeugen (nur Admins, 7 Tage gültig) |
 | `POST /api/v1/invites/accept` | mit Code beitreten, Tier und Farbe wählen |
 | `POST /api/v1/invites/join` | Kind ohne E-Mail tritt mit Kinder-Code auf eigenem Gerät bei |
-| `GET /api/v1/households/{id}/members` · `PATCH …/members/{mid}` | Mitglieder; Tier/Farbe selbst, Rolle/Gewicht als Admin |
+| `GET /api/v1/households/{id}/members` · `PATCH` · `DELETE …/members/{mid}` | Mitglieder; Tier/Farbe selbst, Rolle/Gewicht als Admin; entfernen (Admins) |
+| `GET /api/v1/households/{id}/export` · `POST …/delete` | Haushalt exportieren, löschen (`{ confirm_name }`), nur Admins |
 | `POST /api/v1/households/{id}/children` · `PUT …/members/{mid}/pin` | Kinderprofil anlegen, PIN setzen |
 | `POST /api/v1/auth/pin` | Profilwechsel per PIN, nur von einem Gerät des Haushalts (Sperre nach 5 Fehlversuchen) |
 | `GET` · `POST /api/v1/households/{id}/rooms` · `PATCH` · `DELETE …/rooms/{rid}` | Räume (Kinder nur lesen) |
@@ -92,6 +94,7 @@ Die Vorschau „Abschluss ausprobieren“ unter Regeln rechnet den Ausgleich off
 | `GET /api/v1/households/{id}/calendar?from=&to=` | aktuelle, erledigte und kommende Runden (höchstens 62 Tage) |
 | `GET` · `PUT /api/v1/households/{id}/board` | Kartenpositionen auf dem gemeinsamen Board |
 | `GET` · `POST /api/v1/households/{id}/views` · `PUT` · `DELETE /api/v1/views/{vid}` | eigene Ansichten |
+| Kopf `Idempotency-Key` | bei jedem Schreibaufruf erlaubt: Wiederholungen bekommen die gespeicherte Antwort (`idempotent-replay: true`), 7 Tage |
 | `GET /api/v1/households/{id}/live?token=` | WebSocket: `tasks_changed` / `rooms_changed` / `points_changed`; persönlich (`member`): `credited`, `returned`, `received`, `transfer_declined`, `reversed` |
 
 ## Push einrichten (Firebase)
@@ -146,7 +149,14 @@ pnpm --dir app tauri android build --debug --apk --target aarch64
 Auf einem neuen Rechner: SDK, NDK (Side by side) und JDK 17+ installieren, die Variablen oben setzen,
 `rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android`.
 
-iOS braucht macOS mit Xcode. Später über einen macOS-Runner in GitHub Actions.
+Ab Werk spricht die App mit `https://fairteilt.oli-tech.eu` (im `pnpm dev` mit `http://localhost:8080`);
+`VITE_SERVER_URL` beim Bauen überschreibt das, in der App lässt sich der Server auf dem Anmeldebildschirm ändern.
+
+**Release:** Der Workflow **Apps** (Actions → Run workflow oder Tag `v*`) baut AAB und APK, signiert mit
+dem Upload-Schlüssel aus den Secrets, und iOS für den Simulator. Lokal signiert
+`app/src-tauri/gen/android/app/keystore.properties` (nie einchecken). Schritte bis zum Play Store:
+[docs/store/PLAY-STORE.md](docs/store/PLAY-STORE.md). iOS braucht für mehr als den Simulator ein
+Apple-Developer-Konto.
 
 ## Deployment (Hetzner)
 

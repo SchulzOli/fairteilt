@@ -3,7 +3,7 @@
   import type { TaskDto, TaskStepDto } from "$lib/generated";
   import { session } from "$lib/session.svelte";
   import { feedback } from "$lib/settings.svelte";
-  import { clock, conditionOf, dueText, iconOf, memberName, stepsDone, taskStore } from "$lib/tasks.svelte";
+  import { clock, conditionOf, dueText, iconOf, isQueued, memberName, stepsDone, taskStore } from "$lib/tasks.svelte";
   import ConditionBar from "$lib/ui/ConditionBar.svelte";
   import Icon from "$lib/ui/Icon.svelte";
   import ReviewSheet from "$lib/ReviewSheet.svelte";
@@ -12,7 +12,7 @@
 
   /** The task as last answered by the server for this page (also after it is completed). */
   let local = $state<TaskDto | null>(null);
-  let finished = $state<{ xp: number; next: string | null; submitted: boolean; bounty: number | null } | null>(null);
+  let finished = $state<{ xp: number; next: string | null; submitted: boolean; bounty: number | null; queued?: boolean } | null>(null);
   let reviewing = $state(false);
   let pledging = $state(false);
   let pledgeAmount = $state(5);
@@ -73,7 +73,7 @@
     act(async () => {
       const res = await taskStore.action(id, "done");
       local = res.task;
-      finished = { xp: res.xp_awarded ?? 0, next: res.next_task_id, submitted: res.submitted, bounty: res.bounty_paid };
+      finished = { xp: res.xp_awarded ?? 0, next: res.next_task_id, submitted: res.submitted, bounty: res.bounty_paid, queued: isQueued(res) };
       feedback("done");
     });
 
@@ -90,8 +90,8 @@
       local = res.task;
       sparkle = step.id;
       setTimeout(() => sparkle === step.id && (sparkle = null), 900);
-      if (res.xp_awarded !== null || res.submitted) {
-        finished = { xp: res.xp_awarded ?? 0, next: res.next_task_id, submitted: res.submitted, bounty: res.bounty_paid };
+      if (res.xp_awarded !== null || res.submitted || (isQueued(res) && !res.task.steps.some((x) => x.id !== step.id && !x.done_at))) {
+        finished = { xp: res.xp_awarded ?? 0, next: res.next_task_id, submitted: res.submitted, bounty: res.bounty_paid, queued: isQueued(res) };
         feedback("done");
       } else {
         feedback("step");
@@ -151,7 +151,10 @@
         {/each}
       </span>
       <span class="big-check" aria-hidden="true"><Icon name="check" size={40} /></span>
-      {#if finished.submitted}
+      {#if finished.queued}
+        <h2>Gespeichert!</h2>
+        <p class="muted">Du bist gerade offline. Sobald die Verbindung wieder da ist, kommt es an und du bekommst deine XP.</p>
+      {:else if finished.submitted}
         <h2>Prima!</h2>
         <p class="muted">Ein Erwachsener schaut noch kurz drüber, dann bekommst du deine {task.xp} XP.</p>
       {:else}

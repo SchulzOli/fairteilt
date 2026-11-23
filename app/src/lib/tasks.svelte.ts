@@ -10,6 +10,7 @@ import type {
   TaskDto,
 } from "$lib/generated";
 import { notices } from "$lib/notice.svelte";
+import { outbox } from "$lib/outbox.svelte";
 import { session } from "$lib/session.svelte";
 import { ICONS, type IconName } from "$lib/ui/Icon.svelte";
 
@@ -47,6 +48,7 @@ class TaskStore {
     if (this.hid === hid) {
       if (member !== this.member) {
         this.member = member;
+        this.hydrate();
         this.scheduleReload();
       }
       return;
@@ -54,6 +56,7 @@ class TaskStore {
     this.stop();
     this.hid = hid;
     this.member = member;
+    this.hydrate();
     this.clock = setInterval(() => (this.now = Date.now()), 1000);
     // Offline at start: the live channel reconnects and reloads once the server is back.
     void this.load().catch(() => {});
@@ -99,6 +102,57 @@ class TaskStore {
     this.unread = inbox.unread;
     this.loaded = true;
     this.version++;
+    this.persist();
+  }
+
+  // ---------- offline (M7): last state on the device ----------
+  private get cacheKey(): string {
+    return `fairteilt.cache.${this.hid}.${this.member ?? ""}`;
+  }
+
+  /** Show the last known state at once (also without a connection). */
+  private hydrate() {
+    try {
+      const raw = localStorage.getItem(this.cacheKey);
+      if (!raw) return;
+      const c = JSON.parse(raw);
+      this.tasks = c.tasks ?? [];
+      this.rooms = c.rooms ?? [];
+      this.accounts = c.accounts ?? [];
+      this.period = c.period ?? null;
+      this.unread = c.unread ?? 0;
+      this.loaded = true;
+    } catch {
+      /* no usable cache */
+    }
+  }
+
+  private persist() {
+    try {
+      localStorage.setItem(
+        this.cacheKey,
+        JSON.stringify({ tasks: this.tasks, rooms: this.rooms, accounts: this.accounts, period: this.period, unread: this.unread }),
+      );
+    } catch {
+      /* storage full or blocked: works without cache */
+    }
+  }
+
+  /** A queued change, shown as if it went through; the server confirms later. */
+  private queuedResult(id: string, change: (t: TaskDto) => TaskDto | null): TaskActionResponse {
+    const i = this.tasks.findIndex((t) => t.id === id);
+    const before = this.tasks[i];
+    const after = before ? change(structuredClone($state.snapshot(before)) as TaskDto) : null;
+    if (i >= 0 && after) this.tasks[i] = after;
+    if (i >= 0 && !after) {
+      // Done: the card celebrates, then leaves the list.
+      setTimeout(() => {
+        this.tasks = this.tasks.filter((t) => t.id !== id);
+        this.persist();
+      }, 1600);
+    }
+    this.persist();
+    return { task: after ?? before, xp_awarded: null, bounty_paid: null, submitted: false, next_task_id: null, queued: true } as TaskActionResponse;
   }
 
   /** Coalesces bursts of live events into one reload. */
@@ -130,6 +184,7 @@ class TaskStore {
       const type = event.type;
       if (type === "hello") {
         this.live = true;
+        void outbox.flush();
         // After a reconnect we may have missed events.
         if (this.retry > 0) this.scheduleReload();
         this.retry = 0;
@@ -144,6 +199,9 @@ class TaskStore {
       } else if (type === "period_closed") {
         if (session.isAdmin) notices.show("Der Abschluss ist fertig", "info", "Unter Punkte ansehen und freigeben.");
         this.scheduleReload();
+      } else if (type === "household_deleted") {
+        // Gone for everyone: the app falls back to "Haushalt einrichten".
+        void session.loadMe().catch(() => {});
       } else if (type === "settlement_approved" || type === "rewards_changed") {
         this.scheduleReload();
       } else if (event.member) {
@@ -221,14 +279,43 @@ class TaskStore {
 
   // ---------- actions ----------
   async action(id: string, action: TaskCommand, minutes?: number): Promise<TaskActionResponse> {
-    const res = await session.request<TaskActionResponse>("POST", `/tasks/${id}/action`, { action, minutes: minutes ?? null });
+    const title = this.tasks.find((t) => t.id === id)?.title ?? "Aufgabe";
+    const labels: Record<string, string> = { done: "erledigt", start: "gestartet", pause: "pausiert", claim: "übernommen", unclaim: "abgegeben", snooze: "verschoben", cancel: "übersprungen" };
+    const res = await outbox.send<TaskActionResponse>("POST", `/tasks/${id}/action`, { action, minutes: minutes ?? null }, `„${title}“ ${labels[action] ?? action}`);
+    if (!res) {
+      const me = session.membership?.membership_id ?? null;
+      const now = Date.now();
+      return this.queuedResult(id, (t) => {
+        if (action === "done" || action === "cancel") return null;
+        if (action === "start") {
+          const remind = now + (t.duration_min ?? 25) * 60_000;
+          return { ...t, status: "in_progress", assignee_id: me, started_at: new Date(now).toISOString(), remind_at: new Date(remind).toISOString() };
+        }
+        if (action === "pause") return { ...t, status: "claimed", started_at: null, remind_at: null };
+        if (action === "claim") return { ...t, status: "claimed", assignee_id: me };
+        if (action === "unclaim") return { ...t, status: "open", assignee_id: null };
+        if (action === "snooze") return { ...t, remind_at: new Date(now + (minutes ?? 10) * 60_000).toISOString() };
+        return t;
+      });
+    }
     if (res.xp_awarded !== null) this.hold(1500);
     this.patch(res);
     return res;
   }
 
   async checkStep(taskId: string, stepId: string): Promise<TaskActionResponse> {
-    const res = await session.request<TaskActionResponse>("POST", `/tasks/${taskId}/steps/${stepId}/check`);
+    const task = this.tasks.find((t) => t.id === taskId);
+    const step = task?.steps.find((s) => s.id === stepId);
+    const res = await outbox.send<TaskActionResponse>("POST", `/tasks/${taskId}/steps/${stepId}/check`, undefined, `Schritt „${step?.title ?? ""}“`);
+    if (!res) {
+      const me = session.membership?.membership_id ?? null;
+      const now = new Date().toISOString();
+      return this.queuedResult(taskId, (t) => {
+        const steps = t.steps.map((s) => (s.id === stepId ? { ...s, done_at: now, done_by: me } : s));
+        if (steps.every((s) => s.done_at)) return null;
+        return { ...t, steps, status: t.status === "in_progress" ? t.status : "in_progress", started_at: t.started_at ?? now, assignee_id: t.assignee_id ?? me };
+      });
+    }
     if (res.xp_awarded !== null) this.hold(1800);
     this.patch(res);
     return res;
@@ -296,6 +383,11 @@ interface LiveEvent {
 }
 
 export const taskStore = new TaskStore();
+
+/** The change was saved on the device and waits for the connection. */
+export function isQueued(res: TaskActionResponse): boolean {
+  return (res as TaskActionResponse & { queued?: boolean }).queued === true;
+}
 
 // ---------- presentation helpers ----------
 

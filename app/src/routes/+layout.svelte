@@ -10,6 +10,7 @@
   import { taskStore } from "$lib/tasks.svelte";
   import * as reminders from "$lib/reminders";
   import { registerPush } from "$lib/push";
+  import { outbox } from "$lib/outbox.svelte";
 
   let { children } = $props();
 
@@ -52,6 +53,18 @@
     if (session.status === "ready" && session.me && !session.profile) void registerPush();
   });
 
+  // Offline (M7): when the server is back, send what waited and reload.
+  session.onlineAgain = () => {
+    void outbox.flush();
+    taskStore.wake();
+  };
+  outbox.onFlushed = () => taskStore.scheduleReload();
+  $effect(() => {
+    if (session.status === "ready" && !session.offline) void outbox.flush();
+    // Signed out: queued changes of that account are dropped with its offline copy.
+    if (session.status === "signed_out" && outbox.items.length) outbox.clear();
+  });
+
   // Buttons on a reminder: like the in-app check-in; a tap opens the task.
   reminders.setActionHandler(async (actionId, taskId) => {
     try {
@@ -87,6 +100,13 @@
     <div class="profile-bar" role="status">
       <span>Angemeldet als <b>{session.profile.name}</b></span>
       <button onclick={() => session.returnToDevice()}>Zurück zu {session.profile.deviceUser}</button>
+    </div>
+  {/if}
+
+  {#if session.status === "ready" && (session.offline || outbox.items.length)}
+    <div class="offline-bar" role="status">
+      {#if session.offline}Offline{:else}Wird übertragen …{/if}
+      {#if outbox.items.length} · {outbox.items.length} {outbox.items.length === 1 ? "Änderung wartet" : "Änderungen warten"}{:else} · du siehst den letzten Stand{/if}
     </div>
   {/if}
 
@@ -131,6 +151,18 @@
     background: var(--primary);
     color: var(--primary-fg);
     font-size: 0.9rem;
+  }
+
+  .offline-bar {
+    position: sticky;
+    top: 0;
+    z-index: 19;
+    padding: calc(env(safe-area-inset-top) + 6px) var(--space-4) 6px;
+    background: var(--coin-soft);
+    color: var(--coin);
+    font-size: 0.85rem;
+    font-weight: 700;
+    text-align: center;
   }
 
   .profile-bar button {

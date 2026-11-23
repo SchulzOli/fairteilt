@@ -24,6 +24,11 @@ const STORE_KEY = "session";
 const SERVER_KEY = "fairteilt.serverUrl";
 const ACTIVE_KEY = "fairteilt.activeHousehold";
 const PROFILE_IDLE_MS = 2 * 60 * 1000;
+/** Last known account (not secret): lets the app start without a connection (M7). */
+const ME_KEY = "fairteilt.me";
+const RETRY_MS = 15_000;
+/** Release builds talk to the family server; `pnpm dev` and VITE_SERVER_URL override it. */
+const DEFAULT_SERVER: string = import.meta.env.VITE_SERVER_URL ?? (import.meta.env.DEV ? "http://localhost:8080" : "https://fairteilt.oli-tech.eu");
 
 export class ApiError extends Error {
   constructor(
@@ -94,7 +99,9 @@ interface Tokens {
 
 class Session {
   status = $state<"loading" | "signed_out" | "ready">("loading");
-  serverUrl = $state(readLocal(SERVER_KEY, "http://localhost:8080"));
+  /** No connection to the server right now (the app shows what it knows and queues changes). */
+  offline = $state(false);
+  serverUrl = $state(readLocal(SERVER_KEY, DEFAULT_SERVER));
   me = $state<MeResponse | null>(null);
   activeHouseholdId = $state<string | null>(readLocal(ACTIVE_KEY, "") || null);
   members = $state<MemberDto[]>([]);
@@ -105,6 +112,10 @@ class Session {
   private deviceTokens: Tokens | null = null;
   private refreshing: Promise<boolean> | null = null;
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
+  private lastRenewOffline = false;
+  private retryTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Called when the connection comes back (the stores reload, the queue is sent). */
+  onlineAgain: (() => void) | null = null;
 
   get membership(): MembershipDto | null {
     const ms = this.me?.memberships ?? [];
@@ -131,6 +142,14 @@ class Session {
           if (await this.renew()) {
             await this.loadMe();
             this.status = "ready";
+            return;
+          }
+          // No connection (not a rejected token): start with what we know and try again later.
+          const cached = readLocal(ME_KEY, "");
+          if (this.lastRenewOffline && cached) {
+            this.me = JSON.parse(cached) as MeResponse;
+            this.status = "ready";
+            this.goneOffline();
             return;
           }
         }
@@ -161,11 +180,13 @@ class Session {
     this.refreshing = (async () => {
       if (!this.tokens) return false;
       try {
+        this.lastRenewOffline = false;
         const res = await this.raw<TokenResponse>("POST", "/auth/refresh", { refresh_token: this.tokens.refresh }, false);
         this.tokens = { access: res.access_token, refresh: res.refresh_token };
         await this.persist();
         return true;
-      } catch {
+      } catch (e) {
+        this.lastRenewOffline = e instanceof ApiError && e.status === 0;
         return false;
       } finally {
         this.refreshing = null;
@@ -175,7 +196,7 @@ class Session {
   }
 
   // ---------- HTTP ----------
-  private async raw<T>(method: string, path: string, body?: unknown, auth = true, bearer?: string): Promise<T> {
+  private async raw<T>(method: string, path: string, body?: unknown, auth = true, bearer?: string, extra?: Record<string, string>): Promise<T> {
     let res: Response;
     try {
       res = await fetch(`${this.serverUrl}/api/v1${path}`, {
@@ -183,29 +204,55 @@ class Session {
         headers: {
           ...(body !== undefined ? { "content-type": "application/json" } : {}),
           ...(bearer ? { authorization: `Bearer ${bearer}` } : auth && this.tokens?.access ? { authorization: `Bearer ${this.tokens.access}` } : {}),
+          ...extra,
         },
         body: body !== undefined ? JSON.stringify(body) : undefined,
       });
     } catch {
+      this.goneOffline();
       throw new ApiError(0, "Der Server ist nicht erreichbar. Prüfe die Adresse und deine Verbindung.");
     }
+    if (this.offline) this.backOnline();
     if (res.status === 204) return undefined as T;
     const data = await res.json().catch(() => null);
     if (!res.ok) throw new ApiError(res.status, data?.error?.message ?? `Fehler ${res.status}`);
     return data as T;
   }
 
-  async request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  async request<T>(method: string, path: string, body?: unknown, headers?: Record<string, string>): Promise<T> {
     this.touch();
     try {
-      return await this.raw<T>(method, path, body);
+      // Offline start: the access token is renewed with the first request that gets through.
+      if (this.tokens && !this.tokens.access && !(await this.renew())) {
+        throw this.lastRenewOffline
+          ? new ApiError(0, "Gerade keine Verbindung zum Server. Das klappt wieder, sobald du online bist.")
+          : new ApiError(401, "Bitte neu anmelden.");
+      }
+      return await this.raw<T>(method, path, body, true, undefined, headers);
     } catch (e) {
       if (e instanceof ApiError && e.status === 401 && (await this.renew())) {
-        return this.raw<T>(method, path, body);
+        return this.raw<T>(method, path, body, true, undefined, headers);
       }
-      if (e instanceof ApiError && e.status === 401) await this.forget();
+      // Only a rejected token signs out; a missing connection does not.
+      if (e instanceof ApiError && e.status === 401 && !this.lastRenewOffline) await this.forget();
       throw e;
     }
+  }
+
+  private goneOffline() {
+    if (!this.offline) this.offline = true;
+    if (this.retryTimer) return;
+    this.retryTimer = setTimeout(() => {
+      this.retryTimer = null;
+      void this.raw("GET", "/meta", undefined, false).catch(() => {});
+    }, RETRY_MS);
+  }
+
+  private backOnline() {
+    this.offline = false;
+    if (this.retryTimer) clearTimeout(this.retryTimer);
+    this.retryTimer = null;
+    this.onlineAgain?.();
   }
 
   /** A valid access token for the live WebSocket (renewed when it expires within a minute). */
@@ -240,6 +287,7 @@ class Session {
 
   async loadMe() {
     this.me = await this.request<MeResponse>("GET", "/me");
+    writeLocal(ME_KEY, JSON.stringify(this.me));
     if (!this.me.memberships.some((m) => m.household_id === this.activeHouseholdId)) {
       this.selectHousehold(this.me.memberships[0]?.household_id ?? null);
     }
@@ -257,6 +305,15 @@ class Session {
     this.me = null;
     this.members = [];
     this.status = "signed_out";
+    writeLocal(ME_KEY, null);
+    // The offline copy of the household stays on the device only while someone is signed in.
+    try {
+      for (const key of Object.keys(localStorage)) {
+        if (key.startsWith("fairteilt.cache.")) localStorage.removeItem(key);
+      }
+    } catch {
+      /* storage unavailable */
+    }
     await storeDelete();
   }
 

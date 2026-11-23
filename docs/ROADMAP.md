@@ -8,15 +8,17 @@ im Familienalltag nutzbar (Familien-Alpha). Umfang grob: S / M / L.
 
 ## Nächste Schritte
 
-Erledigt: CI, TypeScript-Typen aus `punkte-core` und Server, Design-Grundlage in der App, **M1** bis **M6**, Push über Firebase eingerichtet.
+Erledigt: CI, TypeScript-Typen aus `punkte-core` und Server, Design-Grundlage in der App, **M1** bis **M7**, Push über Firebase eingerichtet.
 
 | Wer | Schritt |
 | --- | --- |
-| Code | Familien-Alpha: Deployment auf Hetzner, signierte APK, Backup und Wiederherstellung; App-Start ohne Server |
-| Code | M7: Offline-Warteschlange, Play Store, iOS, Datenexport und Löschen |
+| Code | Familien-Alpha: Deployment auf Hetzner, Backup und Wiederherstellung |
+| Konto | Play-Console-Konto, Upload-Schlüssel erzeugen und als GitHub-Secrets hinterlegen ([Anleitung](store/PLAY-STORE.md)) |
+| Konto | Apple-Developer-Konto für TestFlight und Push auf iOS |
+| Entscheidung | Datenschutzerklärung ([Entwurf](DATENSCHUTZ.md)) ausfüllen und veröffentlichen; Zielgruppe im Play Store (18+ oder Familienrichtlinie) |
 | Entscheidung | Klang auswählen (Klang-Spielplatz auf der Roadmap-Seite). Krümel, Serie, Schritte und Tiere sind entschieden |
 | Betrieb | Hetzner-Cloud-Server bestellen, DNS `fairteilt.oli-tech.eu` setzen (bis zur Alpha) |
-| Betrieb | Tablet für die Wandanzeige festlegen. Apple-Developer-Account vor M7 |
+| Betrieb | Tablet für die Wandanzeige festlegen |
 
 ## Meilensteine
 
@@ -30,7 +32,7 @@ Erledigt: CI, TypeScript-Typen aus `punkte-core` und Server, Design-Grundlage in
 | ✅ | **M4 Ausgleich, Familienziel & Belohnungen** | Monatsabschluss läuft automatisch, Rennen gegen Krümel entscheidet über die Familienbelohnung | M |
 | ✅ | **M5 Erinnerungen & Push** | Lokale Erinnerungen beim Kippen auf „fällig“, Postfach, Push über FCM | M |
 | ✅ | **M6 Plan & Wandanzeige** | Kalender, Board, eigene Ansichten, Tablet-Wandanzeige mit PIN-Abhaken | L |
-| | **M7 Offline & Stores** | Offline-Warteschlange, Play Store, iOS über CI, Datenexport und Löschen | L |
+| ✅ | **M7 Offline & Stores** | Offline-Warteschlange, Play Store, iOS über CI, Datenexport und Löschen | L |
 | | **M8 Haushaltsbuch** | Ausgaben, Budgets und Belege in denselben Haushalten | L |
 
 ### M1 Konten & Haushalt
@@ -148,6 +150,23 @@ abhaken per Antippen → Tier → PIN (kurze Sitzung für die Person, das Tablet
 Bildschirm bleibt an, nachts gedimmt und leise. Push-Empfang (aus M5): Firebase im Android-Projekt,
 Token an den Server, Hinweise im System, wenn die App im Hintergrund ist. Server-Seite als Test
 geprüft, Plan und Wandanzeige in der App, Push mit dem Firebase-Projekt (siehe unten).
+
+### M7 Offline & Stores
+
+**Abgeschlossen am 23.11.2026** (soweit ohne Store-Konten möglich). Offline: Die App startet ohne
+Verbindung mit dem letzten bekannten Stand (Konto und Aufgaben je Person auf dem Gerät), zeigt oben
+„Offline“, und Abhaken, Starten, Übernehmen, Schritte usw. landen in einer Warteschlange, die auch
+einen Neustart übersteht. Sobald der Server wieder antwortet (Prüfung alle 15 s, Live-Verbindung),
+geht alles in Reihenfolge raus; jede Änderung trägt einen `Idempotency-Key`, der Server merkt sich die
+Antwort 7 Tage und bucht nichts doppelt. Lehnt der Server eine Änderung ab, erfährt man es per Hinweis.
+Datenschutz: „Meine Daten herunterladen“ (alles zum eigenen Konto als JSON), „Haushalt exportieren“
+(Admins), Konto löschen (mit Passwort; Punktebuch bleibt als „Gelöschtes Konto“ für die anderen),
+Haushalt löschen (Name eintippen), Mitglieder entfernen; beim Abmelden verschwindet die Offline-Kopie.
+Release: Server-Adresse ab Werk `https://fairteilt.oli-tech.eu` (`VITE_SERVER_URL` überschreibt),
+Release-Signierung über `keystore.properties` oder Secrets, Workflow **Apps** baut AAB + APK und
+iOS für den Simulator. Store-Texte und Datensicherheit in [store/PLAY-STORE.md](store/PLAY-STORE.md),
+Datenschutzerklärung als [Entwurf](DATENSCHUTZ.md). **Offen, braucht Konten:** Play-Console-Konto und
+Upload-Schlüssel, Apple-Developer-Konto (signiertes iOS, APNs).
 
 ## Design (Kurzfassung, Details in KONZEPT §7.5)
 

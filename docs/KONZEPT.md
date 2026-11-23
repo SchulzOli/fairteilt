@@ -371,7 +371,11 @@ Periodenabschluss. Kein zusätzlicher Dienst nötig, mehrere Instanzen wären sp
   und lehnt ggf. ab. Der Client zeigt das an und rollt zurück.
 - **Konflikte:** Stammdaten (Vorlagen, Aufgaben-Felder) nach „letzter gewinnt“ je Feld mit `version`.
   Das Ledger ist nur anhängend, dort gibt es keine Konflikte.
-- **MVP:** online zuerst mit optimistischer UI und Lese-Cache. Die volle Outbox folgt in M7.
+- **Umgesetzt (M7):** Statt eines `change_seq`-Feeds lädt die App nach jedem Live-Hinweis und nach
+  dem Wiederverbinden den Stand neu (bei Familiengröße billig) und hält eine Kopie auf dem Gerät.
+  Die Outbox (`outbox.svelte.ts`) sendet Befehle mit `Idempotency-Key`-Kopf; der Server speichert
+  die Antwort je Konto und Schlüssel 7 Tage (`idempotency_keys`) und spielt sie bei Wiederholung ab.
+  Abgelehnte Befehle werden verworfen und gemeldet; der Neuladen-Schritt korrigiert die Anzeige.
 
 ### 9.3 Sicherheit
 
@@ -427,7 +431,7 @@ Haushalte, Mitglieder und dieselbe Sync-Schicht.
 | --- | --- | --- |
 | Windows-Desktop | Rust, WebView2 | ✅ vorhanden |
 | Android | SDK, NDK, JDK 17+, `ANDROID_HOME`/`NDK_HOME`, Rust-Targets `aarch64-linux-android` u. a. | ✅ SDK, NDK 30 und JDK 21 unter `D:\Android`, Projekt in `app/src-tauri/gen/android` |
-| iOS | macOS mit Xcode, Apple-Developer-Account | ❌ auf Windows nicht möglich. Später per GitHub-Actions-Runner mit macOS |
+| iOS | macOS mit Xcode, Apple-Developer-Account | ❌ auf Windows nicht möglich. Workflow „Apps“ baut auf einem macOS-Runner (ohne Konto nur Simulator) |
 | Server-Image | Docker, Build für arm64/amd64 (Hetzner ARM-Instanzen sind günstig) | Docker vorhanden |
 
 ---

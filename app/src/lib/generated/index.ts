@@ -22,6 +22,8 @@ export type { Cycle } from "./Cycle";
 export type { DecideRedemptionRequest } from "./DecideRedemptionRequest";
 export type { DecideTransferRequest } from "./DecideTransferRequest";
 export type { DeficitAction } from "./DeficitAction";
+export type { DeleteAccountRequest } from "./DeleteAccountRequest";
+export type { DeleteHouseholdRequest } from "./DeleteHouseholdRequest";
 export type { DeviceRequest } from "./DeviceRequest";
 export type { Escalation } from "./Escalation";
 export type { GoalDto } from "./GoalDto";

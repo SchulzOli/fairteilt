@@ -77,6 +77,18 @@ fn push_token(app: tauri::AppHandle) -> Option<String> {
     }
 }
 
+/// Writes an export into the downloads folder (Android: the app's own downloads folder).
+#[tauri::command]
+fn save_file(app: tauri::AppHandle, name: String, content: String) -> Result<String, String> {
+    use tauri::Manager;
+    let safe: String = name.chars().map(|c| if c.is_ascii_alphanumeric() || "-_.".contains(c) { c } else { '_' }).collect();
+    let dir = app.path().download_dir().map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let path = dir.join(safe);
+    std::fs::write(&path, content).map_err(|e| e.to_string())?;
+    Ok(path.display().to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
@@ -92,6 +104,7 @@ pub fn run() {
             default_policies,
             preview_settlement,
             push_token,
+            save_file,
             secure_store::secure_set,
             secure_store::secure_get,
             secure_store::secure_delete
