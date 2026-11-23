@@ -68,8 +68,10 @@ pub async fn ensure_period(db: &PgPool, household_id: Uuid) -> AppResult<PeriodR
             .fetch_optional(&mut *tx)
             .await?;
     let now = Utc::now();
-    // Periods follow each other without gaps; the first one starts today.
-    let start = last.map(|l| l.2).unwrap_or(now);
+    // Periods follow each other without gaps; the first one starts today at 00:00 (household
+    // time). Not "now": the period opens lazily, often right after the first XP was booked, and
+    // those bookings carry the database's clock.
+    let start = last.map(|l| l.2).unwrap_or_else(|| punkte_core::goal::local_midnight(now.with_timezone(&hh.tz).date_naive(), hh.tz));
     let (full_start, end) = period_bounds(policy.length, start, hh.tz);
     let share = (end - start).num_seconds() as f64 / (end - full_start).num_seconds().max(1) as f64;
 

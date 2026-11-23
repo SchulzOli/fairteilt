@@ -58,7 +58,8 @@ impl RaceStatus {
     }
 }
 
-fn local_midnight(date: NaiveDate, tz: Tz) -> DateTime<Utc> {
+/// Local 00:00 of a day as UTC (DST gaps: the earliest valid time).
+pub fn local_midnight(date: NaiveDate, tz: Tz) -> DateTime<Utc> {
     let naive = date.and_hms_opt(0, 0, 0).expect("midnight exists");
     tz.from_local_datetime(&naive)
         .earliest()
