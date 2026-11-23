@@ -160,7 +160,8 @@ Ab Werk spricht die App mit `https://fairteilt.oli-tech.eu` (im `pnpm dev` mit `
 **Release:** Der Workflow **Apps** (Actions → Run workflow oder Tag `v*`) baut AAB und APK, signiert mit
 dem Upload-Schlüssel aus den Secrets, und iOS für den Simulator. Lokal signiert
 `app/src-tauri/gen/android/app/keystore.properties` (nie einchecken). Schritte bis zum Play Store:
-[docs/store/PLAY-STORE.md](docs/store/PLAY-STORE.md). iOS braucht für mehr als den Simulator ein
+[docs/store/PLAY-STORE.md](docs/store/PLAY-STORE.md). Testversionen gehen automatisch an die Familie über Firebase App Distribution:
+[docs/store/APP-DISTRIBUTION.md](docs/store/APP-DISTRIBUTION.md). iOS braucht für mehr als den Simulator ein
 Apple-Developer-Konto.
 
 ## Deployment (Hetzner)

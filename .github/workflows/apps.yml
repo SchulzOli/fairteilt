@@ -4,7 +4,10 @@
 #   GOOGLE_SERVICES_JSON        content of google-services.json (Firebase, push)
 #   ANDROID_KEYSTORE_BASE64     upload keystore, base64 (`base64 -w0 upload.jks`)
 #   ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD
+#   FIREBASE_APP_DISTRIBUTION_KEY  service account JSON with the role "Firebase App Distribution
+#                               Admin": the signed APK goes to App Distribution (docs/store/APP-DISTRIBUTION.md)
 #   APPLE_DEVELOPMENT_TEAM      (later, for signed iOS builds)
+# Every build gets its own versionCode (100000 + run number), so phones see it as an update.
 name: Apps
 
 on:
@@ -13,6 +16,16 @@ on:
       server_url:
         description: "Server, den die App ab Werk benutzt"
         default: "https://fairteilt.oli-tech.eu"
+      distribute:
+        description: "Android-APK an App Distribution schicken"
+        type: boolean
+        default: true
+      groups:
+        description: "Testergruppen in App Distribution (Aliase, durch Komma getrennt)"
+        default: "familie"
+      release_notes:
+        description: "Versionshinweise (leer = letzte Commit-Nachricht)"
+        default: ""
   push:
     tags: ["v*"]
 
@@ -31,8 +44,11 @@ jobs:
       NDK_VERSION: 30.0.16248370
       HAS_FIREBASE: ${{ secrets.GOOGLE_SERVICES_JSON != '' }}
       HAS_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+      HAS_DISTRIBUTION: ${{ secrets.FIREBASE_APP_DISTRIBUTION_KEY != '' }}
     steps:
       - uses: actions/checkout@v7
+      - name: Version code
+        run: echo "VERSION_CODE=$((100000 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
       - uses: pnpm/action-setup@v6
         with:
           version: 10
@@ -75,10 +91,29 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: pnpm --dir app tauri android build --aab --apk
+        run: >-
+          pnpm --dir app tauri android build --aab --apk
+          --config "{\"bundle\":{\"android\":{\"versionCode\":$VERSION_CODE}}}"
+      - name: Send to App Distribution
+        # Only a signed APK with push can be installed and updated on the phones.
+        if: >-
+          env.HAS_DISTRIBUTION == 'true' && env.HAS_KEYSTORE == 'true' && env.HAS_FIREBASE == 'true'
+          && (github.event_name == 'push' || inputs.distribute)
+        env:
+          FIREBASE_APP_DISTRIBUTION_KEY: ${{ secrets.FIREBASE_APP_DISTRIBUTION_KEY }}
+          GROUPS: ${{ inputs.groups || 'familie' }}
+          NOTES: ${{ inputs.release_notes }}
+        run: |
+          key="$RUNNER_TEMP/distribution-key.json"
+          printf '%s' "$FIREBASE_APP_DISTRIBUTION_KEY" > "$key"
+          app_id=$(jq -r '.client[] | select(.client_info.android_client_info.package_name == "eu.olitech.fairteilt") | .client_info.mobilesdk_app_id' app/src-tauri/gen/android/app/google-services.json)
+          apk=$(ls app/src-tauri/gen/android/app/build/outputs/apk/universal/release/*.apk | head -n 1)
+          notes=$(printf '%s\n\nBuild %s · %s · %s' "${NOTES:-$(git log -1 --format=%s)}" "$VERSION_CODE" "${GITHUB_SHA:0:7}" "$GITHUB_REF_NAME")
+          GOOGLE_APPLICATION_CREDENTIALS="$key" npx --yes firebase-tools@15.35.0 appdistribution:distribute "$apk" \
+            --app "$app_id" --groups "$GROUPS" --release-notes "$notes"
       - name: Remove secrets from the runner
         if: always()
-        run: rm -f "$RUNNER_TEMP/upload.jks" app/src-tauri/gen/android/app/google-services.json
+        run: rm -f "$RUNNER_TEMP/upload.jks" "$RUNNER_TEMP/distribution-key.json" app/src-tauri/gen/android/app/google-services.json
       - uses: actions/upload-artifact@v5
         with:
           name: fairteilt-android
