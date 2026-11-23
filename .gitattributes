@@ -4,3 +4,5 @@ deploy/Caddyfile text eol=lf
 deploy/Dockerfile text eol=lf
 gradlew text eol=lf
 *.bat text eol=crlf
+# sqlx checks migration checksums byte by byte: keep LF on every platform
+server/migrations/*.sql text eol=lf

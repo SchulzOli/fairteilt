@@ -38,6 +38,8 @@ export type { PointPolicy } from "./PointPolicy";
 export type { PointRange } from "./PointRange";
 export type { RefreshRequest } from "./RefreshRequest";
 export type { RegisterRequest } from "./RegisterRequest";
+export type { ReverseRequest } from "./ReverseRequest";
+export type { ReverseResponse } from "./ReverseResponse";
 export type { ReviewRequest } from "./ReviewRequest";
 export type { RoomDto } from "./RoomDto";
 export type { RoomRequest } from "./RoomRequest";

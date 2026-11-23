@@ -29,6 +29,12 @@ impl Hub {
         map.entry(household).or_insert_with(|| broadcast::channel(64).0).subscribe()
     }
 
+    /// Personal event (`member` = whom it concerns): the apps show a short notice to that person
+    /// and reload like on `points_changed`.
+    pub fn notify_json(&self, household: Uuid, event: serde_json::Value) {
+        self.notify(household, &event.to_string());
+    }
+
     /// Sends `event` (JSON) to everyone connected to the household. No listeners: no-op.
     pub fn notify(&self, household: Uuid, event: &str) {
         let mut map = self.channels.lock().expect("hub poisoned");

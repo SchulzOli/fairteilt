@@ -10,6 +10,10 @@ task_title: string | null,
  */
 counterpart_id: string | null, 
 /**
- * Who confirmed (task rewards after approval).
+ * Who booked it (the reviewer for task rewards after approval, the admin for corrections).
  */
-created_by: string | null, };
+created_by: string | null, 
+/**
+ * A correction already took this entry back.
+ */
+reversed: boolean, };

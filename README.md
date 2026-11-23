@@ -78,8 +78,9 @@ Die Punkte-Ansicht rechnet den Ausgleich offline mit `punkte-core`.
 | `POST /api/v1/tasks/{tid}/bounty` | Bonus aus eigenem Guthaben setzen (sofort reserviert) |
 | `GET /api/v1/households/{id}/accounts` | Guthaben, XP des Monats und Serie aller Mitglieder |
 | `GET /api/v1/households/{id}/ledger` | Verlauf des eigenen Kontos (Admins: `?member=`), `before` + `limit` zum Blättern |
+| `POST /api/v1/households/{id}/ledger/{eid}/reverse` | Admins nehmen eine Gutschrift per Gegenbuchung zurück (mit Begründung) |
 | `GET` · `POST /api/v1/households/{id}/transfers` · `POST /api/v1/transfers/{xid}/decide` | Guthaben übertragen, Freigabe für Kinder |
-| `GET /api/v1/households/{id}/live?token=` | WebSocket: `tasks_changed` / `rooms_changed` / `points_changed`, wenn sich etwas ändert |
+| `GET /api/v1/households/{id}/live?token=` | WebSocket: `tasks_changed` / `rooms_changed` / `points_changed`; persönlich (`member`): `credited`, `returned`, `received`, `transfer_declined`, `reversed` |
 
 ## App-Icon
 

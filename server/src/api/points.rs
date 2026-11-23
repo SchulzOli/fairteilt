@@ -7,7 +7,7 @@ use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::Json;
 use chrono::{DateTime, NaiveDate, Utc};
-use punkte_core::{LedgerDelta, Streak, streak};
+use punkte_core::{LedgerDelta, LedgerKind, Streak, streak};
 use serde::{Deserialize, Serialize};
 use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
@@ -114,9 +114,12 @@ pub async fn accounts(State(state): State<AppState>, user: AuthUser, Path(househ
     .await?;
 
     // Streak: local days with at least one credited task (the day the work was done).
+    // A credit an admin took back does not count.
     let days: Vec<(Uuid, NaiveDate)> = sqlx::query_as(
         "SELECT DISTINCT completed_by, (completed_at AT TIME ZONE $2)::date FROM tasks
-         WHERE household_id = $1 AND status = 'completed' AND completed_by IS NOT NULL AND completed_at > now() - interval '400 days'",
+         WHERE household_id = $1 AND status = 'completed' AND completed_by IS NOT NULL AND completed_at > now() - interval '400 days'
+           AND NOT EXISTS (SELECT 1 FROM ledger_entries r JOIN ledger_entries c ON c.ref_type = 'ledger' AND c.ref_id = r.id
+                           WHERE r.ref_type = 'task' AND r.ref_id = tasks.id AND r.kind = 'task_reward')",
     )
     .bind(household_id)
     .bind(hh.tz.name())
@@ -156,8 +159,10 @@ pub struct LedgerEntryDto {
     pub task_title: Option<String>,
     /// The other person of a transfer.
     pub counterpart_id: Option<Uuid>,
-    /// Who confirmed (task rewards after approval).
+    /// Who booked it (the reviewer for task rewards after approval, the admin for corrections).
     pub created_by: Option<Uuid>,
+    /// A correction already took this entry back.
+    pub reversed: bool,
 }
 
 #[derive(Deserialize)]
@@ -184,9 +189,11 @@ pub async fn history(
         "SELECT l.id, l.kind, l.contribution_delta, l.balance_delta, COALESCE(l.note, tr.note) AS note, l.created_at,
                 t.title AS task_title,
                 CASE WHEN l.kind = 'transfer_out' THEN tr.to_id WHEN l.kind = 'transfer_in' THEN tr.from_id END AS counterpart_id,
-                l.created_by
+                l.created_by,
+                EXISTS (SELECT 1 FROM ledger_entries c WHERE c.ref_type = 'ledger' AND c.ref_id = l.id) AS reversed
          FROM ledger_entries l
-         LEFT JOIN tasks t ON l.ref_type = 'task' AND t.id = l.ref_id
+         LEFT JOIN ledger_entries orig ON l.ref_type = 'ledger' AND orig.id = l.ref_id
+         LEFT JOIN tasks t ON t.id = CASE WHEN l.ref_type = 'task' THEN l.ref_id WHEN orig.ref_type = 'task' THEN orig.ref_id END
          LEFT JOIN transfers tr ON l.ref_type = 'transfer' AND tr.id = l.ref_id
          WHERE l.household_id = $1 AND l.member_id = $2 AND ($3::timestamptz IS NULL OR l.created_at < $3)
          ORDER BY l.created_at DESC, l.id LIMIT $4",
@@ -198,6 +205,85 @@ pub async fn history(
     .fetch_all(&state.db)
     .await?;
     Ok(Json(rows))
+}
+
+// ---------------------------------------------------------------- corrections
+
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+#[derive(Deserialize)]
+pub struct ReverseRequest {
+    /// Why ("War doch nicht fertig"). Shown to the person in their history.
+    pub note: String,
+}
+
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+#[derive(Serialize)]
+pub struct ReverseResponse {
+    pub xp: i64,
+    /// G taken back; less than credited when the person already spent some (G never go negative).
+    pub g: i64,
+}
+
+/// Admins take back a task credit with a counter-entry (KONZEPT §4.5: never edit, always book against).
+/// Bonuses stay paid out: they were someone's gift for the work.
+pub async fn reverse(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path((household_id, entry_id)): Path<(Uuid, Uuid)>,
+    Json(req): Json<ReverseRequest>,
+) -> AppResult<Json<ReverseResponse>> {
+    let (me, role) = membership(&state, user.user_id, household_id).await?;
+    if role != "admin" {
+        return Err(AppError::Forbidden("Buchungen zurücknehmen können nur Admins.".into()));
+    }
+    let note = req.note.trim();
+    if note.is_empty() || note.chars().count() > 200 {
+        return Err(AppError::BadRequest("Bitte kurz begründen (bis 200 Zeichen).".into()));
+    }
+    let mut tx = state.db.begin().await?;
+    #[derive(sqlx::FromRow)]
+    struct Entry {
+        member_id: Uuid,
+        kind: String,
+        contribution_delta: i64,
+        balance_delta: i64,
+        title: Option<String>,
+    }
+    let entry = sqlx::query_as::<_, Entry>(
+        "SELECT l.member_id, l.kind, l.contribution_delta, l.balance_delta, t.title
+         FROM ledger_entries l LEFT JOIN tasks t ON l.ref_type = 'task' AND t.id = l.ref_id
+         WHERE l.id = $1 AND l.household_id = $2 FOR UPDATE OF l",
+    )
+    .bind(entry_id)
+    .bind(household_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let Entry { member_id: member, kind, contribution_delta: xp, balance_delta: g, title } = entry.ok_or(AppError::NotFound)?;
+    if kind != LedgerKind::TaskReward.as_str() {
+        return Err(AppError::BadRequest("Zurücknehmen geht nur bei Gutschriften für Aufgaben.".into()));
+    }
+    if member == me {
+        return Err(AppError::Forbidden("Die eigene Gutschrift nimmt bitte jemand anderes zurück.".into()));
+    }
+    let already: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM ledger_entries WHERE ref_type = 'ledger' AND ref_id = $1)")
+        .bind(entry_id)
+        .fetch_one(&mut *tx)
+        .await?;
+    if already {
+        return Err(AppError::Conflict("Diese Gutschrift wurde schon zurückgenommen.".into()));
+    }
+    lock_member(&mut tx, member).await?;
+    let have = balance(&mut tx, member).await?;
+    let g_back = g.min(have.max(0));
+    let delta = LedgerDelta { kind: LedgerKind::ManualAdjust, contribution: -xp, balance: -g_back };
+    Ledger { household: household_id, by: me }.book(&mut tx, member, delta, "ledger", entry_id, Some(note)).await?;
+    tx.commit().await?;
+    state.live.notify(household_id, r#"{"type":"points_changed"}"#);
+    state.live.notify_json(
+        household_id,
+        serde_json::json!({ "type": "reversed", "member": member, "by": me, "task": title, "xp": xp, "g": g_back, "note": note }),
+    );
+    Ok(Json(ReverseResponse { xp, g: g_back }))
 }
 
 // ---------------------------------------------------------------- transfers
@@ -241,6 +327,11 @@ async fn sent_this_period(tx: &mut Transaction<'_, Postgres>, member: Uuid, sinc
     .bind(except)
     .fetch_one(&mut **tx)
     .await?)
+}
+
+/// Personal event for the receiver of a transfer.
+fn received(t: &TransferDto) -> serde_json::Value {
+    serde_json::json!({ "type": "received", "member": t.to_id, "by": t.from_id, "g": t.amount, "note": t.note })
 }
 
 async fn execute(tx: &mut Transaction<'_, Postgres>, household: Uuid, t: &TransferDto, by: Uuid) -> AppResult<()> {
@@ -299,6 +390,9 @@ pub async fn create_transfer(
     }
     tx.commit().await?;
     state.live.notify(household_id, r#"{"type":"points_changed"}"#);
+    if !pending {
+        state.live.notify_json(household_id, received(&transfer));
+    }
     Ok((StatusCode::CREATED, Json(transfer)))
 }
 
@@ -371,5 +465,13 @@ pub async fn decide_transfer(
     .await?;
     tx.commit().await?;
     state.live.notify(household_id, r#"{"type":"points_changed"}"#);
+    if t.status == "done" {
+        state.live.notify_json(household_id, received(&t));
+    } else {
+        state.live.notify_json(
+            household_id,
+            serde_json::json!({ "type": "transfer_declined", "member": t.from_id, "by": me, "g": t.amount, "to": t.to_id }),
+        );
+    }
     Ok(Json(t))
 }

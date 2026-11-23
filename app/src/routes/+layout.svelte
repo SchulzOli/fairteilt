@@ -6,6 +6,7 @@
   import { applyTheme, settings } from "$lib/settings.svelte";
   import { session } from "$lib/session.svelte";
   import CheckIn from "$lib/CheckIn.svelte";
+  import NoticeBar from "$lib/NoticeBar.svelte";
   import { taskStore } from "$lib/tasks.svelte";
 
   let { children } = $props();
@@ -68,6 +69,7 @@
 
   {#if showNav}
     <CheckIn />
+    <NoticeBar />
     <nav aria-label="Hauptnavigation">
       {#each tabs as tab (tab.href)}
         <a href={tab.href} class:active={isActive(tab.href)} aria-current={isActive(tab.href) ? "page" : undefined}>

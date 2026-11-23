@@ -85,7 +85,11 @@ reserviert, beim Erledigen ausgezahlt und beim Überspringen zurückgebucht. Üb
 Notiz, Limit pro Monat, Kinder mit Freigabe durch Admins. Konten mit Guthaben, XP des Monats und Serie.
 Aufholaufgaben bringen XP, aber kein Guthaben. App: Heute mit echter Serie und „Zu bestätigen“,
 Bestätigen-Blatt, Bonus setzen auf der Aufgabenseite, Punkte-Ansicht mit Konto, Übertragen, Freigeben,
-Verlauf und Familienübersicht (Mitgliederreihenfolge, keine Rangliste). Das M3-Szenario ist als
+Verlauf und Familienübersicht (Mitgliederreihenfolge, keine Rangliste). Nachgereicht am 23.11.2026:
+Hinweise mit Klang, wenn jemand etwas für dich tut (bestätigt, zurückgegeben, Guthaben geschickt,
+zurückgenommen) und wenn deine Serie wächst; Admins sehen den Verlauf aller und nehmen Gutschriften per
+Gegenbuchung mit Begründung zurück (Guthaben höchstens bis 0, ein Bonus bleibt, die Serie zählt den Tag
+nicht mehr). Das M3-Szenario ist als
 Server-Test und in der App geprüft. Bis M4 zählt der Kalendermonat als Periode für XP und das
 Übertragungslimit; Perioden im Punktebuch setzt der Monatsabschluss.
 

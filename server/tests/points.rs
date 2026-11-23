@@ -251,3 +251,51 @@ async fn transfers(db: PgPool) {
     assert_eq!((h[0]["kind"].as_str(), h[0]["balance_delta"].as_i64()), (Some("transfer_in"), Some(5)));
     assert_eq!((h[0]["note"].as_str(), h[0]["counterpart_id"].as_str()), (Some("Für den Müll"), Some(f.sam_mid.as_str())));
 }
+
+/// Admins take back a credit with a counter-entry; G never go below zero.
+#[sqlx::test(migrator = "punkte_server::MIGRATOR")]
+async fn corrections(db: PgPool) {
+    let app = routes::router(AppState::new(db, SECRET), &[]);
+    let f = family(&app).await;
+    // Sam (adult) is credited 10 directly and gives 8 G to Alex.
+    let tid = template(&app, &f.alex, &f.hid, json!({
+        "title": "Rasen mähen", "schedule": { "type": "once" }, "assignment": { "type": "open" }, "steps": [], "step_order": "free"
+    })).await;
+    act(&app, &f.sam, &tid, "done").await;
+    call(&app, "POST", &format!("/api/v1/households/{}/transfers", f.hid), Some(&f.sam), Some(json!({ "to": f.alex_mid, "amount": 8, "note": "Kino" }))).await;
+
+    let (_, h) = call(&app, "GET", &format!("/api/v1/households/{}/ledger?member={}", f.hid, f.sam_mid), Some(&f.alex), None).await;
+    let reward = h.as_array().unwrap().iter().find(|e| e["kind"] == "task_reward").unwrap().clone();
+    assert_eq!(reward["reversed"], false);
+    let path = format!("/api/v1/households/{}/ledger/{}/reverse", f.hid, reward["id"].as_str().unwrap());
+
+    // Only admins, never your own credit, always with a reason.
+    let (s, _) = call(&app, "POST", &path, Some(&f.mia), Some(json!({ "note": "Nein" }))).await;
+    assert_eq!(s, StatusCode::FORBIDDEN);
+    let (s, _) = call(&app, "POST", &path, Some(&f.sam), Some(json!({ "note": "Ich" }))).await;
+    assert_eq!(s, StatusCode::FORBIDDEN);
+    let (s, _) = call(&app, "POST", &path, Some(&f.alex), Some(json!({ "note": " " }))).await;
+    assert_eq!(s, StatusCode::BAD_REQUEST);
+
+    // 10 XP back, but only the 2 G Sam still has.
+    let (s, r) = call(&app, "POST", &path, Some(&f.alex), Some(json!({ "note": "Rasen war doch nicht gemäht" }))).await;
+    assert_eq!(s, StatusCode::OK, "{r}");
+    assert_eq!((r["xp"].as_i64(), r["g"].as_i64()), (Some(10), Some(2)));
+    let sam = account(&app, &f.sam, &f.hid, &f.sam_mid).await;
+    assert_eq!((sam["balance"].as_i64(), sam["xp_month"].as_i64()), (Some(0), Some(0)));
+    assert_eq!(sam["streak"]["days"], 0, "a taken-back task does not count for the streak");
+
+    let (_, h) = call(&app, "GET", &format!("/api/v1/households/{}/ledger", f.hid), Some(&f.sam), None).await;
+    let fix = &h[0];
+    assert_eq!((fix["kind"].as_str(), fix["contribution_delta"].as_i64(), fix["balance_delta"].as_i64()), (Some("manual_adjust"), Some(-10), Some(-2)));
+    assert_eq!((fix["task_title"].as_str(), fix["note"].as_str()), (Some("Rasen mähen"), Some("Rasen war doch nicht gemäht")));
+    assert!(h.as_array().unwrap().iter().any(|e| e["kind"] == "task_reward" && e["reversed"] == true));
+
+    // Only once; transfers are not taken back this way.
+    let (s, _) = call(&app, "POST", &path, Some(&f.alex), Some(json!({ "note": "Nochmal" }))).await;
+    assert_eq!(s, StatusCode::CONFLICT);
+    let transfer_in = h.as_array().unwrap().iter().find(|e| e["kind"] == "transfer_out").unwrap();
+    let (s, _) = call(&app, "POST", &format!("/api/v1/households/{}/ledger/{}/reverse", f.hid, transfer_in["id"].as_str().unwrap()),
+        Some(&f.alex), Some(json!({ "note": "Nein" }))).await;
+    assert_eq!(s, StatusCode::BAD_REQUEST);
+}

@@ -8,6 +8,7 @@ import type {
   TaskCommand,
   TaskDto,
 } from "$lib/generated";
+import { notices } from "$lib/notice.svelte";
 import { session } from "$lib/session.svelte";
 import { ICONS, type IconName } from "$lib/ui/Icon.svelte";
 
@@ -70,9 +71,11 @@ class TaskStore {
       session.request<AccountDto[]>("GET", `/households/${hid}/accounts`),
     ]);
     if (hid !== this.hid) return;
+    const before = this.myAccount;
     this.tasks = tasks;
     this.rooms = rooms;
     this.accounts = accounts;
+    this.celebrateStreak(before);
     this.loaded = true;
     this.version++;
   }
@@ -97,18 +100,22 @@ class TaskStore {
     const ws = new WebSocket(url);
     this.ws = ws;
     ws.onmessage = (e) => {
-      let type = "";
+      let event: LiveEvent;
       try {
-        type = JSON.parse(String(e.data)).type;
+        event = JSON.parse(String(e.data));
       } catch {
         return;
       }
+      const type = event.type;
       if (type === "hello") {
         this.live = true;
         // After a reconnect we may have missed events.
         if (this.retry > 0) this.scheduleReload();
         this.retry = 0;
       } else if (type === "tasks_changed" || type === "rooms_changed" || type === "points_changed") {
+        this.scheduleReload();
+      } else if (event.member) {
+        this.personal(event);
         this.scheduleReload();
       }
     };
@@ -119,6 +126,41 @@ class TaskStore {
       const delay = Math.min(30_000, 1000 * 2 ** this.retry++);
       this.retryTimer = setTimeout(() => void this.connect(), delay);
     };
+  }
+
+  /** Something another person did for (or about) me. */
+  private personal(e: LiveEvent) {
+    const me = session.membership?.membership_id;
+    if (e.member !== me || e.by === me) return;
+    const who = memberName(e.by ?? null) || "Jemand";
+    const note = e.note ? `„${e.note}“` : undefined;
+    switch (e.type) {
+      case "credited":
+        notices.show(`${who} hat „${e.task}“ bestätigt · +${e.xp} XP${e.g && e.g > 0 ? ` · +${e.g} G` : ""}`, "xp", note, "confirm");
+        break;
+      case "returned":
+        notices.show(`„${e.task}“ bitte nochmal anschauen`, "info", note ?? `${who} hat sie zurückgegeben.`);
+        break;
+      case "received":
+        notices.show(`${who} hat dir ${e.g} G geschickt`, "coin", note, "coin");
+        break;
+      case "transfer_declined":
+        notices.show(`Deine ${e.g} G an ${memberName(e.to ?? null)} wurden nicht freigegeben`, "info");
+        break;
+      case "reversed":
+        notices.show(`${who} hat „${e.task ?? "eine Aufgabe"}“ zurückgenommen`, "info", note);
+        break;
+    }
+  }
+
+  /** The streak grew (own task done or confirmed): a small celebration after the task's own one. */
+  private celebrateStreak(before: AccountDto | undefined) {
+    const now = this.myAccount;
+    if (!before || !now || before.membership_id !== now.membership_id) return;
+    if (now.streak.days > before.streak.days && now.streak.today) {
+      const days = now.streak.days;
+      setTimeout(() => notices.show(days === 1 ? "Serie gestartet!" : `Serie: ${days} Tage in Folge!`, "streak", undefined, "streak"), 1200);
+    }
   }
 
   /** Back in the foreground: refresh at once (phones pause sockets in the background). */
@@ -192,6 +234,18 @@ class TaskStore {
   roomOf(t: TaskDto): RoomDto | undefined {
     return this.rooms.find((r) => r.id === t.room_id);
   }
+}
+
+/** Messages on the live channel. Personal ones name the `member` they concern. */
+interface LiveEvent {
+  type: string;
+  member?: string;
+  by?: string;
+  task?: string | null;
+  xp?: number;
+  g?: number;
+  note?: string | null;
+  to?: string;
 }
 
 export const taskStore = new TaskStore();

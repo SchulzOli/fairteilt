@@ -234,7 +234,7 @@ async fn task_rules_and_rights(db: PgPool) {
 #[sqlx::test(migrator = "punkte_server::MIGRATOR")]
 async fn live_updates(db: PgPool) {
     let app = routes::router(AppState::new(db, SECRET), &[]);
-    let (alex, sam, hid, _, _) = family(&app).await;
+    let (alex, sam, hid, _, sam_mid) = family(&app).await;
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -261,4 +261,25 @@ async fn live_updates(db: PgPool) {
     }))).await;
     assert_eq!(s, StatusCode::CREATED);
     assert_eq!(next(&mut ws).await["type"], "tasks_changed");
+
+    // Sam finishes a task that always needs approval; Alex confirms. Sam's app gets a personal
+    // event (for the notice "Alex hat bestätigt"), besides the general reload events.
+    let (_, created) = call(&app, "POST", &format!("/api/v1/households/{hid}/templates"), Some(&alex), Some(json!({
+        "title": "Fenster putzen", "schedule": { "type": "once" }, "assignment": { "type": "open" },
+        "steps": [], "step_order": "free", "approval": "always"
+    }))).await;
+    let tid = created["task"]["id"].as_str().unwrap().to_string();
+    let (_, r) = call(&app, "POST", &format!("/api/v1/tasks/{tid}/action"), Some(&sam), Some(json!({ "action": "done" }))).await;
+    assert_eq!(r["submitted"], true, "approval 'always' applies to adults too");
+    call(&app, "POST", &format!("/api/v1/tasks/{tid}/review"), Some(&alex), Some(json!({ "approve": true, "note": "Danke!" }))).await;
+    let mut personal = Value::Null;
+    for _ in 0..8 {
+        let e = next(&mut ws).await;
+        if e["type"] == "credited" {
+            personal = e;
+            break;
+        }
+    }
+    assert_eq!((personal["member"].as_str(), personal["xp"].as_i64(), personal["g"].as_i64()), (Some(sam_mid.as_str()), Some(10), Some(10)));
+    assert_eq!((personal["task"].as_str(), personal["note"].as_str()), (Some("Fenster putzen"), Some("Danke!")));
 }

@@ -953,7 +953,7 @@ pub async fn review(
     }
 
     let mut outcome = Outcome::default();
-    if req.approve {
+    let personal = if req.approve {
         let done_at = task.completed_at.unwrap_or(now);
         let age = task.due_at.map(|d| (done_at - d).num_seconds()).unwrap_or(0);
         let xp = hh.policy.completion_points(&range_of(&task), age, req.points).map_err(|e| AppError::BadRequest(e.to_string()))?;
@@ -974,6 +974,10 @@ pub async fn review(
         // The next round starts when the work was done, not when it was confirmed.
         let next = next_round(&mut tx, &task, done_at, &hh).await?;
         outcome = Outcome { xp_awarded: Some(xp), bounty_paid: (paid > 0).then_some(paid), submitted: false, next_task_id: next };
+        let g = if kind_parse(&task.kind).credits_balance() { xp } else { 0 } + paid;
+        serde_json::json!({
+            "type": "credited", "member": completer, "by": me, "task": task.title, "xp": xp, "g": g, "note": note,
+        })
     } else {
         sqlx::query(
             "UPDATE tasks SET status = 'claimed', assignee_id = $2, completed_by = NULL, completed_at = NULL, points_awarded = NULL,
@@ -986,9 +990,11 @@ pub async fn review(
         .execute(&mut *tx)
         .await?;
         record_event(&mut tx, task_id, me, "rejected", serde_json::json!({ "note": note })).await?;
-    }
+        serde_json::json!({ "type": "returned", "member": completer, "by": me, "task": task.title, "note": note })
+    };
     tx.commit().await?;
     notify(&state, hid, &outcome);
+    state.live.notify_json(hid, personal);
     respond(&state, task_id, &hh, outcome).await
 }
 

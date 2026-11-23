@@ -48,6 +48,7 @@ pub fn router(state: AppState, cors_origins: &[String]) -> Router {
         .route("/tasks/{tid}/bounty", post(api::tasks::pledge))
         .route("/households/{id}/accounts", get(api::points::accounts))
         .route("/households/{id}/ledger", get(api::points::history))
+        .route("/households/{id}/ledger/{eid}/reverse", post(api::points::reverse))
         .route("/households/{id}/transfers", get(api::points::list_transfers).post(api::points::create_transfer))
         .route("/transfers/{xid}/decide", post(api::points::decide_transfer));
 

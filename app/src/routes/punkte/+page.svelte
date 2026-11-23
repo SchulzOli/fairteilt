@@ -2,7 +2,7 @@
   // Punkte (KONZEPT §7.3): own account, transfers, history; the family's accounts in member
   // order (no ranking). XP measure work, G (Guthaben) can be given away.
   import SettlementPreview from "$lib/SettlementPreview.svelte";
-  import type { LedgerEntryDto, TransferDto } from "$lib/generated";
+  import type { LedgerEntryDto, ReverseResponse, TransferDto } from "$lib/generated";
   import { session } from "$lib/session.svelte";
   import { feedback } from "$lib/settings.svelte";
   import { memberName, taskStore } from "$lib/tasks.svelte";
@@ -20,6 +20,10 @@
   let busy = $state(false);
   let error = $state("");
   let sent = $state("");
+  /** Admins: whose history is shown (null = your own). */
+  let viewing = $state<string | null>(null);
+  let reversing = $state<string | null>(null);
+  let reason = $state("");
 
   const hid = $derived(session.membership?.household_id);
   const me = $derived(session.membership?.membership_id);
@@ -32,7 +36,8 @@
   async function loadHistory(append = false) {
     if (!hid) return;
     const before = append && history.length ? `&before=${encodeURIComponent(history[history.length - 1].created_at)}` : "";
-    const rows = await session.request<LedgerEntryDto[]>("GET", `/households/${hid}/ledger?limit=${PAGE}${before}`);
+    const whose = viewing && viewing !== me ? `&member=${viewing}` : "";
+    const rows = await session.request<LedgerEntryDto[]>("GET", `/households/${hid}/ledger?limit=${PAGE}${before}${whose}`);
     history = append ? [...history, ...rows] : rows;
     more = rows.length === PAGE;
   }
@@ -61,6 +66,24 @@
       sending = false;
       note = "";
       taskStore.scheduleReload();
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    } finally {
+      busy = false;
+    }
+  }
+
+  /** Admins take back a task credit (counter-entry with a reason). */
+  async function reverse(e: LedgerEntryDto) {
+    busy = true;
+    error = "";
+    try {
+      const r = await session.request<ReverseResponse>("POST", `/households/${hid}/ledger/${e.id}/reverse`, { note: reason.trim() });
+      sent = `Zurückgenommen: ${r.xp} XP${r.g ? ` und ${r.g} G` : ""}.`;
+      reversing = null;
+      reason = "";
+      taskStore.scheduleReload();
+      await loadHistory();
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {
@@ -98,8 +121,10 @@
         return `Von ${memberName(e.counterpart_id)}`;
       case "transfer_out":
         return `An ${memberName(e.counterpart_id)}`;
+      case "manual_adjust":
+        return e.task_title ? `Korrektur: „${e.task_title}“` : "Korrektur";
       default:
-        return "Korrektur";
+        return "Buchung";
     }
   }
 
@@ -178,6 +203,17 @@
 {/if}
 
 <h2 class="section-title">Verlauf</h2>
+{#if session.isAdmin && session.members.length > 1}
+  <div class="whose" role="radiogroup" aria-label="Wessen Verlauf">
+    {#each session.members as m (m.membership_id)}
+      {@const mine = m.membership_id === me}
+      <button role="radio" aria-checked={(viewing ?? me) === m.membership_id} class:sel={(viewing ?? me) === m.membership_id}
+        onclick={() => ((viewing = mine ? null : m.membership_id), (reversing = null))}>
+        <Avatar animal={m.animal as AnimalName} color={m.color} size={22} />{mine ? "Ich" : m.display_name}
+      </button>
+    {/each}
+  </div>
+{/if}
 {#if history.length === 0}
   <p class="muted">Noch keine Buchungen. Erledige eine Aufgabe, dann taucht sie hier auf.</p>
 {:else}
@@ -186,14 +222,28 @@
       <li>
         <div class="what">
           <span>{describe(e)}</span>
-          {#if e.note && e.kind !== "transfer_in" && e.kind !== "transfer_out"}<span class="note">„{e.note}“{#if e.created_by && e.created_by !== me && e.kind === "task_reward"} · {memberName(e.created_by)}{/if}</span>
+          {#if e.note && e.kind !== "transfer_in" && e.kind !== "transfer_out"}<span class="note">„{e.note}“{#if e.created_by && e.created_by !== me && e.kind === "task_reward"}{` · ${memberName(e.created_by)}`}{/if}</span>
           {:else if e.note}<span class="note">„{e.note}“</span>{/if}
           <span class="muted small">{day.format(new Date(e.created_at))}</span>
         </div>
         <div class="amounts">
-          {#if e.contribution_delta !== 0}<span class="xp-chip">{signed(e.contribution_delta)} XP</span>{/if}
-          {#if e.balance_delta !== 0}<span class="g" class:minus={e.balance_delta < 0}>{signed(e.balance_delta)} G</span>{/if}
+          {#if e.contribution_delta !== 0}<span class="xp-chip" class:struck={e.reversed}>{signed(e.contribution_delta)} XP</span>{/if}
+          {#if e.balance_delta !== 0}<span class="g" class:minus={e.balance_delta < 0} class:struck={e.reversed}>{signed(e.balance_delta)} G</span>{/if}
+          {#if e.reversed}<span class="muted small">zurückgenommen</span>
+          {:else if viewing && viewing !== me && e.kind === "task_reward" && reversing !== e.id}
+            <button class="undo" onclick={() => ((reversing = e.id), (reason = ""))}>Zurücknehmen</button>
+          {/if}
         </div>
+        {#if reversing === e.id}
+          <form class="reverse" onsubmit={(ev) => (ev.preventDefault(), reverse(e))}>
+            <input id="reverse-reason" type="text" bind:value={reason} maxlength="200" required placeholder="Warum? (sieht {memberName(viewing)})" />
+            <div class="two">
+              <button type="button" onclick={() => (reversing = null)}>Abbrechen</button>
+              <button class="primary" type="submit" disabled={busy || !reason.trim()}>Zurücknehmen</button>
+            </div>
+            <p class="muted small">Die XP und das Guthaben dieser Aufgabe werden gegengebucht, ein Bonus bleibt.</p>
+          </form>
+        {/if}
       </li>
     {/each}
   </ul>
@@ -355,6 +405,7 @@
 
   .history li {
     display: flex;
+    flex-wrap: wrap;
     justify-content: space-between;
     align-items: center;
     gap: var(--space-3);
@@ -393,6 +444,48 @@
 
   .g.minus {
     color: var(--muted);
+  }
+
+  .whose {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: var(--space-3);
+  }
+
+  .whose button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 36px;
+    padding: 0 12px 0 4px;
+    border-radius: 999px;
+    font-size: 0.9rem;
+  }
+
+  .whose button.sel {
+    background: var(--primary-soft);
+    border-color: var(--primary);
+    color: var(--primary);
+    font-weight: 700;
+  }
+
+  .struck {
+    text-decoration: line-through;
+    opacity: 0.6;
+  }
+
+  .undo {
+    min-height: 30px;
+    padding: 0 10px;
+    font-size: 0.8rem;
+  }
+
+  .reverse {
+    flex-basis: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
   }
 
   .more {
