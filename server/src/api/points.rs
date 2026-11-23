@@ -57,19 +57,6 @@ impl Ledger {
     }
 }
 
-/// Serializes balance checks of one member (pledges, transfers) until the transaction ends.
-pub(crate) async fn lock_member(tx: &mut Transaction<'_, Postgres>, member: Uuid) -> AppResult<()> {
-    sqlx::query("SELECT id FROM memberships WHERE id = $1 FOR UPDATE").bind(member).fetch_one(&mut **tx).await?;
-    Ok(())
-}
-
-pub(crate) async fn balance(tx: &mut Transaction<'_, Postgres>, member: Uuid) -> AppResult<i64> {
-    Ok(sqlx::query_scalar("SELECT COALESCE(SUM(balance_delta), 0)::BIGINT FROM ledger_entries WHERE member_id = $1")
-        .bind(member)
-        .fetch_one(&mut **tx)
-        .await?)
-}
-
 // ---------------------------------------------------------------- accounts
 
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
@@ -163,10 +150,8 @@ pub struct LedgerEntryDto {
     pub balance_delta: i64,
     pub note: Option<String>,
     pub created_at: DateTime<Utc>,
-    /// Task title (task entries) or reward title (redemptions).
+    /// Title of the task the entry belongs to.
     pub task_title: Option<String>,
-    /// The other person of a transfer.
-    pub counterpart_id: Option<Uuid>,
     /// Who booked it (the reviewer for task rewards after approval, the admin for corrections).
     pub created_by: Option<Uuid>,
     /// A correction already took this entry back.
@@ -194,17 +179,11 @@ pub async fn history(
         return Err(AppError::Forbidden("Den Verlauf anderer sehen nur Admins.".into()));
     }
     let rows = sqlx::query_as::<_, LedgerEntryDto>(
-        "SELECT l.id, l.kind, l.contribution_delta, l.balance_delta, COALESCE(l.note, tr.note) AS note, l.created_at,
-                COALESCE(t.title, rw.title) AS task_title,
-                CASE WHEN l.kind = 'transfer_out' THEN tr.to_id WHEN l.kind = 'transfer_in' THEN tr.from_id END AS counterpart_id,
-                l.created_by,
+        "SELECT l.id, l.kind, l.contribution_delta, l.balance_delta, l.note, l.created_at, t.title AS task_title, l.created_by,
                 EXISTS (SELECT 1 FROM ledger_entries c WHERE c.ref_type = 'ledger' AND c.ref_id = l.id) AS reversed
          FROM ledger_entries l
          LEFT JOIN ledger_entries orig ON l.ref_type = 'ledger' AND orig.id = l.ref_id
          LEFT JOIN tasks t ON t.id = CASE WHEN l.ref_type = 'task' THEN l.ref_id WHEN orig.ref_type = 'task' THEN orig.ref_id END
-         LEFT JOIN transfers tr ON l.ref_type = 'transfer' AND tr.id = l.ref_id
-         LEFT JOIN reward_redemptions rr ON l.ref_type = 'redemption' AND rr.id = l.ref_id
-         LEFT JOIN rewards rw ON rw.id = rr.reward_id
          WHERE l.household_id = $1 AND l.member_id = $2 AND ($3::timestamptz IS NULL OR l.created_at < $3)
          ORDER BY l.created_at DESC, l.id LIMIT $4",
     )
@@ -230,8 +209,6 @@ pub struct ReverseRequest {
 #[derive(Serialize)]
 pub struct ReverseResponse {
     pub xp: i64,
-    /// G taken back; less than credited when the person already spent some (G never go negative).
-    pub g: i64,
 }
 
 /// Admins take back a task credit with a counter-entry (KONZEPT §4.5: never edit, always book against).
@@ -256,11 +233,10 @@ pub async fn reverse(
         member_id: Uuid,
         kind: String,
         contribution_delta: i64,
-        balance_delta: i64,
         title: Option<String>,
     }
     let entry = sqlx::query_as::<_, Entry>(
-        "SELECT l.member_id, l.kind, l.contribution_delta, l.balance_delta, t.title
+        "SELECT l.member_id, l.kind, l.contribution_delta, t.title
          FROM ledger_entries l LEFT JOIN tasks t ON l.ref_type = 'task' AND t.id = l.ref_id
          WHERE l.id = $1 AND l.household_id = $2 FOR UPDATE OF l",
     )
@@ -268,7 +244,12 @@ pub async fn reverse(
     .bind(household_id)
     .fetch_optional(&mut *tx)
     .await?;
-    let Entry { member_id: member, kind, contribution_delta: xp, balance_delta: g, title } = entry.ok_or(AppError::NotFound)?;
+    let Entry {
+        member_id: member,
+        kind,
+        contribution_delta: xp,
+        title,
+    } = entry.ok_or(AppError::NotFound)?;
     if kind != LedgerKind::TaskReward.as_str() {
         return Err(AppError::BadRequest("Zurücknehmen geht nur bei Gutschriften für Aufgaben.".into()));
     }
@@ -282,11 +263,18 @@ pub async fn reverse(
     if already {
         return Err(AppError::Conflict("Diese Gutschrift wurde schon zurückgenommen.".into()));
     }
-    lock_member(&mut tx, member).await?;
-    let have = balance(&mut tx, member).await?;
-    let g_back = g.min(have.max(0));
-    let delta = LedgerDelta { kind: LedgerKind::ManualAdjust, contribution: -xp, balance: -g_back };
-    Ledger { household: household_id, by: me }.book(&mut tx, member, delta, "ledger", entry_id, Some(note)).await?;
+    // XP only: Guthaben that older credits carried stays (it is no longer shown).
+    let delta = LedgerDelta {
+        kind: LedgerKind::ManualAdjust,
+        contribution: -xp,
+        balance: 0,
+    };
+    Ledger {
+        household: household_id,
+        by: me,
+    }
+    .book(&mut tx, member, delta, "ledger", entry_id, Some(note))
+    .await?;
     let who = inbox::name(&mut tx, me).await?;
     inbox::add(
         &mut tx,
@@ -299,7 +287,7 @@ pub async fn reverse(
     state.live.notify(household_id, r#"{"type":"points_changed"}"#);
     state.live.notify_json(
         household_id,
-        serde_json::json!({ "type": "reversed", "member": member, "by": me, "task": title, "xp": xp, "g": g_back, "note": note }),
+        serde_json::json!({ "type": "reversed", "member": member, "by": me, "task": title, "xp": xp, "note": note }),
     );
-    Ok(Json(ReverseResponse { xp, g: g_back }))
+    Ok(Json(ReverseResponse { xp }))
 }

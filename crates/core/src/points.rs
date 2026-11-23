@@ -14,19 +14,11 @@ pub enum PointsError {
     #[error("Bereich {min}…{max} liegt außerhalb der Haushaltsgrenzen {policy_min}…{policy_max}")]
     OutsidePolicy { min: Points, max: Points, policy_min: Points, policy_max: Points },
     #[error("Anpassung {value} liegt außerhalb von {min}…{max}")]
-    AdjustmentOutOfRange { value: Points, min: Points, max: Points },
-    #[error("Der Betrag muss größer als 0 sein")]
-    AmountNotPositive,
-    #[error("Nicht genug Guthaben: {balance} G vorhanden, {needed} G nötig")]
-    InsufficientBalance { balance: Points, needed: Points },
-    #[error("Boni auf Aufgaben sind in diesem Haushalt ausgeschaltet")]
-    BountyDisabled,
-    #[error("Höchstens {max} G pro Bonus")]
-    PledgeTooLarge { max: Points },
-    #[error("Übertragungen sind in diesem Haushalt ausgeschaltet")]
-    TransferDisabled,
-    #[error("In diesem Zeitraum sind nur noch {remaining} G Übertragung möglich")]
-    TransferLimit { remaining: Points },
+    AdjustmentOutOfRange {
+        value: Points,
+        min: Points,
+        max: Points,
+    },
 }
 
 /// `min ≤ default ≤ max` for a single task or template.
@@ -158,19 +150,10 @@ pub struct PointPolicy {
     /// Suggested value for new tasks.
     pub default_points: Points,
     pub escalation: Option<Escalation>,
-    pub bounty_enabled: bool,
-    /// Max balance a member can pledge on one task in one go.
-    pub bounty_max_per_pledge: Option<Points>,
-    pub transfer_enabled: bool,
-    /// Max balance a member can transfer to others per period.
-    pub transfer_max_per_period: Option<Points>,
-    pub child_transfer_needs_approval: bool,
     /// Who needs approval before completed tasks are credited.
     pub approval: ApprovalRule,
     /// Approver may adjust the points within the task's min…max.
     pub quality_adjust: bool,
-    /// Allow `penalty_deduction` to push a balance below zero.
-    pub allow_negative_balance: bool,
     /// XP each member may put on others' tasks per month as a bonus (a gift: it costs the
     /// giver nothing, the people who do the task share it). 0 = no bonus.
     #[serde(default = "default_bonus_per_month")]
@@ -187,15 +170,12 @@ impl Default for PointPolicy {
             task_min: 1,
             task_max: 100,
             default_points: 10,
-            escalation: Some(Escalation { step_points: 2, step_interval_secs: 86_400 }),
-            bounty_enabled: true,
-            bounty_max_per_pledge: Some(50),
-            transfer_enabled: true,
-            transfer_max_per_period: Some(100),
-            child_transfer_needs_approval: true,
+            escalation: Some(Escalation {
+                step_points: 2,
+                step_interval_secs: 86_400,
+            }),
             approval: ApprovalRule::ChildrenOnly,
             quality_adjust: true,
-            allow_negative_balance: false,
             bonus_xp_per_month: default_bonus_per_month(),
         }
     }
@@ -219,44 +199,6 @@ impl PointPolicy {
     pub fn current_points(&self, range: &PointRange, age_secs: i64) -> Points {
         let bonus = self.escalation.map(|e| e.bonus(age_secs)).unwrap_or(0);
         range.clamp(range.default.saturating_add(bonus))
-    }
-
-    /// Checks a bounty pledge (KONZEPT §4.3) against the rules and the pledger's balance.
-    pub fn check_bounty(&self, amount: Points, balance: Points) -> Result<(), PointsError> {
-        if !self.bounty_enabled {
-            return Err(PointsError::BountyDisabled);
-        }
-        if amount <= 0 {
-            return Err(PointsError::AmountNotPositive);
-        }
-        if let Some(max) = self.bounty_max_per_pledge
-            && amount > max
-        {
-            return Err(PointsError::PledgeTooLarge { max });
-        }
-        if amount > balance {
-            return Err(PointsError::InsufficientBalance { balance, needed: amount });
-        }
-        Ok(())
-    }
-
-    /// Checks a transfer (KONZEPT §4.4). `sent_in_period` = already transferred in this period.
-    pub fn check_transfer(&self, amount: Points, balance: Points, sent_in_period: Points) -> Result<(), PointsError> {
-        if !self.transfer_enabled {
-            return Err(PointsError::TransferDisabled);
-        }
-        if amount <= 0 {
-            return Err(PointsError::AmountNotPositive);
-        }
-        if let Some(max) = self.transfer_max_per_period
-            && sent_in_period + amount > max
-        {
-            return Err(PointsError::TransferLimit { remaining: (max - sent_in_period).max(0) });
-        }
-        if amount > balance {
-            return Err(PointsError::InsufficientBalance { balance, needed: amount });
-        }
-        Ok(())
     }
 
     /// Final base points on approval. `adjusted` is the approver's choice (if allowed).
@@ -296,30 +238,6 @@ mod tests {
         assert!(!T::Never.required(ApprovalRule::Everyone, true));
         assert_eq!(T::parse(T::Photo.as_str()), T::Photo);
         assert_eq!(T::parse("unknown"), T::Household);
-    }
-
-    #[test]
-    fn bounty_rules() {
-        let p = PointPolicy::default();
-        assert!(p.check_bounty(20, 30).is_ok());
-        assert_eq!(p.check_bounty(0, 30), Err(PointsError::AmountNotPositive));
-        assert_eq!(p.check_bounty(60, 100), Err(PointsError::PledgeTooLarge { max: 50 }));
-        assert_eq!(p.check_bounty(20, 10), Err(PointsError::InsufficientBalance { balance: 10, needed: 20 }));
-        let off = PointPolicy { bounty_enabled: false, ..p };
-        assert_eq!(off.check_bounty(1, 10), Err(PointsError::BountyDisabled));
-    }
-
-    #[test]
-    fn transfer_rules() {
-        let p = PointPolicy::default();
-        assert!(p.check_transfer(15, 20, 0).is_ok());
-        assert_eq!(p.check_transfer(15, 20, 90), Err(PointsError::TransferLimit { remaining: 10 }));
-        assert_eq!(p.check_transfer(25, 20, 0), Err(PointsError::InsufficientBalance { balance: 20, needed: 25 }));
-        assert_eq!(p.check_transfer(-5, 20, 0), Err(PointsError::AmountNotPositive));
-        let unlimited = PointPolicy { transfer_max_per_period: None, ..p.clone() };
-        assert!(unlimited.check_transfer(500, 1000, 900).is_ok());
-        let off = PointPolicy { transfer_enabled: false, ..p };
-        assert_eq!(off.check_transfer(1, 10, 0), Err(PointsError::TransferDisabled));
     }
 
     const DAY: i64 = 86_400;

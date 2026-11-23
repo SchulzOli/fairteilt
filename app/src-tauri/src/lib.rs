@@ -5,6 +5,7 @@
 //! cache and the token in the OS keychain (see docs/KONZEPT.md §9). It also links
 //! `punkte-core`, so rules can be previewed without a connection.
 
+mod google_desktop;
 mod secure_store;
 
 use std::time::Duration;
@@ -119,6 +120,8 @@ pub fn run() {
             preview_settlement,
             push_token,
             save_file,
+            google_desktop::google_desktop_sign_in,
+            google_desktop::google_desktop_cancel,
             secure_store::secure_set,
             secure_store::secure_get,
             secure_store::secure_delete

@@ -61,43 +61,11 @@ impl LedgerDelta {
     pub fn task_reward(_kind: TaskKind, points: Points) -> Self {
         Self { kind: LedgerKind::TaskReward, contribution: points, balance: 0 }
     }
-
-    /// Both sides of a balance transfer between members: (sender, receiver).
-    pub fn transfer(amount: Points) -> (Self, Self) {
-        (
-            Self { kind: LedgerKind::TransferOut, contribution: 0, balance: -amount },
-            Self { kind: LedgerKind::TransferIn, contribution: 0, balance: amount },
-        )
-    }
-
-    pub fn bounty_hold(amount: Points) -> Self {
-        Self { kind: LedgerKind::BountyHold, contribution: 0, balance: -amount }
-    }
-
-    pub fn bounty_payout(amount: Points) -> Self {
-        Self { kind: LedgerKind::BountyPayout, contribution: 0, balance: amount }
-    }
-
-    pub fn bounty_refund(amount: Points) -> Self {
-        Self { kind: LedgerKind::BountyRefund, contribution: 0, balance: amount }
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn transfer_is_zero_sum_and_keeps_contribution() {
-        let (out, inn) = LedgerDelta::transfer(15);
-        assert_eq!(out.balance + inn.balance, 0);
-        assert_eq!(out.contribution + inn.contribution, 0);
-    }
-
-    #[test]
-    fn bounty_roundtrip_is_zero_sum() {
-        assert_eq!(LedgerDelta::bounty_hold(20).balance + LedgerDelta::bounty_refund(20).balance, 0);
-    }
 
     #[test]
     fn as_str_matches_serde() {

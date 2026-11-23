@@ -110,3 +110,54 @@ async fn google_is_off_without_client_ids(db: PgPool) {
     assert!(b["error"].as_str().unwrap_or_default().contains("nicht eingerichtet") || b.to_string().contains("nicht eingerichtet"), "{b}");
 }
 
+/// Desktop app: an authorization code instead of an ID token. Without a desktop client on the
+/// server it is refused; with one, only a loopback redirect is swapped (checked before any call
+/// to Google). The redirect check itself is in `is_loopback`.
+#[sqlx::test(migrator = "punkte_server::MIGRATOR")]
+async fn desktop_code_needs_client_and_loopback(db: PgPool) {
+    use punkte_server::google::{DesktopClient, is_loopback};
+    let verifier = "v".repeat(43);
+    let code = |redirect: &str| json!({ "code": { "code": "4/abc", "verifier": verifier, "redirect_uri": redirect } });
+
+    let app = app(db.clone());
+    let (s, b) = call(
+        &app,
+        "POST",
+        "/api/v1/auth/google",
+        None,
+        Some(code("http://127.0.0.1:5123")),
+    )
+    .await;
+    assert_eq!(s, StatusCode::BAD_REQUEST);
+    assert!(b.to_string().contains("am Computer"), "{b}");
+
+    let mut state = AppState::new(db, SECRET);
+    state.google = Arc::new(
+        GoogleAuth::with_keys(vec![CLIENT.into()], vec![]).with_desktop(DesktopClient {
+            id: "desk".into(),
+            secret: "s".into(),
+        }),
+    );
+    let app = routes::router(state, &[]);
+    for bad in [
+        "https://evil.example/cb",
+        "http://127.0.0.1.evil.example:80",
+        "http://localhost:5123",
+        "http://127.0.0.1:0",
+    ] {
+        let (s, b) = call(&app, "POST", "/api/v1/auth/google", None, Some(code(bad))).await;
+        assert_eq!(s, StatusCode::BAD_REQUEST, "{bad}: {b}");
+    }
+    let (s, _) = call(
+        &app,
+        "POST",
+        "/api/v1/auth/google",
+        None,
+        Some(json!({ "device_name": "PC" })),
+    )
+    .await;
+    assert_eq!(s, StatusCode::BAD_REQUEST);
+
+    assert!(is_loopback("http://127.0.0.1:5123") && is_loopback("http://127.0.0.1:5123/"));
+    assert!(!is_loopback("http://127.0.0.1:5123/x") && !is_loopback("http://127.0.0.1:"));
+}

@@ -205,10 +205,10 @@ fn validate(r: &RulesDto) -> Result<(), String> {
     }
     let pct_ok = |p: u32| p <= 200;
     let actions_ok = match q.deficit_action {
-        DeficitAction::BalanceDeduction { percent } | DeficitAction::CarryOver { percent } => pct_ok(percent),
+        DeficitAction::CarryOver { percent } => pct_ok(percent),
         _ => true,
     } && match q.surplus_action {
-        SurplusAction::Bonus { percent } | SurplusAction::CarryOver { percent } => pct_ok(percent),
+        SurplusAction::CarryOver { percent } => pct_ok(percent),
         SurplusAction::None => true,
     };
     if q.tolerance_percent > 100 || !actions_ok {

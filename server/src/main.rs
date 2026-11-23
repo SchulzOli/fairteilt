@@ -32,11 +32,17 @@ async fn main() -> anyhow::Result<()> {
         }
         None => tracing::info!("FCM_SERVICE_ACCOUNT not set: no push, inbox only"),
     }
-    if config.google_client_ids.is_empty() {
+    if config.google_client_ids.is_empty() && config.google_desktop.is_none() {
         tracing::info!("GOOGLE_CLIENT_IDS not set: sign in with Google is off");
     } else {
-        state.google = std::sync::Arc::new(punkte_server::google::GoogleAuth::new(config.google_client_ids.clone()));
-        tracing::info!("sign in with Google enabled");
+        let mut google = punkte_server::google::GoogleAuth::new(config.google_client_ids.clone());
+        if let Some(desktop) = config.google_desktop.clone() {
+            google = google.with_desktop(desktop);
+            tracing::info!("sign in with Google enabled (also in the desktop app)");
+        } else {
+            tracing::info!("sign in with Google enabled");
+        }
+        state.google = std::sync::Arc::new(google);
     }
     let scheduler = tokio::spawn(scheduler::run(state.clone()));
 

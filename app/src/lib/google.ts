@@ -1,16 +1,24 @@
 // "Mit Google anmelden": get an ID token from Google, the server checks it (/auth/google).
 // - Android app: Google's sign-in sheet via the Credential Manager (GoogleSignIn.kt)
 // - Browser (development, web): the Google button of Google Identity Services
-// The OAuth web client ID is public and comes from VITE_GOOGLE_CLIENT_ID (docs/GOOGLE-LOGIN.md).
-// Without it the button is not shown. Desktop and iOS apps do not offer it (yet).
+// - Desktop app: Google in the browser, the code comes back on a loopback port and the server
+//   swaps it (google_desktop.rs, needs the "Desktop" OAuth client: VITE_GOOGLE_DESKTOP_CLIENT_ID)
+// The OAuth client IDs are public (docs/GOOGLE-LOGIN.md). Without them the button is not shown.
+// The iOS app does not offer it (yet).
 import { invoke, isTauri } from "@tauri-apps/api/core";
+import type { GoogleCode } from "$lib/generated";
 
 export const GOOGLE_CLIENT_ID: string = import.meta.env.VITE_GOOGLE_CLIENT_ID ?? "";
+export const GOOGLE_DESKTOP_CLIENT_ID: string = import.meta.env.VITE_GOOGLE_DESKTOP_CLIENT_ID ?? "";
 
-const isAndroid = () => typeof navigator !== "undefined" && /Android/i.test(navigator.userAgent);
+const ua = () => (typeof navigator === "undefined" ? "" : navigator.userAgent);
+const isAndroid = () => /Android/i.test(ua());
+const isPhone = () => /Android|iPhone|iPad|iPod/i.test(ua());
 
 /** Android app: our own button opens Google's sheet. */
 export const googleNative = () => !!GOOGLE_CLIENT_ID && isTauri() && isAndroid();
+/** Desktop app: our own button opens Google in the browser. */
+export const googleDesktop = () => !!GOOGLE_DESKTOP_CLIENT_ID && isTauri() && !isPhone();
 /** Browser: Google renders its own button. */
 export const googleWeb = () => !!GOOGLE_CLIENT_ID && !isTauri();
 
@@ -27,6 +35,20 @@ export async function nativeIdToken(): Promise<string> {
     throw new Error(msg);
   }
 }
+
+/** Desktop app: sign in in the browser; resolves with the code for the server. */
+export async function desktopCode(): Promise<GoogleCode> {
+  try {
+    return await invoke<GoogleCode>("google_desktop_sign_in", { clientId: GOOGLE_DESKTOP_CLIENT_ID });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg.includes("cancelled")) throw new GoogleCancelled(msg);
+    throw new Error(msg);
+  }
+}
+
+/** Stops waiting for the browser (desktop). */
+export const cancelDesktop = () => invoke("google_desktop_cancel").catch(() => {});
 
 type Gsi = {
   accounts: {

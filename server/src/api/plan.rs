@@ -164,6 +164,8 @@ pub struct CalendarEntry {
     pub room_id: Option<Uuid>,
     pub kind: TaskKind,
     pub assignee_id: Option<Uuid>,
+    /// Others who joined the round (shared XP); empty for coming rounds.
+    pub helpers: Vec<Uuid>,
     pub xp: i64,
     pub status: String,
     pub due_at: Option<DateTime<Utc>>,
@@ -189,6 +191,7 @@ struct Row {
     room_id: Option<Uuid>,
     kind: String,
     assignee_id: Option<Uuid>,
+    helpers: Vec<Uuid>,
     points_default: i64,
     status: String,
     due_at: Option<DateTime<Utc>>,
@@ -222,7 +225,9 @@ pub async fn calendar(
     }
     let hh = household(&state.db, household_id).await?;
     let rows = sqlx::query_as::<_, Row>(
-        "SELECT t.id, t.template_id, t.title, t.icon, t.room_id, t.kind, t.assignee_id, t.points_default, t.status, t.due_at,
+        "SELECT t.id, t.template_id, t.title, t.icon, t.room_id, t.kind, t.assignee_id,
+                ARRAY(SELECT h.member_id FROM task_helpers h WHERE h.task_id = t.id ORDER BY h.joined_at) AS helpers,
+                t.points_default, t.status, t.due_at,
                 t.scheduled_start, t.scheduled_end, t.completed_at, t.points_awarded, tt.schedule, tt.assignment
          FROM tasks t LEFT JOIN task_templates tt ON tt.id = t.template_id AND NOT tt.archived
          WHERE t.household_id = $1 AND (
@@ -251,6 +256,7 @@ pub async fn calendar(
                 room_id: r.room_id,
                 kind: kind(&r.kind),
                 assignee_id: r.assignee_id,
+                helpers: r.helpers.clone(),
                 xp: r.points_awarded.unwrap_or(r.points_default),
                 status: r.status.clone(),
                 due_at: r.due_at,
@@ -281,6 +287,7 @@ pub async fn calendar(
                 room_id: r.room_id,
                 kind: kind(&r.kind),
                 assignee_id: assignee,
+                helpers: Vec::new(),
                 xp: r.points_default,
                 status: "projected".into(),
                 due_at: Some(cycle.due),

@@ -11,10 +11,6 @@ deviation: number,
  */
 deviation_ratio: number | null, outcome: Outcome, 
 /**
- * Net balance change from all consequences (bonus, deduction, zero-sum).
- */
-balance_delta: number, 
-/**
  * Points worth of penalty tasks to assign.
  */
 penalty_points_due: number, 

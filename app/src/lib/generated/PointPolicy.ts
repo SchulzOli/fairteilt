@@ -17,15 +17,7 @@ task_max: number,
 /**
  * Suggested value for new tasks.
  */
-default_points: number, escalation: Escalation | null, bounty_enabled: boolean, 
-/**
- * Max balance a member can pledge on one task in one go.
- */
-bounty_max_per_pledge: number | null, transfer_enabled: boolean, 
-/**
- * Max balance a member can transfer to others per period.
- */
-transfer_max_per_period: number | null, child_transfer_needs_approval: boolean, 
+default_points: number, escalation: Escalation | null, 
 /**
  * Who needs approval before completed tasks are credited.
  */
@@ -34,10 +26,6 @@ approval: ApprovalRule,
  * Approver may adjust the points within the task's min…max.
  */
 quality_adjust: boolean, 
-/**
- * Allow `penalty_deduction` to push a balance below zero.
- */
-allow_negative_balance: boolean, 
 /**
  * XP each member may put on others' tasks per month as a bonus (a gift: it costs the
  * giver nothing, the people who do the task share it). 0 = no bonus.

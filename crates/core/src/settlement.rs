@@ -51,10 +51,6 @@ pub enum DeficitAction {
     None,
     /// Assign penalty tasks worth roughly the deficit.
     PenaltyTasks,
-    /// Deduct `percent` % of the deficit from the balance.
-    BalanceDeduction { percent: u32 },
-    /// Pay balance to the members above target, proportional to their surplus.
-    ZeroSum,
     /// Add `percent` % of the deficit to next period's target.
     CarryOver { percent: u32 },
 }
@@ -64,8 +60,6 @@ pub enum DeficitAction {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum SurplusAction {
     None,
-    /// Credit `percent` % of the surplus as balance.
-    Bonus { percent: u32 },
     /// Lower next period's target by `percent` % of the surplus (the lead carries over).
     CarryOver { percent: u32 },
 }
@@ -139,8 +133,6 @@ pub struct SettlementLine {
     /// deviation / target. `None` when the target is 0.
     pub deviation_ratio: Option<f64>,
     pub outcome: Outcome,
-    /// Net balance change from all consequences (bonus, deduction, zero-sum).
-    pub balance_delta: Points,
     /// Points worth of penalty tasks to assign.
     pub penalty_points_due: Points,
     /// To feed into next period's `carry_in`: deficit > 0, lead < 0.
@@ -198,7 +190,6 @@ pub fn settle(policy: &PeriodPolicy, members: &[MemberPeriodInput]) -> Settlemen
                 deviation,
                 deviation_ratio,
                 outcome,
-                balance_delta: 0,
                 penalty_points_due: 0,
                 carry_next: 0,
             }
@@ -211,11 +202,8 @@ pub fn settle(policy: &PeriodPolicy, members: &[MemberPeriodInput]) -> Settlemen
             Outcome::Deficit => {
                 let deficit = -line.deviation;
                 match policy.deficit_action {
-                    DeficitAction::None | DeficitAction::ZeroSum => {}
+                    DeficitAction::None => {}
                     DeficitAction::PenaltyTasks => line.penalty_points_due = deficit,
-                    DeficitAction::BalanceDeduction { percent } => {
-                        line.balance_delta -= percent_of(deficit, percent)
-                    }
                     DeficitAction::CarryOver { percent } => {
                         line.carry_next = percent_of(deficit, percent)
                     }
@@ -223,9 +211,6 @@ pub fn settle(policy: &PeriodPolicy, members: &[MemberPeriodInput]) -> Settlemen
             }
             Outcome::Surplus => match policy.surplus_action {
                 SurplusAction::None => {}
-                SurplusAction::Bonus { percent } => {
-                    line.balance_delta += percent_of(line.deviation, percent)
-                }
                 SurplusAction::CarryOver { percent } => {
                     line.carry_next = -percent_of(line.deviation, percent)
                 }
@@ -234,27 +219,10 @@ pub fn settle(policy: &PeriodPolicy, members: &[MemberPeriodInput]) -> Settlemen
         }
     }
 
-    // Zero-sum: members below target pay those above, proportionally.
-    if policy.deficit_action == DeficitAction::ZeroSum {
-        let deficits: Vec<Points> = lines
-            .iter()
-            .map(|l| if l.outcome == Outcome::Deficit { -l.deviation } else { 0 })
-            .collect();
-        let surpluses: Vec<Points> = lines
-            .iter()
-            .map(|l| if l.outcome == Outcome::Surplus { l.deviation } else { 0 })
-            .collect();
-        let pool = deficits.iter().sum::<Points>().min(surpluses.iter().sum());
-        if pool > 0 {
-            let pay = allocate(pool, &deficits);
-            let receive = allocate(pool, &surpluses);
-            for (i, line) in lines.iter_mut().enumerate() {
-                line.balance_delta += receive[i] - pay[i];
-            }
-        }
+    Settlement {
+        total_contribution: total,
+        lines,
     }
-
-    Settlement { total_contribution: total, lines }
 }
 
 /// Splits `total` into integer parts proportional to `weights` (largest remainder method).
@@ -337,22 +305,20 @@ mod tests {
         }
     }
 
-    fn balance_sum(s: &Settlement) -> Points {
-        s.lines.iter().map(|l| l.balance_delta).sum()
-    }
-
     #[test]
-    fn equal_weights_penalty_and_bonus() {
-        let p = policy(DeficitAction::PenaltyTasks, SurplusAction::Bonus { percent: 50 });
+    fn equal_weights_penalty_and_lead() {
+        let p = policy(
+            DeficitAction::PenaltyTasks,
+            SurplusAction::CarryOver { percent: 50 },
+        );
         let s = settle(&p, &[member(1, 1.0, 60), member(2, 1.0, 40)]);
         assert_eq!(s.total_contribution, 100);
         let (a, b) = (&s.lines[0], &s.lines[1]);
         assert_eq!((a.target, b.target), (50, 50));
         assert_eq!(a.outcome, Outcome::Surplus);
-        assert_eq!(a.balance_delta, 5);
+        assert_eq!(a.carry_next, -5);
         assert_eq!(b.outcome, Outcome::Deficit);
         assert_eq!(b.penalty_points_due, 10);
-        assert_eq!(b.balance_delta, 0);
     }
 
     #[test]
@@ -381,33 +347,11 @@ mod tests {
     }
 
     #[test]
-    fn zero_sum_moves_balance_without_creating_any() {
-        let p = policy(DeficitAction::ZeroSum, SurplusAction::None);
-        let s = settle(&p, &[member(1, 1.0, 90), member(2, 1.0, 30), member(3, 1.0, 30)]);
-        let d: Vec<Points> = s.lines.iter().map(|l| l.balance_delta).collect();
-        assert_eq!(d, vec![40, -20, -20]);
-        assert_eq!(balance_sum(&s), 0);
-    }
-
-    #[test]
-    fn zero_sum_pool_limited_by_smaller_side() {
-        // C is within tolerance (+2 on 50 = 4 %): it neither pays nor receives.
-        let p = policy(DeficitAction::ZeroSum, SurplusAction::None);
-        let s = settle(&p, &[member(1, 1.0, 70), member(2, 1.0, 28), member(3, 1.0, 52)]);
-        assert_eq!(s.lines[2].outcome, Outcome::WithinTolerance);
-        assert_eq!(s.lines[2].balance_delta, 0);
-        assert_eq!(s.lines[0].balance_delta, 20); // surplus 20
-        assert_eq!(s.lines[1].balance_delta, -20); // deficit 22, but only 20 to receive
-        assert_eq!(balance_sum(&s), 0);
-    }
-
-    #[test]
-    fn balance_deduction_and_carry_over() {
-        let p = policy(DeficitAction::BalanceDeduction { percent: 50 }, SurplusAction::None);
-        let s = settle(&p, &[member(1, 1.0, 60), member(2, 1.0, 40)]);
-        assert_eq!(s.lines[1].balance_delta, -5);
-
-        let p = policy(DeficitAction::CarryOver { percent: 100 }, SurplusAction::None);
+    fn carry_over() {
+        let p = policy(
+            DeficitAction::CarryOver { percent: 100 },
+            SurplusAction::None,
+        );
         let s = settle(&p, &[member(1, 1.0, 60), member(2, 1.0, 40)]);
         assert_eq!(s.lines[1].carry_next, 10);
 
@@ -448,7 +392,7 @@ mod tests {
         let s = settle(&PeriodPolicy::default(), &[member(1, 1.0, 70), member(2, 1.0, 30)]);
         assert_eq!(s.lines[0].carry_next, -20, "lead lowers next target");
         assert_eq!(s.lines[1].carry_next, 20, "deficit raises next target");
-        assert!(s.lines.iter().all(|l| l.balance_delta == 0 && l.penalty_points_due == 0));
+        assert!(s.lines.iter().all(|l| l.penalty_points_due == 0));
 
         // Next month both do 50: targets become 30 (lead) and 70 (deficit).
         let mut a = member(1, 1.0, 50);

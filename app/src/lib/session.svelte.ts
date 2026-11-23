@@ -12,6 +12,7 @@ import type {
   AcceptInviteResponse,
   CreatedMember,
   CreateHouseholdResponse,
+  GoogleCode,
   InviteResponse,
   JoinResponse,
   MeResponse,
@@ -273,9 +274,11 @@ class Session {
     await this.adopt(await this.raw<TokenResponse>("POST", "/auth/login", { email, password, device_name: deviceName() }, false));
   }
 
-  /** Sign in with a Google ID token: known account, linked by e-mail, or a new one. */
-  async loginWithGoogle(idToken: string) {
-    await this.adopt(await this.raw<TokenResponse>("POST", "/auth/google", { id_token: idToken, device_name: deviceName() }, false));
+  /** Sign in with a Google ID token (or, desktop, the code the server swaps): known account,
+   *  linked by e-mail, or a new one. */
+  async loginWithGoogle(token: string | GoogleCode) {
+    const body = typeof token === "string" ? { id_token: token } : { code: token };
+    await this.adopt(await this.raw<TokenResponse>("POST", "/auth/google", { ...body, device_name: deviceName() }, false));
   }
 
   /** Child without e-mail joins on their own device with a child invite code. */

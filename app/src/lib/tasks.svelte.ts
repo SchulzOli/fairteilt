@@ -118,7 +118,8 @@ class TaskStore {
       const raw = localStorage.getItem(this.cacheKey);
       if (!raw) return;
       const c = JSON.parse(raw);
-      this.tasks = c.tasks ?? [];
+      // Copies from older app versions lack newer fields (helpers since 23.11.2026).
+      this.tasks = ((c.tasks ?? []) as TaskDto[]).map((t) => ({ ...t, helpers: t.helpers ?? [] }));
       this.rooms = c.rooms ?? [];
       this.accounts = c.accounts ?? [];
       this.period = c.period ?? null;

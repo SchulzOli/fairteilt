@@ -7,8 +7,7 @@
   // symbol tile tinted in the colour of whoever is on it, the title, a short state line, the
   // animal and the XP. Draggable when `drag` is given and enabled.
   import type { MemberDto } from "$lib/generated";
-  import Avatar from "$lib/ui/Avatar.svelte";
-  import type { AnimalName } from "$lib/ui/Avatar.svelte";
+  import AvatarStack from "$lib/ui/AvatarStack.svelte";
   import Icon from "$lib/ui/Icon.svelte";
   import type { IconName } from "$lib/ui/Icon.svelte";
   import { draggable, type DragOptions } from "./drag";
@@ -17,6 +16,7 @@
     title,
     icon,
     member = undefined,
+    others = [],
     xp = null,
     meta = "",
     state = "open",
@@ -28,6 +28,8 @@
     title: string;
     icon: IconName;
     member?: MemberDto;
+    /** More people on it (helpers): shown half behind the first animal. */
+    others?: MemberDto[];
     xp?: number | null;
     /** Short line under the title: time, "überfällig", … */
     meta?: string;
@@ -65,7 +67,7 @@
   {#if size === "s" && meta}<span class="meta inline">{meta}</span>{/if}
   {#if xp !== null && size === "m"}<span class="xp-chip">{xp}</span>{/if}
   {#if member}
-    <span class="who"><Avatar animal={member.animal as AnimalName} color={member.color} size={size === "s" ? 18 : 22} name={member.display_name} /></span>
+    <span class="who"><AvatarStack members={[member, ...others]} size={size === "s" ? 18 : 22} ring={state === "projected" ? "var(--bg)" : "var(--surface)"} /></span>
   {:else}
     <span class="who open" title="Noch offen" aria-label="noch offen"></span>
   {/if}

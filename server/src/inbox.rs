@@ -19,7 +19,7 @@ pub enum Category {
     Tasks,
     /// Waiting for my confirmation, confirmed, sent back.
     Reviews,
-    /// G received, transfers, rewards, corrections.
+    /// Corrections of points.
     Points,
     /// Period end, settlement, family goal.
     Period,
@@ -45,7 +45,7 @@ pub struct Note {
     pub category: Category,
     pub title: String,
     pub body: Option<String>,
-    /// What to open: `task`, `settlement`, `transfer`, `redemption`, `ledger`.
+    /// What to open: `task`, `settlement`, `ledger`.
     pub reference: Option<(&'static str, Uuid)>,
 }
 

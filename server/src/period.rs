@@ -8,7 +8,7 @@
 
 use chrono::{DateTime, Duration, Utc};
 use punkte_core::{
-    DeficitAction, GoalPolicy, LedgerKind, MemberPeriodInput, PeriodPolicy, RaceStatus, decide_race, krumel_position,
+    GoalPolicy, MemberPeriodInput, PeriodPolicy, RaceStatus, decide_race, krumel_position,
     overdue_boost, period_bounds, suggest_target,
 };
 use punkte_core::settlement::{pick_penalty_tasks, settle};
@@ -349,7 +349,7 @@ async fn close_tx(
         .bind(line.contribution)
         .bind(line.deviation)
         .bind(serde_json::to_value(line.outcome).map_err(anyhow::Error::from)?.as_str().unwrap_or("within_tolerance").to_string())
-        .bind(line.balance_delta)
+        .bind(0_i64) // balance_delta: no Guthaben since 23.11.2026
         .bind(line.penalty_points_due)
         .bind(line.carry_next)
         .execute(&mut *tx)
@@ -378,43 +378,35 @@ async fn close_tx(
     Ok(Some(settlement_id))
 }
 
-/// Books the approved settlement: bonuses, deductions (never below 0 unless allowed),
-/// zero-sum payments and catch-up tasks. Idempotent. `by` = None for the automatic approval.
+/// Approves the settlement and assigns the catch-up tasks. Idempotent. `by` = None for the
+/// automatic approval.
 pub async fn approve_settlement(db: &PgPool, settlement_id: Uuid, by: Option<Uuid>) -> AppResult<bool> {
     let mut tx = db.begin().await?;
-    let row: Option<(Uuid, String, serde_json::Value)> =
-        sqlx::query_as("SELECT period_id, status, policy FROM settlements WHERE id = $1 FOR UPDATE").bind(settlement_id).fetch_optional(&mut *tx).await?;
-    let (period_id, status, policy) = row.ok_or(AppError::NotFound)?;
+    let row: Option<(Uuid, String)> =
+        sqlx::query_as("SELECT period_id, status FROM settlements WHERE id = $1 FOR UPDATE")
+            .bind(settlement_id)
+            .fetch_optional(&mut *tx)
+            .await?;
+    let (period_id, status) = row.ok_or(AppError::NotFound)?;
     if status == "approved" {
         return Ok(false);
     }
-    let policy: PeriodPolicy = serde_json::from_value(policy).map_err(anyhow::Error::from)?;
     let (hid, ends_at): (Uuid, DateTime<Utc>) =
         sqlx::query_as("SELECT household_id, ends_at FROM periods WHERE id = $1").bind(period_id).fetch_one(&mut *tx).await?;
     let hh = household(db, hid).await?;
-    let lines: Vec<(Uuid, i64, i64)> =
-        sqlx::query_as("SELECT member_id, balance_delta, penalty_points_due FROM settlement_lines WHERE settlement_id = $1")
-            .bind(settlement_id)
-            .fetch_all(&mut *tx)
-            .await?;
-    let zero_sum = policy.deficit_action == DeficitAction::ZeroSum;
-    let note = format!("Abschluss bis {}", ends_at.with_timezone(&hh.tz).format("%d.%m.%Y"));
-    for (member, delta, penalty) in lines {
-        if delta > 0 {
-            let kind = if zero_sum { LedgerKind::SettlementZeroSum } else { LedgerKind::SettlementBonus };
-            book(&mut tx, hid, member, kind, delta, settlement_id, &note, by).await?;
-        } else if delta < 0 {
-            sqlx::query("SELECT id FROM memberships WHERE id = $1 FOR UPDATE").bind(member).fetch_one(&mut *tx).await?;
-            let have: i64 = sqlx::query_scalar("SELECT COALESCE(SUM(balance_delta), 0)::BIGINT FROM ledger_entries WHERE member_id = $1")
-                .bind(member)
-                .fetch_one(&mut *tx)
-                .await?;
-            let take = if hh.policy.allow_negative_balance { -delta } else { (-delta).min(have.max(0)) };
-            if take > 0 {
-                let kind = if zero_sum { LedgerKind::SettlementZeroSum } else { LedgerKind::PenaltyDeduction };
-                book(&mut tx, hid, member, kind, -take, settlement_id, &note, by).await?;
-            }
-        }
+    // Consequences in XP only: carry-over is already in the lines (it feeds the next target);
+    // catch-up tasks are assigned now.
+    let lines: Vec<(Uuid, i64)> = sqlx::query_as(
+        "SELECT member_id, penalty_points_due FROM settlement_lines WHERE settlement_id = $1",
+    )
+    .bind(settlement_id)
+    .fetch_all(&mut *tx)
+    .await?;
+    let note = format!(
+        "Abschluss bis {}",
+        ends_at.with_timezone(&hh.tz).format("%d.%m.%Y")
+    );
+    for (member, penalty) in lines {
         if penalty > 0 {
             catch_up_tasks(&mut tx, hid, member, penalty, settlement_id, &hh).await?;
         }
@@ -431,34 +423,6 @@ pub async fn approve_settlement(db: &PgPool, settlement_id: Uuid, by: Option<Uui
     sqlx::query("UPDATE periods SET status = 'settled' WHERE id = $1").bind(period_id).execute(&mut *tx).await?;
     tx.commit().await?;
     Ok(true)
-}
-
-#[allow(clippy::too_many_arguments)]
-async fn book(
-    tx: &mut Transaction<'_, Postgres>,
-    household: Uuid,
-    member: Uuid,
-    kind: LedgerKind,
-    balance: i64,
-    settlement_id: Uuid,
-    note: &str,
-    by: Option<Uuid>,
-) -> AppResult<()> {
-    sqlx::query(
-        "INSERT INTO ledger_entries (id, household_id, member_id, kind, balance_delta, ref_type, ref_id, note, created_by)
-         VALUES ($1, $2, $3, $4, $5, 'settlement', $6, $7, $8)",
-    )
-    .bind(Uuid::new_v4())
-    .bind(household)
-    .bind(member)
-    .bind(kind.as_str())
-    .bind(balance)
-    .bind(settlement_id)
-    .bind(note)
-    .bind(by)
-    .execute(&mut **tx)
-    .await?;
-    Ok(())
 }
 
 /// Catch-up tasks worth about `due` XP from the household's catch-up templates (largest first),

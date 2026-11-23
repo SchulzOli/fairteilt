@@ -18,10 +18,10 @@ festlegt.
 
 • Räume und Aufgaben mit festem Rhythmus oder „nach Bedarf“: Aufgaben werden langsam gelb und rot,
   wenn sie fällig werden
-• Schritt für Schritt abhaken, mit freundlicher Nachfrage, falls jemand hängen bleibt
+• Schritt für Schritt abhaken und gemeinsam anpacken: Wer mitmacht, teilt sich die XP
 • Kinder melden sich mit Tier und PIN an, Eltern bestätigen und passen Punkte an
-• Serien, Boni auf ungeliebte Aufgaben, Punkte verschenken
-• Familienziel: gemeinsam gegen Krümel rennen und eine Belohnung freischalten
+• Serien und XP-Boni für ungeliebte Aufgaben
+• Monatsziel: gemeinsam gegen Krümel rennen und als Familie gewinnen
 • Kalender, Board und eigene Ansichten, Wandanzeige fürs Tablet
 • Erinnerungen, Postfach und Push-Benachrichtigungen, die ihr pro Kategorie abstellen könnt
 • Funktioniert auch ohne Netz: Änderungen warten und werden übertragen, sobald ihr wieder online seid

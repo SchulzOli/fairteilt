@@ -2,13 +2,9 @@
 
 export type LedgerEntryDto = { id: string, kind: string, contribution_delta: number, balance_delta: number, note: string | null, created_at: string, 
 /**
- * Task title (task entries) or reward title (redemptions).
+ * Title of the task the entry belongs to.
  */
 task_title: string | null, 
-/**
- * The other person of a transfer.
- */
-counterpart_id: string | null, 
 /**
  * Who booked it (the reviewer for task rewards after approval, the admin for corrections).
  */

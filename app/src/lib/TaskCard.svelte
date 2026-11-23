@@ -3,12 +3,11 @@
   // open task or joins someone else's (the XP is shared), tapping opens the task page, where
   // it is done. Everyone on it shows as an animal; tasks of others fade into the background.
   import { goto } from "$app/navigation";
-  import type { TaskDto } from "$lib/generated";
+  import type { MemberDto, TaskDto } from "$lib/generated";
   import { session } from "$lib/session.svelte";
   import { feedback } from "$lib/settings.svelte";
   import { conditionOf, iconOf, isOn, isQueued, memberName, peopleOn, stepsDone, taskStore } from "$lib/tasks.svelte";
-  import Avatar from "$lib/ui/Avatar.svelte";
-  import type { AnimalName } from "$lib/ui/Avatar.svelte";
+  import AvatarStack from "$lib/ui/AvatarStack.svelte";
   import ConditionBar from "$lib/ui/ConditionBar.svelte";
   import Icon from "$lib/ui/Icon.svelte";
   import ReviewSheet from "$lib/ReviewSheet.svelte";
@@ -81,11 +80,8 @@
   <div class="right">
     <span class="xp-chip">{task.xp} XP{#if task.bounty > 0}<b class="bonus">+{task.bounty}</b>{/if}</span>
     {#if people.length}
-      <span class="who" title={people.map((p) => p!.display_name).join(", ")}>
-        {#each people.slice(0, 3) as p (p!.membership_id)}
-          <span class="av"><Avatar animal={p!.animal as AnimalName} color={p!.color} size={22} name={p!.display_name} /></span>
-        {/each}
-        {#if people.length > 3}<small>+{people.length - 3}</small>{/if}
+      <span class="who">
+        <AvatarStack members={people as MemberDto[]} />
         {#if mine}<small>du</small>{/if}
       </span>
     {:else}
@@ -184,16 +180,6 @@
     border-left: 1px solid color-mix(in srgb, var(--xp) 35%, transparent);
   }
 
-  .av {
-    display: grid;
-    margin-left: -6px;
-    border-radius: 50%;
-    box-shadow: 0 0 0 2px var(--surface);
-  }
-
-  .av:first-child {
-    margin-left: 0;
-  }
 
   .steps {
     padding: 0 7px;

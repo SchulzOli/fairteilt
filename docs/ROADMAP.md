@@ -190,6 +190,15 @@ Monatsbudget pro Person (Regeln). Mehrere Personen pro Aufgabe („+“ = mitmac
 geteilt. Kein Timer mehr: kein Starten, keine Pause, keine Dauer, keine Nachfrage. Zustand in vier Stufen
 (Gut, Hat Zeit, Fällig, Überfällig) mit Farbverlauf Grün bis Rot; fremde Aufgaben auf Heute ausgegraut.
 
+**Abgerundet am 23.11.2026:** Alle auf einer Aufgabe stehen als überlappende Tiere da (wie Co-Autoren
+auf GitHub), auf den Karten, im Kalender, auf dem Board und an der Wand („· mit …“). Ältere
+Offline-Kopien ohne Mithelfer laden wieder. Reste des Guthabens sind raus: Ausgleich nur noch mit
+Übertrag oder Aufholaufgaben, keine Guthaben-Schalter in den Regeln, keine Belohnungsaufgaben;
+Migration 14 stellt alte Regeln auf Übertrag um und löscht `transfers`, `rewards` und
+`reward_redemptions`. **Mit Google anmelden jetzt auch in der Desktop-App:** Anmeldung im
+Standardbrowser, Rückruf auf `127.0.0.1` mit PKCE, der Server tauscht den Code mit dem Secret des
+Desktop-Clients (`GOOGLE_DESKTOP_CLIENT_ID`/`_SECRET`). iOS folgt mit dem Apple-Developer-Konto.
+
 ### M7 Offline & Stores
 
 **Abgeschlossen am 23.11.2026** (soweit ohne Store-Konten möglich). Offline: Die App startet ohne

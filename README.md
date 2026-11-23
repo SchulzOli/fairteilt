@@ -1,7 +1,7 @@
 # Fairteilt
 
-Familien-App für Haushaltsaufgaben mit einstellbarem Punktesystem, periodischem Ausgleich,
-Belohnungen/Aufholaufgaben, Erinnerungen und Kalender-/Canvas-Planung.
+Familien-App für Haushaltsaufgaben mit XP, periodischem Ausgleich,
+Monatsziel/Aufholaufgaben, Erinnerungen und Kalender-/Canvas-Planung.
 Tauri 2 (Android, iOS, Desktop) + SvelteKit, Backend in Rust (axum + PostgreSQL) auf Hetzner.
 
 Konzept und Regeln: **[docs/KONZEPT.md](docs/KONZEPT.md)** · Roadmap: **[docs/ROADMAP.md](docs/ROADMAP.md)**
@@ -100,7 +100,7 @@ Die Vorschau „Abschluss ausprobieren“ unter Regeln rechnet den Ausgleich off
 | `GET` · `PUT /api/v1/households/{id}/board` | Kartenpositionen auf dem gemeinsamen Board |
 | `GET` · `POST /api/v1/households/{id}/views` · `PUT` · `DELETE /api/v1/views/{vid}` | eigene Ansichten |
 | Kopf `Idempotency-Key` | bei jedem Schreibaufruf erlaubt: Wiederholungen bekommen die gespeicherte Antwort (`idempotent-replay: true`), 7 Tage |
-| `GET /api/v1/households/{id}/live?token=` | WebSocket: `tasks_changed` / `rooms_changed` / `points_changed` / `list_changed`; persönlich (`member`): `credited`, `returned`, `received`, `transfer_declined`, `reversed` |
+| `GET /api/v1/households/{id}/live?token=` | WebSocket: `tasks_changed` / `rooms_changed` / `points_changed` / `list_changed`; persönlich (`member`): `credited`, `returned`, `reversed` |
 
 ## Push einrichten (Firebase)
 

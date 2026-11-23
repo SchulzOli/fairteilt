@@ -106,7 +106,7 @@ async fn balance(app: &Router, f: &Family, mid: &str) -> i64 {
 }
 
 /// The M4 scenario: the family beats Krümel, the month closes by itself as a draft, an admin
-/// approves it: bonus for the one ahead, catch-up tasks for those behind.
+/// approves it: the lead carries over for the one ahead, catch-up tasks for those behind.
 #[sqlx::test(migrator = "punkte_server::MIGRATOR")]
 async fn m4_close_and_race(db: PgPool) {
     let state = AppState::new(db.clone(), SECRET);
@@ -117,12 +117,12 @@ async fn m4_close_and_race(db: PgPool) {
     assert_eq!((p["goal"]["status"].as_str(), p["goal"]["reward"].as_str()), (Some("running"), Some("Familienausflug")));
     assert!(p["goal"]["target"].as_i64().unwrap() >= 20);
 
-    // Rules: goal 30 XP for "Eis essen"; behind = catch-up tasks, ahead = 50 % bonus.
+    // Rules: goal 30 XP for "Eis essen"; behind = catch-up tasks, ahead = half the lead carries over.
     set_rules(&app, &f, |r| {
         r["goal_policy"]["target"] = json!(30);
         r["goal_policy"]["reward"] = json!("Eis essen");
         r["period_policy"]["deficit_action"] = json!({ "type": "penalty_tasks" });
-        r["period_policy"]["surplus_action"] = json!({ "type": "bonus", "percent": 50 });
+        r["period_policy"]["surplus_action"] = json!({ "type": "carry_over", "percent": 50 });
     })
     .await;
     // The goal can also be set on its own (this period only; later suggested again).
@@ -155,20 +155,53 @@ async fn m4_close_and_race(db: PgPool) {
     let line = |mid: &str| s["lines"].as_array().unwrap().iter().find(|l| l["member_id"] == mid).unwrap().clone();
     // Fair share of 30 by weight 1 / 1 / 0.3: 13 / 13 / 4.
     let (alex, sam, mia) = (line(&f.alex_mid), line(&f.sam_mid), line(&f.mia_mid));
-    assert_eq!((alex["outcome"].as_str(), alex["balance_delta"].as_i64()), (Some("surplus"), Some(4)));
-    assert_eq!((sam["outcome"].as_str(), sam["penalty_points_due"].as_i64()), (Some("deficit"), Some(3)));
-    assert_eq!((mia["outcome"].as_str(), mia["penalty_points_due"].as_i64()), (Some("deficit"), Some(4)));
+    assert_eq!(
+        (
+            alex["outcome"].as_str(),
+            alex["carry_next"].as_i64(),
+            alex["balance_delta"].as_i64()
+        ),
+        (Some("surplus"), Some(-4), Some(0))
+    );
+    assert_eq!(
+        (sam["outcome"].as_str(), sam["penalty_points_due"].as_i64()),
+        (Some("deficit"), Some(3))
+    );
+    assert_eq!(
+        (mia["outcome"].as_str(), mia["penalty_points_due"].as_i64()),
+        (Some("deficit"), Some(4))
+    );
 
     // Only admins approve, and only once.
     let sid = s["id"].as_str().unwrap().to_string();
     let (st, _) = call(&app, "POST", &format!("/api/v1/settlements/{sid}/approve"), Some(&f.mia), None).await;
     assert_eq!(st, StatusCode::FORBIDDEN);
-    let before = balance(&app, &f, &f.alex_mid).await;
-    let (st, s) = call(&app, "POST", &format!("/api/v1/settlements/{sid}/approve"), Some(&f.sam), None).await;
-    assert_eq!((st, s["status"].as_str(), s["approved_by"].as_str()), (StatusCode::OK, Some("approved"), Some(f.sam_mid.as_str())));
-    let (st, _) = call(&app, "POST", &format!("/api/v1/settlements/{sid}/approve"), Some(&f.alex), None).await;
+    let (st, s) = call(
+        &app,
+        "POST",
+        &format!("/api/v1/settlements/{sid}/approve"),
+        Some(&f.sam),
+        None,
+    )
+    .await;
+    assert_eq!(
+        (st, s["status"].as_str(), s["approved_by"].as_str()),
+        (StatusCode::OK, Some("approved"), Some(f.sam_mid.as_str()))
+    );
+    let (st, _) = call(
+        &app,
+        "POST",
+        &format!("/api/v1/settlements/{sid}/approve"),
+        Some(&f.alex),
+        None,
+    )
+    .await;
     assert_eq!(st, StatusCode::CONFLICT);
-    assert_eq!(balance(&app, &f, &f.alex_mid).await, before + 4, "bonus for the one ahead");
+    assert_eq!(
+        balance(&app, &f, &f.alex_mid).await,
+        0,
+        "no Guthaben any more"
+    );
 
     // Catch-up tasks: XP but no G, assigned, due in a week.
     let (_, tasks) = call(&app, "GET", &format!("/api/v1/households/{}/tasks", f.hid), Some(&f.alex), None).await;

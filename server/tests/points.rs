@@ -301,7 +301,7 @@ async fn corrections(db: PgPool) {
     // Sam's 5 XP back (there are no G to take back); Alex keeps his share.
     let (s, r) = call(&app, "POST", &path, Some(&f.alex), Some(json!({ "note": "Rasen war doch nicht gemäht" }))).await;
     assert_eq!(s, StatusCode::OK, "{r}");
-    assert_eq!((r["xp"].as_i64(), r["g"].as_i64()), (Some(5), Some(0)));
+    assert_eq!((r["xp"].as_i64(), r.get("g")), (Some(5), None));
     let sam = account(&app, &f.sam, &f.hid, &f.sam_mid).await;
     assert_eq!((sam["balance"].as_i64(), sam["xp_month"].as_i64()), (Some(0), Some(0)));
     assert_eq!(sam["streak"]["days"], 0, "a taken-back task does not count for the streak");

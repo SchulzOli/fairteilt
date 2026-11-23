@@ -34,7 +34,7 @@ gemeinsame Einkaufsliste (§10); ein Finanzteil ist nicht mehr geplant.
 | App-Kennung | Name **Fairteilt**, Kennung `eu.olitech.fairteilt` | passt zur Domain `oli-tech.eu`. Nach dem ersten Store-Release nicht mehr änderbar |
 | Firebase | **FCM** (Android-Push) und **App Distribution** (Testversionen an die Familie), optional später **Hosting** für eine Web-Version | Backend und Datenbank bleiben auf Hetzner: Firebase führt keinen Rust-Container mit Postgres aus (nur über Cloud Run + Cloud SQL, teurer) |
 | Gemeinsame Logik | Rust-Crate `punkte-core` (rein, ohne IO) | dieselbe Punkte- und Ausgleichslogik auf dem Server und (für Offline-Vorschau) in der App, gut testbar |
-| Umfang v1 | Aufgaben, Punkte, Ausgleich, Belohnungen/Strafen, Erinnerungen, Kalender/Canvas, danach Einkaufsliste (§10) | Ein Finanzmodul (Haushaltsbuch) ist nicht mehr geplant |
+| Umfang v1 | Aufgaben, XP, Ausgleich, Monatsziel/Aufholaufgaben, Erinnerungen, Kalender/Canvas, danach Einkaufsliste (§10) | Ein Finanzmodul (Haushaltsbuch) ist nicht mehr geplant |
 
 ---
 
@@ -49,11 +49,11 @@ gemeinsame Einkaufsliste (§10); ein Finanzteil ist nicht mehr geplant.
 | **Leistungspunkte (LP)** | messen die geleistete Arbeit. Grundlage für den Ausgleich, **nicht übertragbar**. In der Oberfläche heißen sie **XP** (Entscheidung 22.11.2026), im Konzept und Code bleibt es bei LP bzw. `contribution` |
 | **Guthaben (G)** | *entfernt am 23.11.2026* (war: übertragbare Währung für Belohnungen und Boni) |
 | **Bonus** | XP, die ein Mitglied als Geschenk auf die Aufgabe eines anderen setzt (Monatsbudget). Bekommen, wer sie erledigt, geteilt wie die XP |
+| **Mithelfer** | weitere Personen auf einer Aufgabe (`task_helpers`). Alle Beteiligten teilen sich XP und Bonus gleichmäßig |
 | **Periode** | Abrechnungszeitraum (Woche, Monat, frei) für den Ausgleich |
 
-> **Warum zwei Punktearten?** Würde nur eine Zahl zählen, ließe sich die Fairness durch
-> Verschenken von Punkten aushebeln. So zählt für den Ausgleich nur echte Arbeit (LP).
-> Guthaben darf frei fließen, ohne die Gerechtigkeitsrechnung zu verfälschen.
+> **Nur eine Punkteart:** XP lassen sich nicht übertragen. Der Bonus ist ein Geschenk aus einem
+> Monatsbudget und kostet den Schenkenden nichts, deshalb kann niemand Fairness „kaufen“.
 
 ---
 
@@ -62,8 +62,8 @@ gemeinsame Einkaufsliste (§10); ein Finanzteil ist nicht mehr geplant.
 | Rolle | Darf |
 | --- | --- |
 | **Admin** (meist Eltern) | Regeln und Punktegrenzen ändern, Vorlagen verwalten, Aufgaben bestätigen/ablehnen, Aufholaufgaben vergeben, Ausgleich freigeben, Mitglieder einladen/entfernen |
-| **Mitglied** | Aufgaben anlegen (im Rahmen der Grenzen), übernehmen, erledigen, Guthaben übertragen und als Bonus setzen, Belohnungen einlösen, Aufgaben anderer bestätigen (wenn erlaubt) |
-| **Kind** | wie Mitglied, aber: keine eigenen Aufgaben bestätigen, Übertragungen/Einlösungen ggf. mit Freigabe, keine Regeländerungen. Ohne eigene E-Mail (Profil vom Admin verwaltet). Anmeldung **auf eigenem Gerät per Einladungscode oder per PIN-Profilwechsel auf einem gemeinsamen Familien-Tablet**, beides möglich |
+| **Mitglied** | Aufgaben anlegen (im Rahmen der Grenzen), übernehmen, mitmachen, erledigen, XP-Bonus verschenken, Aufgaben anderer bestätigen (wenn erlaubt, nie eine, bei der man selbst mitgemacht hat) |
+| **Kind** | wie Mitglied, aber: keine Aufgaben bestätigen, keine Regeländerungen. Ohne eigene E-Mail (Profil vom Admin verwaltet). Anmeldung **auf eigenem Gerät per Einladungscode oder per PIN-Profilwechsel auf einem gemeinsamen Familien-Tablet**, beides möglich |
 
 Grundsatz: **Niemand bestätigt die eigene Aufgabe**, wenn der Haushalt Bestätigung verlangt.
 
@@ -83,11 +83,7 @@ nicht gespeichert und endet nach 2 Minuten ohne Eingabe oder mit „Zurück“.
 | `task_min` / `task_max` | 1 / 100 | harte Grenzen für jede Aufgabe |
 | `default_points` | 10 | Vorschlag für neue Aufgaben |
 | `escalation` | an, +2 je 24 h, bis Aufgaben-Max | liegengebliebene Aufgaben werden wertvoller |
-| `bounty.enabled` | an | Bonus auf Aufgaben erlaubt |
-| `bounty.max_per_pledge` | 50 G | Obergrenze je Einsatz |
-| `transfer.enabled` | an | Guthaben an Personen übertragen |
-| `transfer.max_per_period` | 100 G | Limit je Mitglied und Periode |
-| `transfer.child_needs_approval` | an | Kinder brauchen Freigabe |
+| `bonus_xp_per_month` | 30 | XP, die jede Person pro Monat als Bonus verschenken darf (0 = aus, höchstens 500) |
 | `approval` | `children_only` | Wer Bestätigung braucht: `everyone` · `children_only` · `nobody`. Pro Vorlage überschreibbar (immer / nie / mit Foto) |
 | `quality_adjust` | an | Bestätiger darf Punkte innerhalb von min…max anpassen |
 
@@ -100,25 +96,28 @@ Wert bei Erledigung:
 ```
 basis   = clamp(points_default + eskalation(alter), points_min, points_max)
 basis'  = Bestätiger-Anpassung (optional, innerhalb points_min…points_max)
-LP      += basis'
-G       += basis' + Summe aller Boni auf dieser Aufgabe
+XP je Beteiligtem = (basis' + Summe aller Boni) / Anzahl Beteiligte   (Rest reihum an die Ersten)
 ```
+
+Beteiligt sind, wer erledigt, wer zugewiesen ist, und alle Mithelfer.
 
 `eskalation(alter) = floor(alter / step_interval) × step_points`. Alter läuft ab Fälligkeit
 (oder ab Anlage bei offenen Aufgaben ohne Termin).
 
-### 4.3 Bonus auf Aufgaben (eigene Punkte übertragen)
+### 4.3 XP-Bonus auf Aufgaben
 
-- Ein Mitglied setzt eigenes Guthaben auf eine Aufgabe („Wer das Bad putzt, bekommt 20 von mir“).
-- Das Guthaben wird **sofort reserviert** (Treuhand-Buchung), damit niemand mehr verspricht, als er hat.
-- Wird die Aufgabe bestätigt → Auszahlung an den Erlediger. Wird sie abgebrochen oder läuft ab → Rückbuchung.
-- Den Bonus auf die eigene, einem selbst zugewiesene Aufgabe zu setzen, ist nicht erlaubt.
+- Jedes Mitglied kann XP als **Geschenk** auf eine Aufgabe setzen („Wer das Bad putzt, bekommt 10
+  extra“). Das kostet nichts, ist aber auf `bonus_xp_per_month` je Person und Monat begrenzt.
+- Der Bonus wird beim Erledigen zusammen mit den XP der Aufgabe auf alle Beteiligten verteilt.
+  Wird die Aufgabe abgebrochen, geht er zurück ins Monatsbudget.
+- Auf Aufgaben, bei denen man selbst beteiligt ist, gibt es keinen Bonus. Wer bei einer Aufgabe
+  mitmacht, auf die er einen Bonus gesetzt hat, bekommt ihn zurück ins Budget.
 
-### 4.4 Übertragung an Personen
+### 4.4 Mehrere auf einer Aufgabe
 
-- Direkte Übertragung von Guthaben (Geschenk, Tausch „Ich übernehme deinen Müll-Dienst für 15“).
-- Grenzen aus `PointPolicy`, Kinder optional mit Freigabe, immer mit Notiz.
-- Leistungspunkte bleiben unberührt.
+- „+“ übernimmt eine offene Aufgabe oder macht bei einer fremden mit (Eintrag in `task_helpers`).
+  Wer zugewiesen ist, bekommt einen Hinweis.
+- Wird eine Aufgabe im Plan neu zugewiesen, fangen die Mithelfer von vorn an.
 
 ### 4.5 Punktebuch (Ledger)
 
@@ -128,15 +127,14 @@ Alle Punktebewegungen sind **unveränderliche Buchungen**. Stände sind Summen d
 | --- | --- |
 | `id` | UUID (vom Client erzeugt → idempotent bei Offline-Sync) |
 | `household_id`, `member_id` | wessen Konto |
-| `kind` | `task_reward`, `bounty_hold`, `bounty_payout`, `bounty_refund`, `transfer_out`, `transfer_in`, `reward_redeem`, `penalty_deduction`, `settlement_bonus`, `settlement_zero_sum`, `manual_adjust` |
-| `contribution_delta` | Änderung der Leistungspunkte (meist 0 außer bei `task_reward`) |
-| `balance_delta` | Änderung des Guthabens |
+| `kind` | `task_reward` (je Beteiligtem eine Buchung) und `manual_adjust` (Gegenbuchung). Ältere Arten aus der Guthaben-Zeit gibt es nur in alten Daten |
+| `contribution_delta` | Änderung der XP |
+| `balance_delta` | Altfeld aus der Guthaben-Zeit, immer 0 |
 | `ref_type`, `ref_id` | Bezug (Aufgabe, Übertragung, Abrechnung …) |
 | `period_id` | in welcher Periode gebucht |
 | `created_by`, `created_at`, `note` | Nachvollziehbarkeit |
 
-Korrekturen erfolgen durch Gegenbuchung, nie durch Ändern. Das Guthaben darf nicht negativ werden
-(Ausnahme: `penalty_deduction`, wenn der Haushalt das erlaubt).
+Korrekturen erfolgen durch Gegenbuchung, nie durch Ändern.
 
 ---
 
@@ -149,8 +147,8 @@ Korrekturen erfolgen durch Gegenbuchung, nie durch Ändern. Das Guthaben darf ni
 | `length` | `weekly(start_weekday)`, `monthly(start_day)`, `custom(days)` |
 | `mode` | `fair_share` (relativ zum Gewicht) · `fixed_quota` (feste Mindestpunkte je Mitglied) · `both` |
 | `tolerance` | Abweichung ohne Folgen (und ohne Übertrag), in % |
-| `deficit_action` | `penalty_tasks` · `balance_deduction(percent)` · `zero_sum` (zahlt an die Überschüssigen) · `carry_over(percent)` (Fehlbetrag erhöht das Ziel der nächsten Periode) · `none` |
-| `surplus_action` | `bonus(percent)` · `carry_over(percent)` (Vorsprung senkt das Ziel der nächsten Periode) · `none`. Bei `zero_sum` bekommen Überschüssige ihren Anteil zusätzlich |
+| `deficit_action` | `penalty_tasks` · `carry_over(percent)` (Fehlbetrag erhöht das Ziel der nächsten Periode) · `none` |
+| `surplus_action` | `carry_over(percent)` (Vorsprung senkt das Ziel der nächsten Periode) · `none` |
 
 **Voreinstellung für neue Haushalte:** monatlich ab dem 1., `fair_share`, **20 % Toleranz**,
 Rückstand **und** Vorsprung wandern zu 100 % in den nächsten Monat (`carry_over` auf beiden
@@ -180,42 +178,37 @@ relativ      r_m   = d_m / t_m
 | Ergebnis | Bedingung | Folge (je nach Einstellung) |
 | --- | --- | --- |
 | im Rahmen | `|r_m| ≤ tolerance` | nichts |
-| Fehlbetrag | `r_m < −tolerance` | Aufholaufgaben im Wert von ≈ `|d_m|` zuweisen **oder** Guthaben-Abzug **oder** Nullsummen-Ausgleich an die Überschüssigen |
-| Überschuss | `r_m > +tolerance` | Guthaben-Bonus `d_m × percent` und/oder Anteil am Nullsummen-Ausgleich |
+| Fehlbetrag | `r_m < −tolerance` | Aufholaufgaben im Wert von ≈ `|d_m|` zuweisen **oder** Übertrag in die nächste Periode |
+| Überschuss | `r_m > +tolerance` | Übertrag: der Vorsprung senkt das nächste Ziel |
 
 Ist das Ziel 0 (Gewicht 0 oder niemand hat etwas getan), gilt: wer trotzdem etwas geleistet hat,
 liegt im Überschuss, sonst im Rahmen. Mit `fair_share` allein hat also niemand einen Fehlbetrag,
 wenn alle nichts tun. Dafür gibt es `fixed_quota`/`both`.
 
-**Nullsummen-Modus:** Wer unter dem Ziel liegt, zahlt Guthaben an die, die darüber liegen.
-Der Topf ist `min(Σ Fehlbeträge, Σ Überschüsse)`, verteilt anteilig auf beiden Seiten
-(ganzzahlig nach dem Verfahren des größten Rests). Die Summe aller Guthaben bleibt gleich.
-Ist das Guthaben eines Zahlers zu klein, kappt der Server den Betrag, sofern der Haushalt keine
-negativen Stände erlaubt.
-
 **Aufholaufgaben-Auswahl:** Aus den Vorlagen mit `kind = penalty` werden Aufgaben gewählt, bis
 ihre Punkte den Fehlbetrag decken (gierig: die größte zuerst, die noch passt, dann auffüllen).
-Aufholaufgaben bringen **Leistungspunkte, aber kein Guthaben** und haben eine Frist.
+Aufholaufgaben bringen XP und haben eine Frist.
 
 ### 5.3 Ablauf
 
 1. Periodenende → Server berechnet die Abrechnung als **Vorschau** (`settlement.status = draft`).
 2. Benachrichtigung an Admins, Übersicht für alle („Wer lag wo?“).
-3. Freigabe (manuell oder automatisch nach X h) → Buchungen + Aufholaufgaben werden erzeugt.
+3. Freigabe (manuell oder automatisch nach X h) → Aufholaufgaben werden erzeugt, Überträge gelten ab der nächsten Periode.
 4. Zwei Tage vor Periodenende: Warnung an Mitglieder unter dem Ziel.
 
 Die Rechnung steckt in `punkte-core::settlement` und ist mit Tests abgedeckt.
 
 ---
 
-## 6. Belohnungen, Aufholaufgaben und Familienziel
+## 6. Aufholaufgaben und Familienziel
+
+Belohnungskatalog und Belohnungsaufgaben sind am 23.11.2026 entfallen (die Tabellen löscht
+Migration 14). Die Art `reward` bleibt nur, damit alte Daten lesbar sind.
 
 | Typ | Beschreibung |
 | --- | --- |
-| **Belohnungskatalog** | Dinge, die man mit Guthaben „kauft“: „Film aussuchen“ (30 G), „30 min länger wach“ (50 G). Optional Freigabe, Bestand, Abkühlzeit |
-| **Belohnungsaufgabe** (`kind = reward`) | beliebte Aufgaben mit Extra-Punkten, freigeschaltet als Belohnung („Kuchen backen“) |
-| **Aufholaufgabe** (`kind = penalty`) | wird beim Ausgleich oder von Admins zugewiesen. LP ja, Guthaben nein, mit Frist. Wird die Frist versäumt, folgt eine Nachfrist und ein Hinweis an die Admins. In der Oberfläche heißt sie immer „Aufholaufgabe“, nie „Strafaufgabe“ |
-| **Familienziel** | gemeinsames LP-Ziel pro Periode mit einer Familienbelohnung (z. B. Ausflug). Dargestellt als Rennen gegen das Maskottchen **Krümel**, das gleichmäßig pro Tag von 0 bis zum Ziel am Periodenende vorrückt. **Schub:** Jede überfällige Aufgabe schiebt Krümel pro Tag um einen Anteil ihrer XP weiter (Standard 25 %, einstellbar). Alle spielen zusammen, es gibt keine Rangliste |
+| **Aufholaufgabe** (`kind = penalty`) | wird beim Ausgleich oder von Admins zugewiesen. Bringt XP, mit Frist. Wird die Frist versäumt, folgt eine Nachfrist und ein Hinweis an die Admins. In der Oberfläche heißt sie immer „Aufholaufgabe“, nie „Strafaufgabe“ |
+| **Familienziel** (Monatsziel) | gemeinsames XP-Ziel pro Periode, einstellbar unter Punkte und Regeln, mit einer Familienbelohnung (z. B. Ausflug). Dargestellt als Rennen gegen das Maskottchen **Krümel**, das gleichmäßig pro Tag von 0 bis zum Ziel am Periodenende vorrückt. **Schub:** Jede überfällige Aufgabe schiebt Krümel pro Tag um einen Anteil ihrer XP weiter (Standard 25 %, einstellbar). Alle spielen zusammen, es gibt keine Rangliste |
 | **Serie** | Tage in Folge, an denen ein Mitglied **mindestens eine Aufgabe** erledigt hat. Wird oben in „Heute“ gezeigt |
 
 ---
@@ -224,8 +217,8 @@ Die Rechnung steckt in `punkte-core::settlement` und ist mit Tests abgedeckt.
 
 ### 7.1 Vorlage (`TaskTemplate`)
 
-- Titel, Beschreibung, **Raum** (Gliederung wie in Tody), Icon aus der eigenen Icon-Familie, geschätzte Dauer
-- Punkte `min/default/max`, `kind` (`regular` · `reward` · `penalty`)
+- Titel, Beschreibung, **Raum** (Gliederung wie in Tody), Icon aus der eigenen Icon-Familie
+- Punkte `min/default/max`, `kind` (`regular` · `penalty`)
 - Rhythmus, pro Vorlage wählbar:
   - **fester Termin**: Wochentage (optional alle N Wochen, z. B. „Müll jeden Dienstag“) oder Tag im Monat.
     Fällig ist am Ende des Tages in der Zeitzone des Haushalts (`punkte_core::Schedule`, als JSON gespeichert)
@@ -233,9 +226,10 @@ Die Rechnung steckt in `punkte-core::settlement` und ist mit Tests abgedeckt.
     erledigt, setzt die Uhr zurück
   - **auf Abruf** (M8): keine Runde, bis jemand sie braucht („Ist wieder nötig“ oder eine
     Einkaufsliste, die nicht mehr leer ist); optional fällig X Tage danach, siehe §10
-- **Zustand** jeder Aufgabe: `frisch → fällig → überfällig`, berechnet aus der Zeit seit dem letzten
-  Mal bzw. bis zum Termin. Die Eskalation der Punkte (§4.2) setzt mit „überfällig“ ein. Dargestellt
-  als Zustandsbalken grün → honig → rot. Ein Raum zeigt den Zustand seiner dringendsten Aufgabe
+- **Zustand** jeder Aufgabe in vier Stufen: **Gut** (< 50 % der Runde vergangen), **Hat Zeit** (< 75 %),
+  **Fällig** (< 100 %), **Überfällig**. Berechnet aus der Zeit seit dem letzten Mal bzw. bis zum
+  Termin. Die Eskalation der Punkte (§4.2) setzt mit „überfällig“ ein. Dargestellt als Balken, der
+  sich von Grün nach Rot färbt. Ein Raum zeigt den Zustand seiner dringendsten Aufgabe
 - Zuweisung: `fixed(member)` · `rotation(members)` · `least_loaded(members)` (wer in der Periode
   am wenigsten LP hat) · `open` (wer zuerst übernimmt)
 - **Schritte** (optional): geordnete Liste von Teilschritten, z. B. „Bad putzen“ = Waschbecken,
@@ -243,26 +237,22 @@ Die Rechnung steckt in `punkte-core::settlement` und ist mit Tests abgedeckt.
   z. B. Bad putzen) oder **der Reihe nach** (nur der aktuelle Schritt ist abhakbar, z. B. Spülmaschine:
   erst einräumen, dann ausräumen). Mit dem letzten Schritt ist die Aufgabe erledigt; **XP gibt es erst
   dann**. Schritte werden in der Vorlage gespeichert und in jedes Vorkommen kopiert
-- **Nachfrage-Dauer** beim Starten: Standard = geschätzte Dauer der Vorlage, änderbar
 - Bestätigung: Haushaltsregel übernehmen · immer · nie · mit Foto
 - Erinnerungen: Versätze wie `-1d`, `-1h`, `0`, Nachhaken bei Überfälligkeit
 
 ### 7.2 Status einer Aufgabe
 
 ```
-open ──claim──▶ claimed ──start──▶ in_progress ──done──▶ submitted ──approve──▶ completed
-  │                │  ▲                 │   ▲                      └──reject──▶ claimed
-  │                │  └──── pause ──────┘   └── letzter Schritt = done
-  │                └──────────────── done ─────────────▶ submitted / completed
+open ──claim──▶ claimed ──done──▶ submitted ──approve──▶ completed
+  │                │    ▲                     └──reject──▶ claimed
+  │                │    └── letzter Schritt = done
+  │                ├── join (weitere Person, XP geteilt)
+  │                └── unclaim ──▶ open
   └── skip / cancel / expire ──▶ cancelled
 ```
 
-**Starten** (`start`, auch direkt aus `open`): setzt `started_at` und `remind_at`. **Es gibt keinen
-Countdown**: Die App zeigt nur, seit wann die Aufgabe läuft (die Zeit zählt hoch), damit kein Druck
-entsteht. Zu `remind_at` plant die App eine lokale, freundlich formulierte Nachfrage („Wie läuft's mit
-…?“) mit den Aktionen *Erledigt*, *+10 min* (später erneut fragen) und *Später* (pausiert). Eine
-gestartete Aufgabe ist in „Heute“ blau umrandet und zeigt „seit X Min.“ und den Schrittfortschritt.
-Erledigen geht weiterhin auch ohne Starten.
+**Kein Timer** (seit 23.11.2026): kein Starten, kein Pausieren, keine Dauer und keine Nachfrage.
+Der Status `in_progress` und die Felder `started_at`/`remind_at` gibt es nur noch in alten Daten.
 
 Ohne Bestätigungspflicht geht `done` direkt auf `completed`. Jeder Statuswechsel wird als
 `task_event` protokolliert (Verlauf, Benachrichtigungen, Sync).
@@ -271,12 +261,12 @@ Ohne Bestätigungspflicht geht `done` direkt auf `completed`. Jeder Statuswechse
 
 | Ansicht | Inhalt |
 | --- | --- |
-| **Heute** (Start) | oben Familienziel (Rennen gegen Krümel) und eigene Serie, darunter meine Aufgaben mit Zustandsbalken, dann offene Aufgaben mit Bonus. Jede Karte zeigt, wer dran ist (Tier oder „offen“). Erledigt wird nie direkt auf der Karte (seit 23.11.2026): „+“ übernimmt eine offene Aufgabe, Antippen öffnet die Aufgabe; dort Schritte abhaken, „Erledigt“ oder „Abgeben“ |
+| **Heute** (Start) | oben Familienziel (Rennen gegen Krümel) und eigene Serie, darunter meine Aufgaben mit Zustandsbalken, dann offene Aufgaben mit Bonus, ganz unten ausgegraut die Aufgaben anderer. Jede Karte zeigt, wer dran ist (Tiere überlappend wie Co-Autoren, oder „offen“). Erledigt wird nie direkt auf der Karte (seit 23.11.2026): „+“ übernimmt eine offene Aufgabe, Antippen öffnet die Aufgabe; dort Schritte abhaken, „Erledigt“ oder „Abgeben“ |
 | **Plan · Räume** | Räume mit Zustand und LP-Summe, Aufgaben je Raum |
 | **Plan · Kalender** | Tag / Woche / Monat / Agenda. Ziehen auf einen Zeitslot plant die Aufgabe ein. Wiederholungen werden aufgefaltet. Farbe = Mitglied |
 | **Plan · Board** | freie Fläche mit Karten und Zonen (je Person, Raum, Tag). Karte in eine Personen-Zone ziehen = zuweisen, in eine Tages-Zone = einplanen. Zoomen und Schieben mit zwei Fingern |
 | **Eigene Ansichten** | gespeicherte Filter (Person, Kategorie, Status, Art, Zeitraum, mit/ohne Bonus) + Darstellung (Liste, Kanban, Kalender, Canvas) + Gruppierung/Sortierung. Privat oder für den Haushalt freigegeben |
-| **Punkte** | Kontostand, Verlauf (Ledger), Periodenvergleich, Übertragen, Belohnungen einlösen |
+| **Punkte** | XP des Monats, Serie, Bonus-Budget, Verlauf (Ledger), Periodenvergleich, Monatsziel |
 
 ### 7.4 Mobile-UX
 
@@ -300,15 +290,15 @@ Ohne Bestätigungspflicht geht `done` direkt auf `completed`. Jeder Statuswechse
 | Thema | Entscheidung |
 | --- | --- |
 | Gefühl | warm und familiär: weiche Formen, warmer heller Grund, Personen im Mittelpunkt |
-| Farben | Indigo = Aktionen, Petrol = Leistungspunkte (Balken), Honig = Guthaben (Münze), Zustand grün/honig/rot. Personenfarben getrennt von Systemfarben |
+| Farben | Indigo = Aktionen, Petrol = XP (Balken), Honig = Bonus, Zustand Grün → Rot in vier Stufen. Personenfarben getrennt von Systemfarben |
 | Hell/Dunkel | beide Themen gleichwertig gestaltet. Standard: folgt dem System, Schalter „Hell · Dunkel · System“ unter Familie → Einstellungen (pro Gerät) |
 | Schrift | Bricolage Grotesque für Titel und große Zahlen, Atkinson Hyperlegible Next für Text |
 | Avatare | Tiere zum Aussuchen (Fuchs, Eule, Otter, Igel, Bär, Katze, Hund, Wal, Löwe) in der Personenfarbe. Ein Tier darf im Haushalt mehrfach vorkommen (Unterscheidung über die Farbe). Keine Fotos von Kindern auf dem Server |
 | App-Icon | **geteilter Keks**: ein Keks, fair in zwei gleiche Hälften gebrochen, mit zwei Krümeln, auf Indigo. Quelle in `app/icon-src/` (Desktop mit runden Ecken, Android adaptiv aus Vorder- und Hintergrund, iOS mit Indigo-Grund) |
 | Bilder | eigene Icon-Familie: runde Linien, 24er-Raster, 2 px |
-| Klänge | warm & hölzern (Marimba-artig), standardmäßig **leise an**, pro Gerät abschaltbar, getrennt von der Vibration. Lautlos-Modus des Handys wird respektiert. Wandanzeige klingt wie das Handy (außer im Nachtmodus). Momente: Schritt abgehakt (1 leiser Ton), Aufgabe erledigt (kurzes „Ding-Ding!“, 2 Töne aufwärts, < 0,5 s), bestätigt, Guthaben erhalten, Serie verlängert, Krümel überholt (das Familienziel-Motiv auf halbem Weg: Lauf C–D–D#–E–F# landet offen auf G, darunter fächert sich G-Dur auf, ca. 1 s), Familienziel erreicht (abgeleitet vom Überholt-Motiv: derselbe Lauf mit Leitton H, der auf dem hohen C ankommt; darunter fächert sich ein warmer C-Dur-Akkord auf, danach kommt kein weiterer Ton, ca. 1,6 s). Stilvorbild für die großen Momente: Duolingo. **Entschieden (22.11.2026):** „Krümel überholt“ und „Familienziel erreicht“ teilen sich ein Motiv, das aus Kenney „Music Jingles – Pizzicato 02“ (CC0) transkribiert wurde, und werden mit dem eigenen Synth gespielt. Es werden keine Audiodateien mitgeliefert; Kenney wird in den Danksagungen genannt. Gehört mit Kalimba; Tonlage und Stimmung werden beim Einbau final abgestimmt. Klangkette: Tiefpass → Kompressor → Aufholverstärkung, damit die Töne am Handy-Lautsprecher voll klingen, ohne zu übersteuern. Klangfarbe/Tonlage/Stimmung werden im Klang-Spielplatz der Roadmap-Seite ausgewählt. Erzeugt per Web Audio im Webview, keine Audiodateien. Vor der Umsetzung prüfen, wie der Lautlos-Schalter in Android/iOS-Webviews greift |
+| Klänge | warm & hölzern (Marimba-artig), standardmäßig **leise an**, pro Gerät abschaltbar, getrennt von der Vibration. Lautlos-Modus des Handys wird respektiert. Wandanzeige klingt wie das Handy (außer im Nachtmodus). Momente: Schritt abgehakt (1 leiser Ton), Aufgabe erledigt (kurzes „Ding-Ding!“, 2 Töne aufwärts, < 0,5 s), bestätigt, XP erhalten, Serie verlängert, Krümel überholt (das Familienziel-Motiv auf halbem Weg: Lauf C–D–D#–E–F# landet offen auf G, darunter fächert sich G-Dur auf, ca. 1 s), Familienziel erreicht (abgeleitet vom Überholt-Motiv: derselbe Lauf mit Leitton H, der auf dem hohen C ankommt; darunter fächert sich ein warmer C-Dur-Akkord auf, danach kommt kein weiterer Ton, ca. 1,6 s). Stilvorbild für die großen Momente: Duolingo. **Entschieden (22.11.2026):** „Krümel überholt“ und „Familienziel erreicht“ teilen sich ein Motiv, das aus Kenney „Music Jingles – Pizzicato 02“ (CC0) transkribiert wurde, und werden mit dem eigenen Synth gespielt. Es werden keine Audiodateien mitgeliefert; Kenney wird in den Danksagungen genannt. Gehört mit Kalimba; Tonlage und Stimmung werden beim Einbau final abgestimmt. Klangkette: Tiefpass → Kompressor → Aufholverstärkung, damit die Töne am Handy-Lautsprecher voll klingen, ohne zu übersteuern. Klangfarbe/Tonlage/Stimmung werden im Klang-Spielplatz der Roadmap-Seite ausgewählt. Erzeugt per Web Audio im Webview, keine Audiodateien. Vor der Umsetzung prüfen, wie der Lautlos-Schalter in Android/iOS-Webviews greift |
 | Spiel | Serien und Familienziel (Rennen gegen Krümel). Keine Ranglisten, keine Abzeichen |
-| Punkte-Name | Was man mit Aufgaben verdient, heißt in der Oberfläche **XP**. Guthaben bleibt „G“ mit Münze |
+| Punkte-Name | Was man mit Aufgaben verdient, heißt in der Oberfläche **XP**. Ein Guthaben gibt es nicht mehr |
 | Vorbild | Tody: Zustandsbalken, Rhythmus nach Bedarf, Räume, Rennen gegen ein Maskottchen. Figuren und Gestaltung sind eigene Entwürfe |
 
 ---
@@ -321,10 +311,10 @@ Ohne Bestätigungspflicht geht `done` direkt auf `completed`. Jeder Statuswechse
 | --- | --- |
 | Erinnerung vor Fälligkeit (nach Versätzen) | Zuständiger |
 | Überfällig, Nachhaken (eskalierend) | Zuständiger, nach X h auch Admins |
-| Aufgabe zugewiesen / Bonus auf meine Aufgabe | Betroffener |
+| Aufgabe zugewiesen / Bonus auf meine Aufgabe / jemand macht mit | Betroffener |
 | Zur Bestätigung eingereicht | Bestätiger |
 | Bestätigt / abgelehnt | Erlediger |
-| Guthaben erhalten | Empfänger |
+| XP gutgeschrieben (geteilt) | alle Beteiligten |
 | Periodenende naht, du liegst hinter dem Ziel | Betroffener |
 | Abrechnung bereit / freigegeben, Aufholaufgabe erhalten | Admins / alle |
 | Tagesübersicht zur Wunschzeit | jeder, der sie aktiviert hat |
@@ -384,7 +374,7 @@ Periodenabschluss. Kein zusätzlicher Dienst nötig, mehrere Instanzen wären sp
   je Haushalt. Der Client fragt `GET /api/v1/sync?since=<seq>` und bekommt alle Änderungen seitdem.
   Live-Hinweise per WebSocket stoßen das an.
 - **Schreiben:** Änderungen gehen als **Befehle** mit vom Client erzeugter UUID (Idempotenz) in die
-  Outbox und werden gesendet, sobald Netz da ist. Der Server prüft Regeln (Guthaben, Rechte, Grenzen)
+  Outbox und werden gesendet, sobald Netz da ist. Der Server prüft Regeln (Bonus-Budget, Rechte, Grenzen)
   und lehnt ggf. ab. Der Client zeigt das an und rollt zurück.
 - **Konflikte:** Stammdaten (Vorlagen, Aufgaben-Felder) nach „letzter gewinnt“ je Feld mit `version`.
   Das Ledger ist nur anhängend, dort gibt es keine Konflikte.
@@ -418,15 +408,14 @@ Periodenabschluss. Kein zusätzlicher Dienst nötig, mehrere Instanzen wären sp
 | `tasks` | id, household_id, template_id, room_id, title, icon, kind, status (+ `in_progress`), assignee_id, cycle_start, due_at, scheduled_start/end, started_at, remind_at, points_* (Kopie), completed_by, completed_at, approved_by, approved_at, review_note, version |
 | `task_steps` | id, task_id, position, title, done_by, done_at (Vorlagen: `template_steps` mit position, title) |
 | `task_events` | id, task_id, actor_id, type, payload, created_at |
-| `bounties` | id, task_id, pledger_id, amount, status (held/paid/refunded) |
-| `transfers` | id, household_id, from_id, to_id, amount, note, status (done/pending/declined), decided_by |
+| `task_helpers` | task_id, member_id, joined_at (Mithelfer, XP werden geteilt) |
+| `bounties` | id, task_id, pledger_id, amount, status (held/paid/refunded); seit 23.11.2026 der XP-Bonus als Geschenk, Monatsbudget über `created_at` |
 | `ledger_entries` | siehe §4.5 |
 | `periods` | id, household_id, starts_at, ends_at, status (running/settling/settled, höchstens einer läuft) |
 | `family_goals` | period_id, target, reward, boost_percent, status (running/won/lost), decided_at |
 | `settlements` / `settlement_lines` | Abrechnung je Periode und Mitglied (Ziel, Leistung, Abweichung, Folge), auto_approve_at; Aufholaufgaben verweisen per `tasks.settlement_id` |
 | `absences` | member_id, from, to, reason |
 | `notifications` / `notification_prefs` | Postfach (Kategorie, Bezug, gelesen, Push gesendet); Push-Kategorien und Ruhezeit je Mitglied |
-| `rewards` / `reward_redemptions` | Katalog (Preis, Freigabe, Bestand, Abkühlzeit) und Einlösungen (Preis, Status, Entscheidung) |
 | `boards` / `board_items` | gemeinsames Board je Haushalt; Kartenposition je Vorlage (wiederkehrend) oder Aufgabe |
 | `saved_views` | owner_id, shared, filter (jsonb), layout, sort |
 | `jobs` | id, kind, run_at, payload, attempts, locked_until |
@@ -468,7 +457,7 @@ Ausführlich mit nächsten Schritten und Designentwurf: [ROADMAP.md](ROADMAP.md)
 | **M2** Aufgaben, Räume & Zustand | Vorlagen, Räume, Rhythmus fest oder nach Bedarf, Zustand, Zuweisungsregeln, Heute-Ansicht |
 | **M3** Punkte | Ledger, Bestätigung, Eskalation, Boni, Übertragungen, Punkte-Ansicht |
 | **α** Familien-Alpha | Hetzner-Deployment, Backups, signierte APK, echter Familienalltag |
-| **M4** Ausgleich & Familienziel | Perioden, Abrechnung mit Vorschau, Aufholaufgaben, Familienziel (Rennen gegen Krümel), Belohnungskatalog |
+| **M4** Ausgleich & Familienziel | Perioden, Abrechnung mit Vorschau, Aufholaufgaben, Familienziel (Rennen gegen Krümel), Belohnungskatalog (am 23.11.2026 wieder entfernt) |
 | **M5** Erinnerungen | lokale Benachrichtigungen, In-App-Postfach, WebSocket, danach Push (FCM/APNs) |
 | **M6** Plan & Wandanzeige | Kalender, Board, eigene Ansichten, Tablet-Wandanzeige |
 | **M7** Offline + Release | Outbox-Sync, Android-Release (Play Store/APK), iOS über CI |

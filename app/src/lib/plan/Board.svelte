@@ -5,7 +5,7 @@
   // the wheel or the buttons. Narrow screens get the zones as a list: drag an entry onto a zone
   // (press a moment with a finger), or tap it, then the zone.
   import { goto } from "$app/navigation";
-  import type { BoardItemDto, TaskDto } from "$lib/generated";
+  import type { BoardItemDto, MemberDto, TaskDto } from "$lib/generated";
   import { session } from "$lib/session.svelte";
   import { feedback } from "$lib/settings.svelte";
   import { STATUS_LABEL, conditionOf, iconOf, statusOf, taskStore } from "$lib/tasks.svelte";
@@ -130,6 +130,8 @@
   }
   const metaOf = (t: TaskDto) => (t.list_id && t.status === "in_progress" ? "kauft ein" : t.due_at ? STATUS_LABEL[statusOf(conditionOf(t, taskStore.now))] : "kein Termin");
   const memberOf = (id: string | null | undefined) => session.members.find((m) => m.membership_id === id);
+  /** Helpers on a task as members (shown half behind the first animal). */
+  const othersOf = (t: TaskDto) => t.helpers.filter((h) => h !== t.assignee_id).map((h) => memberOf(h)).filter((m) => !!m) as MemberDto[];
   const dayFmt = new Intl.DateTimeFormat("de-DE", { day: "numeric", month: "numeric" });
   const canMove = (t: TaskDto) => planner && ["open", "claimed"].includes(t.status);
 
@@ -302,7 +304,7 @@
             onpointerup={() => cardUp(p.t)}
             onkeydown={(ev) => ev.key === "Enter" && goto(`/aufgabe/${p.t.id}`)}
           >
-            <PlanNode title={p.t.title} icon={iconOf(p.t.icon)} member={memberOf(p.t.assignee_id)} xp={p.t.xp} state={stateOf(p.t)} meta={metaOf(p.t)} />
+            <PlanNode title={p.t.title} icon={iconOf(p.t.icon)} member={memberOf(p.t.assignee_id)} others={othersOf(p.t)} xp={p.t.xp} state={stateOf(p.t)} meta={metaOf(p.t)} />
           </div>
         {/each}
       </div>
@@ -343,6 +345,7 @@
                 title={p.t.title}
                 icon={iconOf(p.t.icon)}
                 member={memberOf(p.t.assignee_id)}
+                others={othersOf(p.t)}
                 xp={p.t.xp}
                 state={stateOf(p.t)}
                 meta={metaOf(p.t)}

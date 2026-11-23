@@ -61,7 +61,7 @@
     }
   }
 
-  const KINDS: [TaskKind, string][] = [["regular", "Normal"], ["reward", "Belohnung"], ["penalty", "Aufholaufgabe"]];
+  const KINDS: [TaskKind, string][] = [["regular", "Normal"], ["penalty", "Aufholaufgabe"]];
   const LAYOUTS = [["list", "Liste"], ["kanban", "Kanban"], ["calendar", "Kalender"], ["canvas", "Fläche"]];
 </script>
 

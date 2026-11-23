@@ -5,7 +5,11 @@ export type CalendarEntry = {
 /**
  * The current round; None for a coming round that does not exist yet.
  */
-task_id: string | null, template_id: string | null, title: string, icon: string | null, room_id: string | null, kind: TaskKind, assignee_id: string | null, xp: number, status: string, due_at: string | null, scheduled_start: string | null, scheduled_end: string | null, completed_at: string | null, 
+task_id: string | null, template_id: string | null, title: string, icon: string | null, room_id: string | null, kind: TaskKind, assignee_id: string | null, 
+/**
+ * Others who joined the round (shared XP); empty for coming rounds.
+ */
+helpers: Array<string>, xp: number, status: string, due_at: string | null, scheduled_start: string | null, scheduled_end: string | null, completed_at: string | null, 
 /**
  * A coming round, calculated from the rhythm (assuming each is done on time).
  */

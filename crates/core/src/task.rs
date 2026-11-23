@@ -15,19 +15,13 @@ use thiserror::Error;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TaskKind {
-    /// Normal household task: contribution + balance.
+    /// Normal household task.
     Regular,
-    /// Popular task with extra points, unlocked as a reward.
+    /// Legacy "Belohnungsaufgabe"; no longer offered (since 23.11.2026), kept so older
+    /// tasks and saved view filters still read.
     Reward,
-    /// Assigned by settlement or admins: contribution, but no balance.
+    /// Catch-up task, assigned by settlement or admins ("Aufholaufgabe").
     Penalty,
-}
-
-impl TaskKind {
-    /// Whether completing a task of this kind credits balance (Guthaben).
-    pub fn credits_balance(self) -> bool {
-        !matches!(self, TaskKind::Penalty)
-    }
 }
 
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
@@ -137,11 +131,5 @@ mod tests {
         assert_eq!(s.apply(A::Done, true).unwrap(), S::Submitted);
         assert!(S::Submitted.apply(A::Start, false).is_err());
         assert!(S::Claimed.apply(A::Pause, false).is_err());
-    }
-
-    #[test]
-    fn penalty_gives_no_balance() {
-        assert!(!TaskKind::Penalty.credits_balance());
-        assert!(TaskKind::Regular.credits_balance());
     }
 }

@@ -8,7 +8,7 @@
     [members[1].id]: 45,
     [members[2].id]: 20,
   });
-  let deficit = $state<"carry_over" | "penalty_tasks" | "zero_sum" | "balance_deduction">("carry_over");
+  let deficit = $state<"carry_over" | "penalty_tasks">("carry_over");
   let tolerance = $state(20);
   let settlement = $state<Settlement | null>(null);
   let error = $state<string | null>(null);
@@ -17,12 +17,9 @@
     length: { type: "monthly", start_day: 1 },
     mode: "fair_share",
     tolerance_percent: tolerance,
-    deficit_action:
-      deficit === "balance_deduction" || deficit === "carry_over"
-        ? { type: deficit, percent: deficit === "carry_over" ? 100 : 50 }
-        : { type: deficit },
-    // Carry the lead over when deficits carry over, otherwise pay a 50 % bonus.
-    surplus_action: deficit === "carry_over" ? { type: "carry_over", percent: 100 } : { type: "bonus", percent: 50 },
+    deficit_action: deficit === "carry_over" ? { type: "carry_over", percent: 100 } : { type: "penalty_tasks" },
+    // The lead carries over into the next month.
+    surplus_action: { type: "carry_over", percent: 100 },
     auto_approve_after_hours: 24,
     warn_before_end_hours: 48,
   });
@@ -71,8 +68,6 @@
       <select bind:value={deficit}>
         <option value="carry_over">Übertrag in nächsten Monat</option>
         <option value="penalty_tasks">Aufholaufgaben</option>
-        <option value="zero_sum">Nullsumme (zahlt an andere)</option>
-        <option value="balance_deduction">Guthaben-Abzug 50 %</option>
       </select>
     </label>
     <label class="stack tight">
@@ -102,9 +97,6 @@
         {/if}
         {#if line.carry_next !== 0}
           <div class="small">↪ {line.carry_next > 0 ? `+${line.carry_next} Ziel` : `${line.carry_next} Ziel`} im nächsten Monat</div>
-        {/if}
-        {#if line.balance_delta !== 0}
-          <div class="small">{line.balance_delta > 0 ? "💰 +" : "💸 "}{line.balance_delta} Guthaben</div>
         {/if}
       </article>
     {/each}

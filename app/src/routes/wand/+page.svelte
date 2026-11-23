@@ -6,7 +6,8 @@
   import type { MemberDto, TaskDto, TaskActionResponse } from "$lib/generated";
   import { session } from "$lib/session.svelte";
   import { feedback } from "$lib/settings.svelte";
-  import { conditionOf, iconOf, stepsDone, taskStore } from "$lib/tasks.svelte";
+  import { conditionOf, iconOf, isOn, peopleOn, stepsDone, taskStore } from "$lib/tasks.svelte";
+  import AvatarStack from "$lib/ui/AvatarStack.svelte";
   import Avatar from "$lib/ui/Avatar.svelte";
   import type { AnimalName } from "$lib/ui/Avatar.svelte";
   import ConditionBar from "$lib/ui/ConditionBar.svelte";
@@ -65,10 +66,18 @@
 
   const columns = $derived.by(() => {
     const list = taskStore.tasks.filter(today).sort((a, b) => conditionOf(b, now) - conditionOf(a, now));
-    const cols = session.members.map((m) => ({ key: m.membership_id, member: m as MemberDto | null, tasks: list.filter((t) => t.assignee_id === m.membership_id) }));
+    // A shared task shows in the column of everyone on it.
+    const cols = session.members.map((m) => ({ key: m.membership_id, member: m as MemberDto | null, tasks: list.filter((t) => isOn(t, m.membership_id)) }));
     cols.push({ key: "open", member: null, tasks: list.filter((t) => !t.assignee_id) });
     return cols.filter((c) => c.member || c.tasks.length);
   });
+
+  /** The others on a task, seen from one person's column. */
+  const withOf = (t: TaskDto, col: MemberDto | null) =>
+    peopleOn(t)
+      .filter((id) => id !== col?.membership_id)
+      .map((id) => session.members.find((m) => m.membership_id === id))
+      .filter((m) => !!m) as MemberDto[];
 
   const streakOf = (id: string) => taskStore.accounts.find((a) => a.membership_id === id)?.streak;
   const clock = $derived(new Intl.DateTimeFormat("de-DE", { hour: "2-digit", minute: "2-digit" }).format(new Date(now)));
@@ -162,6 +171,7 @@
                 <b>{t.title}</b>
                 <span class="small">
                   {t.status === "submitted" ? "wartet aufs OK" : t.status === "in_progress" ? "kauft ein" : `${t.xp} XP`}{#if t.steps.length} · {stepsDone(t)}/{t.steps.length}{/if}
+                  {#if withOf(t, c.member).length}<span class="with">· mit <AvatarStack members={withOf(t, c.member)} size={20} /></span>{/if}
                 </span>
               </span>
               {#if cheer?.id === t.id}<span class="cheer">{cheer.text}</span>{/if}
@@ -436,6 +446,14 @@
 
   .task.running {
     border-color: var(--primary);
+  }
+
+  /* Others on the same task, after the XP */
+  .with {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    vertical-align: middle;
   }
 
   .task.waiting {

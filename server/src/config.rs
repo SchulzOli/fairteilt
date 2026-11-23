@@ -1,5 +1,7 @@
 use anyhow::{Context, bail};
 
+use crate::google::DesktopClient;
+
 /// Runtime configuration from environment variables (see `deploy/.env.example`).
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -15,6 +17,8 @@ pub struct Config {
     pub fcm_service_account: Option<String>,
     /// OAuth client IDs for "Mit Google anmelden" (comma-separated). Unset = off.
     pub google_client_ids: Vec<String>,
+    /// The "Desktop" OAuth client for the desktop app (code exchange). Unset = not offered.
+    pub google_desktop: Option<DesktopClient>,
 }
 
 impl Config {
@@ -43,6 +47,29 @@ impl Config {
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
             .collect();
-        Ok(Self { database_url, bind_addr, cors_origins, jwt_secret, trust_proxy, fcm_service_account, google_client_ids })
+        let env = |k: &str| {
+            std::env::var(k)
+                .ok()
+                .map(|v| v.trim().to_string())
+                .filter(|v| !v.is_empty())
+        };
+        let google_desktop = match (
+            env("GOOGLE_DESKTOP_CLIENT_ID"),
+            env("GOOGLE_DESKTOP_CLIENT_SECRET"),
+        ) {
+            (Some(id), Some(secret)) => Some(DesktopClient { id, secret }),
+            (None, None) => None,
+            _ => bail!("GOOGLE_DESKTOP_CLIENT_ID and GOOGLE_DESKTOP_CLIENT_SECRET go together"),
+        };
+        Ok(Self {
+            database_url,
+            bind_addr,
+            cors_origins,
+            jwt_secret,
+            trust_proxy,
+            fcm_service_account,
+            google_client_ids,
+            google_desktop,
+        })
     }
 }

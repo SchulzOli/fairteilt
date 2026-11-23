@@ -33,7 +33,7 @@ fn download(value: serde_json::Value, name: &str) -> AppResult<Response> {
     Ok(res)
 }
 
-/// Everything about you: account, memberships, your bookings, transfers, rewards, inbox,
+/// Everything about you: account, memberships, your bookings, inbox,
 /// the tasks you did (DSGVO Art. 15 and 20, machine-readable).
 pub async fn export_me(State(state): State<AppState>, user: AuthUser) -> AppResult<Response> {
     let mut conn = state.db.acquire().await?;
@@ -65,10 +65,6 @@ pub async fn export_me(State(state): State<AppState>, user: AuthUser) -> AppResu
             "tasks_assigned": json_of(&mut conn,
                 "SELECT json_agg(json_build_object('title', title, 'status', status, 'due_at', due_at))
                  FROM tasks WHERE assignee_id = $1 AND status NOT IN ('completed', 'cancelled')", mid).await?,
-            "transfers": json_of(&mut conn, "SELECT json_agg(t ORDER BY t.created_at) FROM transfers t WHERE t.from_id = $1 OR t.to_id = $1", mid).await?,
-            "redemptions": json_of(&mut conn,
-                "SELECT json_agg(json_build_object('reward', r.title, 'cost', x.cost, 'status', x.status, 'created_at', x.created_at))
-                 FROM reward_redemptions x JOIN rewards r ON r.id = x.reward_id WHERE x.member_id = $1", mid).await?,
             "inbox": json_of(&mut conn, "SELECT json_agg(n ORDER BY n.created_at) FROM notifications n WHERE n.member_id = $1", mid).await?,
             "shopping_items_added": json_of(&mut conn,
                 "SELECT json_agg(json_build_object('name', i.name, 'note', i.note, 'added_at', i.added_at) ORDER BY i.added_at)
@@ -100,7 +96,7 @@ pub async fn export_household(State(state): State<AppState>, user: AuthUser, Pat
         "SELECT json_build_object('id', id, 'name', name, 'timezone', timezone, 'point_policy', point_policy, 'period_policy', period_policy,
                                   'goal_policy', goal_policy, 'created_at', created_at) FROM households WHERE id = $1",
     ).bind(h).fetch_one(&mut *conn).await?);
-    let tables: [(&str, &'static str); 18] = [
+    let tables: [(&str, &'static str); 15] = [
         ("members", "SELECT json_agg(json_build_object('id', m.id, 'name', u.display_name, 'role', m.role, 'color', m.color, 'animal', m.animal,
                          'weight', m.weight, 'active', m.active, 'joined_at', m.joined_at) ORDER BY m.seq)
                      FROM memberships m JOIN users u ON u.id = m.user_id WHERE m.household_id = $1"),
@@ -111,13 +107,10 @@ pub async fn export_household(State(state): State<AppState>, user: AuthUser, Pat
         ("task_steps", "SELECT json_agg(s ORDER BY s.task_id, s.position) FROM task_steps s JOIN tasks t ON t.id = s.task_id WHERE t.household_id = $1"),
         ("task_events", "SELECT json_agg(e ORDER BY e.created_at) FROM task_events e JOIN tasks t ON t.id = e.task_id WHERE t.household_id = $1"),
         ("ledger", "SELECT json_agg(l ORDER BY l.created_at) FROM ledger_entries l WHERE l.household_id = $1"),
-        ("transfers", "SELECT json_agg(t ORDER BY t.created_at) FROM transfers t WHERE t.household_id = $1"),
         ("bounties", "SELECT json_agg(b ORDER BY b.created_at) FROM bounties b JOIN tasks t ON t.id = b.task_id WHERE t.household_id = $1"),
         ("periods", "SELECT json_agg(json_build_object('period', p, 'goal', g) ORDER BY p.starts_at) FROM periods p LEFT JOIN family_goals g ON g.period_id = p.id WHERE p.household_id = $1"),
         ("settlements", "SELECT json_agg(json_build_object('settlement', s, 'lines', (SELECT json_agg(l) FROM settlement_lines l WHERE l.settlement_id = s.id)))
                          FROM settlements s JOIN periods p ON p.id = s.period_id WHERE p.household_id = $1"),
-        ("rewards", "SELECT json_agg(r ORDER BY r.created_at) FROM rewards r WHERE r.household_id = $1"),
-        ("redemptions", "SELECT json_agg(x ORDER BY x.created_at) FROM reward_redemptions x JOIN rewards r ON r.id = x.reward_id WHERE r.household_id = $1"),
         ("views", "SELECT json_agg(json_build_object('name', v.name, 'shared', v.shared, 'filter', v.filter, 'layout', v.layout, 'sort', v.sort))
                    FROM saved_views v WHERE v.household_id = $1 AND v.shared"),
         ("shopping_lists", "SELECT json_agg(l ORDER BY l.position, l.created_at) FROM shopping_lists l WHERE l.household_id = $1"),
@@ -172,9 +165,6 @@ async fn delete_household_tx(tx: &mut Transaction<'_, Postgres>, household: Uuid
         "DELETE FROM tasks WHERE household_id = $1",
         "DELETE FROM task_templates WHERE household_id = $1",
         "DELETE FROM ledger_entries WHERE household_id = $1",
-        "DELETE FROM transfers WHERE household_id = $1",
-        "DELETE FROM reward_redemptions WHERE reward_id IN (SELECT id FROM rewards WHERE household_id = $1)",
-        "DELETE FROM rewards WHERE household_id = $1",
         "DELETE FROM invites WHERE household_id = $1",
         "DELETE FROM households WHERE id = $1",
     ] {

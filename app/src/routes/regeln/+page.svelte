@@ -29,7 +29,7 @@
     if (!rules) return;
     const p = percentOf(rules.period_policy.deficit_action);
     rules.period_policy.deficit_action =
-      type === "carry_over" || type === "balance_deduction" ? { type, percent: p } : ({ type } as DeficitAction);
+      type === "carry_over" ? { type, percent: p } : ({ type } as DeficitAction);
   }
 
   function setSurplus(type: Surplus) {

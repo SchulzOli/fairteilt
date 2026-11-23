@@ -5,7 +5,7 @@
   // with a finger: press a moment, then drag. Without dragging: tap a task in the tray, then
   // a day. Dropping on "Ohne Uhrzeit" takes it out of the calendar again.
   import { goto } from "$app/navigation";
-  import type { CalendarEntry, TaskDto } from "$lib/generated";
+  import type { CalendarEntry, MemberDto, TaskDto } from "$lib/generated";
   import { session } from "$lib/session.svelte";
   import { feedback } from "$lib/settings.svelte";
   import { iconOf, taskStore } from "$lib/tasks.svelte";
@@ -98,6 +98,9 @@
   );
 
   const memberOf = (id: string | null) => session.members.find((m) => m.membership_id === id);
+  /** Helpers of a round as members (shown half behind the first animal). */
+  const othersOf = (assignee: string | null, helpers: string[]) =>
+    helpers.filter((h) => h !== assignee).map((h) => memberOf(h)).filter((m) => !!m) as MemberDto[];
   const time = new Intl.DateTimeFormat("de-DE", { hour: "2-digit", minute: "2-digit" });
   const dayName = new Intl.DateTimeFormat("de-DE", { weekday: "long", day: "numeric", month: "long" });
   const monthName = new Intl.DateTimeFormat("de-DE", { month: "long", year: "numeric" });
@@ -236,6 +239,7 @@
               title={t.title}
               icon={iconOf(t.icon)}
               member={memberOf(t.assignee_id)}
+              others={othersOf(t.assignee_id, t.helpers)}
               label="{t.title} einplanen"
               drag={dragOf(t.id, true)}
               onopen={() => (picked = picked === t.id ? null : t.id)}
@@ -253,6 +257,7 @@
       title={e.title}
       icon={iconOf(e.icon)}
       member={memberOf(e.assignee_id) ?? undefined}
+      others={othersOf(e.assignee_id, e.helpers)}
       xp={e.xp}
       state={stateOf(e)}
       meta={metaOf(e, withTime)}

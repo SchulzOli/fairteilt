@@ -29,6 +29,7 @@ export type { DeviceRequest } from "./DeviceRequest";
 export type { Escalation } from "./Escalation";
 export type { GoalDto } from "./GoalDto";
 export type { GoalPolicy } from "./GoalPolicy";
+export type { GoogleCode } from "./GoogleCode";
 export type { GoogleLoginRequest } from "./GoogleLoginRequest";
 export type { GoalRequest } from "./GoalRequest";
 export type { GoalResultDto } from "./GoalResultDto";

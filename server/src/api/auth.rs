@@ -159,8 +159,23 @@ pub async fn login(
 #[derive(Deserialize)]
 pub struct GoogleLoginRequest {
     /// The ID token from Google (Credential Manager / Google Identity Services).
-    pub id_token: String,
+    #[serde(default)]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub id_token: Option<String>,
+    /// Desktop app instead: the authorization code from the browser, swapped by the server.
+    #[serde(default)]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub code: Option<GoogleCode>,
     pub device_name: Option<String>,
+}
+
+/// What the desktop app got back on its loopback address (OAuth with PKCE).
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+#[derive(Deserialize)]
+pub struct GoogleCode {
+    pub code: String,
+    pub verifier: String,
+    pub redirect_uri: String,
 }
 
 /// Sign in with Google. Known Google account → its user. Else a user with the same (verified)
@@ -171,9 +186,32 @@ pub async fn google(
     client: ClientKey,
     Json(req): Json<GoogleLoginRequest>,
 ) -> AppResult<(StatusCode, Json<TokenResponse>)> {
-    state.limiter.check(&format!("google:{}", client.0), 30, Duration::from_secs(900))?;
-    let claims = state.google.verify(req.id_token.trim()).await?;
-    let email = claims.email.as_deref().unwrap_or_default().trim().to_lowercase();
+    state.limiter.check(
+        &format!("google:{}", client.0),
+        30,
+        Duration::from_secs(900),
+    )?;
+    let id_token = match (req.id_token, req.code) {
+        (Some(token), _) => token,
+        (None, Some(c)) => {
+            state
+                .google
+                .exchange(c.code.trim(), c.verifier.trim(), c.redirect_uri.trim())
+                .await?
+        }
+        (None, None) => {
+            return Err(AppError::BadRequest(
+                "Es fehlt die Antwort von Google.".into(),
+            ));
+        }
+    };
+    let claims = state.google.verify(id_token.trim()).await?;
+    let email = claims
+        .email
+        .as_deref()
+        .unwrap_or_default()
+        .trim()
+        .to_lowercase();
     let known: Option<(Uuid, Option<String>, String)> =
         sqlx::query_as("SELECT id, email, display_name FROM users WHERE google_sub = $1").bind(&claims.sub).fetch_optional(&state.db).await?;
     if let Some((id, mail, name)) = known {
