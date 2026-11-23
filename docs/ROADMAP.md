@@ -104,7 +104,9 @@ Server-Test und in der App geprüft. Bis M4 zählt der Kalendermonat als Periode
 Anleitung für Einrichtung, Sicherung, Wiederherstellung und Updates: [BETRIEB.md](BETRIEB.md).
 Der Workflow **Server-Image** baut bei jeder Server-Änderung auf `main` das Image
 `ghcr.io/schulzoli/fairteilt-server` (Tags `main`, `sha-<commit>`, Versionen), der Server baut kein
-Rust mehr selbst. `deploy/update.sh` sichert vor jedem Update und kann auf ein älteres Image zurück.
+Rust mehr selbst. Das Image entsteht erst nach grüner CI und nur, wenn sich am Server etwas geändert
+hat; `deploy/update.sh` holt es nachts per Cron (wie bei Linkhaven), sichert vorher und kann auf ein
+älteres Image zurück.
 `deploy/backup.sh` schiebt die nächtliche Sicherung mit restic außer Haus, `deploy/restore.sh --test`
 spielt sie wöchentlich probeweise in eine Wegwerf-Datenbank. Die echte Wiederherstellung sichert
 erst den aktuellen Stand und läuft in einer Transaktion: Eine kaputte Sicherung ändert nichts. Lokal

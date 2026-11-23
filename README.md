@@ -176,7 +176,7 @@ Ausführlich mit Sichern, Wiederherstellen und Zurückgehen: **[docs/BETRIEB.md]
    sudo ./update.sh            # holt das Image aus der CI (Workflow Server-Image) und startet
    ```
 4. Prüfen mit `curl https://fairteilt.oli-tech.eu/health`
-5. Cron: `backup.sh` nachts (mit restic außer Haus), `restore.sh --test` wöchentlich
+5. Cron: `backup.sh` und `update.sh` nachts (Updates kommen so automatisch nach grüner CI), `restore.sh --test` wöchentlich
 
 ## Lizenz
 

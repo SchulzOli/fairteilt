@@ -79,16 +79,17 @@ Alle Befehle mit `sudo`: Repository, Sicherungen und Cron gehören root.
    sichern). Danach muss `curl https://fairteilt.oli-tech.eu/health` mit `"database":true` antworten;
    `sudo docker compose logs api` zeigt „push over FCM enabled“, wenn Push eingerichtet ist.
 
-8. **Sicherung einplanen:** `/etc/cron.d/fairteilt` anlegen (`sudo nano /etc/cron.d/fairteilt`):
+8. **Sicherung und Updates einplanen:** `/etc/cron.d/fairteilt` anlegen (`sudo nano /etc/cron.d/fairteilt`):
 
    ```cron
    30 2 * * * root /opt/fairteilt/deploy/backup.sh >> /var/log/fairteilt-backup.log 2>&1
    15 4 * * 0 root /opt/fairteilt/deploy/restore.sh --test >> /var/log/fairteilt-backup.log 2>&1
+   45 4 * * * root /opt/fairteilt/deploy/update.sh >> /var/log/fairteilt-update.log 2>&1
    ```
 
    Die zweite Zeile spielt sonntags die neueste Sicherung in eine Wegwerf-Datenbank und zählt die
-   Zeilen. So fällt eine kaputte Sicherung auf, bevor man sie braucht. Updates laufen bewusst nicht
-   automatisch: Neue Versionen bringen Migrationen mit, die spielt man lieber selbst ein.
+   Zeilen. So fällt eine kaputte Sicherung auf, bevor man sie braucht. Die dritte holt nachts den
+   neuesten Stand (Abschnitt 4).
 
 ## 2. Sichern
 
@@ -139,17 +140,21 @@ verloren; Handys, die in der Zeit offline waren, schicken ihre Warteschlange dan
 
 ## 4. Aktualisieren
 
-Jeder Push auf `main`, der den Server betrifft, baut im Workflow **Server-Image** ein neues Image
-(`ghcr.io/schulzoli/fairteilt-server`, Tags `main` und `sha-<commit>`, bei `v*`-Tags die Version).
+So kommt eine Änderung auf den Server:
 
-```bash
-cd /opt/fairteilt/deploy && sudo ./update.sh
-```
+1. Push auf `main` → Workflow **CI** prüft alles.
+2. Ist CI grün und hat sich am Server etwas geändert (`crates/core`, `server`, `Cargo.*`,
+   `deploy/Dockerfile`), baut **Server-Image** das Image `ghcr.io/schulzoli/fairteilt-server` neu
+   (Tags `main` und `sha-<commit>`, bei `v*`-Tags zusätzlich die Version). Reine App- oder
+   Doku-Änderungen lassen das Image in Ruhe, der Server startet dann nicht unnötig neu.
+3. Nachts um 4:45 holt [update.sh](../deploy/update.sh) Repository und Image. Ist nichts neu, steht
+   im Protokoll nur „nothing new“. Sonst sichert es zuerst, startet neu (Migrationen laufen beim
+   Start) und wartet, bis `/health` antwortet. Alte Images räumt es weg.
 
-[update.sh](../deploy/update.sh) sichert zuerst, holt Repository und Image, startet neu und wartet,
-bis `/health` antwortet. **Zurück auf eine ältere Version:** `sudo ./update.sh sha-1a2b3c4` (Tag aus der
+Sofort statt nachts: `cd /opt/fairteilt/deploy && sudo ./update.sh`. Protokoll:
+`tail /var/log/fairteilt-update.log`. Nach einer Änderung an `.env` reicht `sudo docker compose up -d`. **Zurück auf eine ältere Version:** `sudo ./update.sh sha-1a2b3c4` (Tag aus der
 Paketliste auf GitHub) setzt `API_IMAGE` in `.env` fest; `sudo ./update.sh main` folgt wieder dem
-neuesten Stand. Hat die neuere Version schon Migrationen eingespielt, die alte Version passt nicht
+neuesten Stand. Solange ein `sha-…` eingetragen ist, bleibt auch das nächtliche Update dabei. Hat die neuere Version schon Migrationen eingespielt, die alte Version passt nicht
 mehr dazu: dann zusätzlich die Sicherung von vor dem Update zurückspielen (Abschnitt 3).
 
 Ist das Paket auf GitHub privat (Einstellung des Pakets), braucht der Server vorher einmal
@@ -165,6 +170,7 @@ In `/opt/fairteilt/deploy` (`.env` ist nur für root lesbar, darum `sudo`):
 | Fehler der API | `sudo docker compose logs --since 1h api` |
 | Kommt der Proxy durch? | `curl -fsS http://127.0.0.1:8791/health`, `journalctl -u caddy -n 50` |
 | Letzte Sicherungen | `tail /var/log/fairteilt-backup.log` |
+| Letzte Updates | `tail /var/log/fairteilt-update.log` |
 | Platz | `df -h`, `docker system df` (alte Images: `docker image prune`) |
 
 ## 6. Familien-Alpha: Abnahme
