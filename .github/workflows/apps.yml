@@ -48,7 +48,7 @@ jobs:
       - name: Android SDK and NDK
         run: |
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37" "ndk;$NDK_VERSION"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37.0" "ndk;$NDK_VERSION"
           echo "NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -112,12 +112,20 @@ jobs:
         run: |
           brew list xcodegen > /dev/null 2>&1 || brew install xcodegen
           pnpm --dir app tauri ios init --ci
+      # `tauri ios build` insists on a development team (signing). Without an Apple account we
+      # build the generated Xcode project for the simulator with signing switched off; its build
+      # phase compiles the Rust part through `tauri ios xcode-script`.
+      - name: Build frontend
+        run: pnpm --dir app build
       - name: Build for the simulator
-        env:
-          APPLE_DEVELOPMENT_TEAM: ${{ secrets.APPLE_DEVELOPMENT_TEAM }}
-        run: pnpm --dir app tauri ios build --debug --target aarch64-sim --ci
+        working-directory: app/src-tauri/gen/apple
+        run: |
+          PROJECT=$(ls -d *.xcodeproj | head -1)
+          SCHEME=$(xcodebuild -list -json -project "$PROJECT" | jq -r '.project.schemes[0]')
+          echo "Building $PROJECT, scheme $SCHEME"
+          xcodebuild -project "$PROJECT" -scheme "$SCHEME" -configuration release             -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' ARCHS=arm64             -derivedDataPath build CODE_SIGNING_ALLOWED=NO build
       - uses: actions/upload-artifact@v5
         with:
           name: fairteilt-ios-simulator
-          path: app/src-tauri/gen/apple/build/**/*.app
-          if-no-files-found: warn
+          path: app/src-tauri/gen/apple/build/Build/Products/*/*.app
+          if-no-files-found: error
