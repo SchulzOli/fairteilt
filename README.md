@@ -172,7 +172,7 @@ Ausführlich mit Sichern, Wiederherstellen und Zurückgehen: **[docs/BETRIEB.md]
    `reverse_proxy 127.0.0.1:8791` (Server nur für Fairteilt: `COMPOSE_PROFILES=caddy`)
 3. Repo nach `/opt/fairteilt` holen, dann in `deploy/`:
    ```bash
-   sudo cp .env.example .env   # POSTGRES_PASSWORD und JWT_SECRET eintragen
+   sudo cp .env.example .env   # POSTGRES_PASSWORD (openssl rand -hex 32) und JWT_SECRET eintragen
    sudo ./update.sh            # holt das Image aus der CI (Workflow Server-Image) und startet
    ```
 4. Prüfen mit `curl https://fairteilt.oli-tech.eu/health`

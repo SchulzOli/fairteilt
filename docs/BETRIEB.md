@@ -54,7 +54,7 @@ Alle Befehle mit `sudo`: Repository, Sicherungen und Cron gehören root.
    sudo git clone https://github.com/SchulzOli/fairteilt.git /opt/fairteilt
    cd /opt/fairteilt/deploy
    sudo cp .env.example .env && sudo chmod 600 .env
-   openssl rand -base64 32   # → POSTGRES_PASSWORD in .env
+   openssl rand -hex 32      # → POSTGRES_PASSWORD in .env (nur hex: steht in einer URL)
    openssl rand -base64 48   # → JWT_SECRET in .env
    sudo nano .env
    ```

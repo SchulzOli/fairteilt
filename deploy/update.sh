@@ -44,7 +44,7 @@ fi
 
 echo "Waiting for the API ..."
 for _ in $(seq 1 30); do
-  if docker compose exec -T api curl -fsS http://localhost:8080/health >/dev/null 2>&1; then
+  if docker compose exec -T api curl -fsS -m 5 http://localhost:8080/health >/dev/null 2>&1; then
     echo "$(date -Is) update ok: ${prebuilt:-built here} (repository ${before:0:7} -> ${after:0:7})"
     docker image prune -f --filter "label=org.opencontainers.image.title=fairteilt-server" >/dev/null || true
     exit 0
