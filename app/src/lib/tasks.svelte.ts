@@ -20,6 +20,8 @@ class TaskStore {
   rooms = $state<RoomDto[]>([]);
   /** Accounts (G, XP, streak) of all members, in member order. */
   accounts = $state<AccountDto[]>([]);
+  /** Unread inbox entries (Postfach). */
+  unread = $state(0);
   /** Running period: race against Krümel and the latest settlements. */
   period = $state<PeriodDto | null>(null);
   loaded = $state(false);
@@ -31,6 +33,7 @@ class TaskStore {
   now = $state(Date.now());
 
   private hid: string | null = null;
+  private member: string | undefined;
   private ws: WebSocket | null = null;
   private retry = 0;
   private retryTimer: ReturnType<typeof setTimeout> | undefined;
@@ -39,10 +42,18 @@ class TaskStore {
   /** Reloads wait until animations (confetti) are over, so cards do not vanish mid-celebration. */
   private holdUntil = 0;
 
-  start(hid: string) {
-    if (this.hid === hid) return;
+  /** `member`: who is looking (a child profile on the tablet has its own inbox and account). */
+  start(hid: string, member?: string) {
+    if (this.hid === hid) {
+      if (member !== this.member) {
+        this.member = member;
+        this.scheduleReload();
+      }
+      return;
+    }
     this.stop();
     this.hid = hid;
+    this.member = member;
     this.clock = setInterval(() => (this.now = Date.now()), 1000);
     // Offline at start: the live channel reconnects and reloads once the server is back.
     void this.load().catch(() => {});
@@ -70,11 +81,12 @@ class TaskStore {
     const hid = this.hid;
     if (!hid) return;
     if (Date.now() < this.holdUntil) return this.scheduleReload();
-    const [tasks, rooms, accounts, period] = await Promise.all([
+    const [tasks, rooms, accounts, period, inbox] = await Promise.all([
       session.request<TaskDto[]>("GET", `/households/${hid}/tasks`),
       session.request<RoomDto[]>("GET", `/households/${hid}/rooms`),
       session.request<AccountDto[]>("GET", `/households/${hid}/accounts`),
       session.request<PeriodDto>("GET", `/households/${hid}/period`),
+      session.request<{ unread: number }>("GET", `/households/${hid}/inbox/unread`),
     ]);
     if (hid !== this.hid) return;
     const before = this.myAccount;
@@ -84,6 +96,7 @@ class TaskStore {
     this.celebrateStreak(before);
     this.celebrateOvertake(this.period, period);
     this.period = period;
+    this.unread = inbox.unread;
     this.loaded = true;
     this.version++;
   }

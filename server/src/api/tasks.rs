@@ -23,6 +23,7 @@ use uuid::Uuid;
 use crate::api::households::membership;
 use crate::api::points::{Ledger, balance, lock_member};
 use crate::api::rooms::{check_icon, planner};
+use crate::inbox::{self, Category, Note};
 use crate::auth::AuthUser;
 use crate::error::{AppError, AppResult};
 use crate::AppState;
@@ -336,6 +337,7 @@ async fn spawn_round(
     due_at: Option<DateTime<Utc>>,
     now: DateTime<Utc>,
     tz: Tz,
+    actor: Option<Uuid>,
 ) -> AppResult<Uuid> {
     #[derive(sqlx::FromRow)]
     struct T {
@@ -403,6 +405,14 @@ async fn spawn_round(
     .bind(template_id)
     .execute(&mut **tx)
     .await?;
+    // Whoever gets it (and did not just pick it themselves) hears about it.
+    if let Some(member) = assignee
+        && Some(member) != actor
+    {
+        let when = due_at.map(|d| format!("Fällig am {}.", d.with_timezone(&tz).format("%d.%m.")));
+        inbox::add(tx, Note::new(member, "assigned", Category::Tasks, format!("Neue Aufgabe für dich: „{}“", t.title)).body_opt(when).about("task", task_id))
+            .await?;
+    }
     Ok(task_id)
 }
 
@@ -489,7 +499,7 @@ pub async fn create_template(
         Some(Cycle { start, due }) => (start, Some(due)),
         None => (now, req.due_at),
     };
-    let task_id = spawn_round(&mut tx, template_id, start, due, now, hh.tz).await?;
+    let task_id = spawn_round(&mut tx, template_id, start, due, now, hh.tz, Some(creator)).await?;
     record_event(&mut tx, task_id, creator, "created", serde_json::json!({})).await?;
     tx.commit().await?;
 
@@ -688,11 +698,21 @@ async fn finish(
     .await?;
     if submitted {
         record_event(tx, task.id, actor, "submitted", serde_json::json!({ "xp": xp })).await?;
+        let who = inbox::name(tx, actor).await?;
+        for reviewer in inbox::reviewers(tx, task.household_id, actor).await? {
+            inbox::add(
+                tx,
+                Note::new(reviewer, "review_requested", Category::Reviews, format!("{who} ist fertig: „{}“", task.title))
+                    .body("Kurz ansehen und bestätigen.")
+                    .about("task", task.id),
+            )
+            .await?;
+        }
         return Ok(Outcome { submitted: true, ..Outcome::default() });
     }
     record_event(tx, task.id, actor, "completed", serde_json::json!({ "xp": xp })).await?;
     let paid = credit(tx, task, actor, xp, None, actor).await?;
-    let next = next_round(tx, task, now, hh).await?;
+    let next = next_round(tx, task, now, hh, Some(actor)).await?;
     Ok(Outcome { xp_awarded: Some(xp), bounty_paid: (paid > 0).then_some(paid), submitted: false, next_task_id: next })
 }
 
@@ -725,14 +745,20 @@ async fn refund_bounties(tx: &mut Transaction<'_, Postgres>, task: &TaskRow, by:
     Ok(())
 }
 
-async fn next_round(tx: &mut Transaction<'_, Postgres>, task: &TaskRow, done_at: DateTime<Utc>, hh: &Household) -> AppResult<Option<Uuid>> {
+async fn next_round(
+    tx: &mut Transaction<'_, Postgres>,
+    task: &TaskRow,
+    done_at: DateTime<Utc>,
+    hh: &Household,
+    actor: Option<Uuid>,
+) -> AppResult<Option<Uuid>> {
     let Some(template_id) = task.template_id else { return Ok(None) };
     let schedule: serde_json::Value =
         sqlx::query_scalar("SELECT schedule FROM task_templates WHERE id = $1 AND NOT archived").bind(template_id).fetch_one(&mut **tx).await?;
     let schedule: Schedule = serde_json::from_value(schedule).unwrap_or(Schedule::Once);
     let prev_due = task.due_at.unwrap_or(done_at);
     match schedule.next_cycle(done_at, prev_due, hh.tz) {
-        Some(c) => Ok(Some(spawn_round(tx, template_id, c.start, Some(c.due), Utc::now(), hh.tz).await?)),
+        Some(c) => Ok(Some(spawn_round(tx, template_id, c.start, Some(c.due), Utc::now(), hh.tz, actor).await?)),
         None => Ok(None),
     }
 }
@@ -798,7 +824,7 @@ pub async fn action(
                 .execute(&mut *tx)
                 .await?;
             refund_bounties(&mut tx, &task, me).await?;
-            outcome.next_task_id = next_round(&mut tx, &task, now, &hh).await?;
+            outcome.next_task_id = next_round(&mut tx, &task, now, &hh, Some(me)).await?;
         }
         TaskCommand::Done => {
             status.apply(TaskAction::Done, false).map_err(|_| invalid())?;
@@ -980,8 +1006,17 @@ pub async fn review(
         .await?;
         record_event(&mut tx, task_id, me, "approved", serde_json::json!({ "xp": xp, "note": note })).await?;
         let paid = credit(&mut tx, &task, completer, xp, note.as_deref(), me).await?;
+        let who = inbox::name(&mut tx, me).await?;
+        let g = if kind_parse(&task.kind).credits_balance() { xp } else { 0 } + paid;
+        inbox::add(
+            &mut tx,
+            Note::new(completer, "approved", Category::Reviews, format!("„{}“ bestätigt · +{xp} XP{}", task.title, if g > 0 { format!(" · +{g} G") } else { String::new() }))
+                .body(note.clone().map_or_else(|| format!("von {who}"), |n| format!("„{n}“ – {who}")))
+                .about("task", task_id),
+        )
+        .await?;
         // The next round starts when the work was done, not when it was confirmed.
-        let next = next_round(&mut tx, &task, done_at, &hh).await?;
+        let next = next_round(&mut tx, &task, done_at, &hh, Some(completer)).await?;
         outcome = Outcome { xp_awarded: Some(xp), bounty_paid: (paid > 0).then_some(paid), submitted: false, next_task_id: next };
         let g = if kind_parse(&task.kind).credits_balance() { xp } else { 0 } + paid;
         serde_json::json!({
@@ -999,6 +1034,14 @@ pub async fn review(
         .execute(&mut *tx)
         .await?;
         record_event(&mut tx, task_id, me, "rejected", serde_json::json!({ "note": note })).await?;
+        let who = inbox::name(&mut tx, me).await?;
+        inbox::add(
+            &mut tx,
+            Note::new(completer, "returned", Category::Reviews, format!("„{}“ bitte nochmal anschauen", task.title))
+                .body(note.clone().map_or_else(|| format!("{who} hat sie zurückgegeben."), |n| format!("„{n}“ – {who}")))
+                .about("task", task_id),
+        )
+        .await?;
         serde_json::json!({ "type": "returned", "member": completer, "by": me, "task": task.title, "note": note })
     };
     tx.commit().await?;
@@ -1048,6 +1091,14 @@ pub async fn pledge(
         .await?;
     Ledger { household: hid, by: me }.book(&mut tx, me, LedgerDelta::bounty_hold(req.amount), "task", task_id, None).await?;
     record_event(&mut tx, task_id, me, "bounty", serde_json::json!({ "amount": req.amount })).await?;
+    if let Some(assignee) = task.assignee_id {
+        let who = inbox::name(&mut tx, me).await?;
+        inbox::add(
+            &mut tx,
+            Note::new(assignee, "bounty", Category::Tasks, format!("Bonus auf „{}“: +{} G", task.title, req.amount)).body(format!("von {who}")).about("task", task_id),
+        )
+        .await?;
+    }
     tx.commit().await?;
     state.live.notify(hid, r#"{"type":"tasks_changed"}"#);
     state.live.notify(hid, r#"{"type":"points_changed"}"#);

@@ -8,15 +8,16 @@ im Familienalltag nutzbar (Familien-Alpha). Umfang grob: S / M / L.
 
 ## Nächste Schritte
 
-Erledigt: CI, TypeScript-Typen aus `punkte-core` und Server, Design-Grundlage in der App, **M1**, **M2**, **M3**, **M4**.
+Erledigt: CI, TypeScript-Typen aus `punkte-core` und Server, Design-Grundlage in der App, **M1**, **M2**, **M3**, **M4**, **M5** (Push-Empfang am Handy folgt mit dem Firebase-Projekt).
 
 | Wer | Schritt |
 | --- | --- |
 | Code | Familien-Alpha: Deployment auf Hetzner durchspielen, signierte APK, Backup und Wiederherstellung testen |
-| Code | M5: Erinnerungen und Push (lokal beim Kippen auf „fällig“, Postfach, FCM), Warnung vor Monatsende |
+| Betrieb | Firebase-Projekt anlegen (Android-App `eu.olitech.fairteilt`): `google-services.json` und Dienstkonto-Schlüssel, siehe README „Push einrichten“ |
+| Code | Danach: Push-Empfang in der Android-App (FCM-Token anmelden), auf einem Gerät prüfen |
 | Entscheidung | Klang auswählen (Klang-Spielplatz auf der Roadmap-Seite). Krümel, Serie, Schritte und Tiere sind entschieden |
 | Betrieb | Hetzner-Cloud-Server bestellen, DNS `fairteilt.oli-tech.eu` setzen (bis zur Alpha) |
-| Betrieb | Tablet für die Wandanzeige festlegen. Firebase vor M5, Apple-Developer-Account vor M7 |
+| Betrieb | Tablet für die Wandanzeige festlegen. Apple-Developer-Account vor M7 |
 
 ## Meilensteine
 
@@ -28,7 +29,7 @@ Erledigt: CI, TypeScript-Typen aus `punkte-core` und Server, Design-Grundlage in
 | ✅ | **M3 Punkte & Bestätigung** | Kind erledigt, Elternteil bestätigt mit angepassten Punkten, die Serie zählt hoch | M |
 | ▶ | **α Familien-Alpha** | Läuft auf Hetzner mit Backups, signierte APK, zwei Wochen Alltag ohne Datenverlust | S |
 | ✅ | **M4 Ausgleich, Familienziel & Belohnungen** | Monatsabschluss läuft automatisch, Rennen gegen Krümel entscheidet über die Familienbelohnung | M |
-| | **M5 Erinnerungen & Push** | Lokale Erinnerungen beim Kippen auf „fällig“, Postfach, Push über FCM | M |
+| ✅ | **M5 Erinnerungen & Push** | Lokale Erinnerungen beim Kippen auf „fällig“, Postfach, Push über FCM | M |
 | | **M6 Plan & Wandanzeige** | Kalender, Board, eigene Ansichten, Tablet-Wandanzeige mit PIN-Abhaken | L |
 | | **M7 Offline & Stores** | Offline-Warteschlange, Play Store, iOS über CI, Datenexport und Löschen | L |
 | | **M8 Haushaltsbuch** | Ausgaben, Budgets und Belege in denselben Haushalten | L |
@@ -117,6 +118,21 @@ mit M5; Abwesenheiten werden berücksichtigt, haben aber noch keine Oberfläche.
 - Periodenabschluss mit Entwurf, Freigabe, Übertrag und Aufholaufgaben
 - Familienziel pro Monat, Krümel rückt gleichmäßig bis zum Ziel am Monatsende vor
 - Belohnungskatalog inklusive Familienbelohnung
+
+### M5 Erinnerungen & Push
+
+**Abgeschlossen am 23.11.2026** (ohne Push-Empfang am Gerät, der braucht das Firebase-Projekt).
+Server: Postfach für alles, was jemanden betrifft (neue Aufgabe, bitte bestätigen, bestätigt oder
+zurückgegeben, Bonus, Guthaben, Übertragung und Belohnung zur Freigabe, Abschluss fertig und
+freigegeben, Aufholaufgabe, Familienziel, Zurücknahme). Erinnerungen per Job alle 5 Minuten: „bald
+fällig“ bei 75 % der Runde, „überfällig“, nach einem Tag an die Admins; Warnung 48 Stunden vor dem
+Abschluss an alle, die hinter ihrem Anteil liegen. Push über FCM (HTTP v1, Dienstkonto) mit Kategorien
+je Person und Ruhezeiten; tote Tokens werden vergessen. Ohne Dienstkonto läuft alles außer Push. App:
+Postfach mit Glocke und Zähler, Einstellungen (Push-Kategorien, Ruhezeit), lokale Erinnerungen auf dem
+Gerät über das offizielle Tauri-Plugin: „wird bald fällig“ und die Nachfrage bei gestarteten Aufgaben
+mit den Knöpfen Erledigt / +10 Min. / Später (am Handy geplant, am Rechner solange die App läuft).
+Server-Seite als Test geprüft (auch Push gegen einen nachgebauten FCM-Endpunkt), Postfach in der App.
+Lokale Benachrichtigungen und Knöpfe sind gebaut, aber noch nicht auf einem Gerät ausprobiert.
 
 ## Design (Kurzfassung, Details in KONZEPT §7.5)
 

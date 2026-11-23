@@ -11,6 +11,8 @@ pub struct Config {
     pub jwt_secret: String,
     /// Behind a reverse proxy (Caddy): trust `X-Forwarded-For` for rate limiting.
     pub trust_proxy: bool,
+    /// Path to the Firebase service account JSON (push over FCM). Unset = no push.
+    pub fcm_service_account: Option<String>,
 }
 
 impl Config {
@@ -32,6 +34,7 @@ impl Config {
             bail!("JWT_SECRET must be at least 32 characters (e.g. `openssl rand -base64 48`)");
         }
         let trust_proxy = matches!(std::env::var("TRUST_PROXY").as_deref(), Ok("1") | Ok("true"));
-        Ok(Self { database_url, bind_addr, cors_origins, jwt_secret, trust_proxy })
+        let fcm_service_account = std::env::var("FCM_SERVICE_ACCOUNT").ok().filter(|p| !p.trim().is_empty());
+        Ok(Self { database_url, bind_addr, cors_origins, jwt_secret, trust_proxy, fcm_service_account })
     }
 }

@@ -60,7 +60,12 @@ pub fn router(state: AppState, cors_origins: &[String]) -> Router {
         .route("/households/{id}/rewards/{rid}", patch(api::rewards::update).delete(api::rewards::archive))
         .route("/rewards/{rid}/redeem", post(api::rewards::redeem))
         .route("/households/{id}/redemptions", get(api::rewards::redemptions))
-        .route("/redemptions/{xid}/decide", post(api::rewards::decide));
+        .route("/redemptions/{xid}/decide", post(api::rewards::decide))
+        .route("/households/{id}/inbox", get(api::inbox::list))
+        .route("/households/{id}/inbox/unread", get(api::inbox::unread))
+        .route("/households/{id}/inbox/read", post(api::inbox::mark_read))
+        .route("/households/{id}/notification-prefs", get(api::inbox::prefs).put(api::inbox::update_prefs))
+        .route("/devices", post(api::inbox::register_device).delete(api::inbox::unregister_device));
 
     Router::new()
         .route("/health", get(health))

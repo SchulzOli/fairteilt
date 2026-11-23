@@ -13,6 +13,7 @@ use uuid::Uuid;
 use crate::api::households::membership;
 use crate::api::points::{Ledger, balance, lock_member};
 use crate::auth::AuthUser;
+use crate::inbox::{self, Category, Note};
 use crate::error::{AppError, AppResult};
 use crate::AppState;
 
@@ -266,6 +267,14 @@ pub async fn redeem(State(state): State<AppState>, user: AuthUser, Path(reward_i
         .await?;
     let delta = LedgerDelta { kind: LedgerKind::RewardRedeem, contribution: 0, balance: -cost };
     Ledger { household: household_id, by: me }.book(&mut tx, me, delta, "redemption", id, None).await?;
+    if needs_approval {
+        let who = inbox::name(&mut tx, me).await?;
+        let title: String = sqlx::query_scalar("SELECT title FROM rewards WHERE id = $1").bind(reward_id).fetch_one(&mut *tx).await?;
+        for admin in inbox::members(&mut tx, household_id, true, Some(me)).await? {
+            inbox::add(&mut tx, Note::new(admin, "redemption_request", Category::Points, format!("{who} möchte „{title}“ einlösen")).body(format!("{cost} G")).about("redemption", id))
+                .await?;
+        }
+    }
     tx.commit().await?;
     state.live.notify(household_id, r#"{"type":"points_changed"}"#);
     state.live.notify(household_id, r#"{"type":"rewards_changed"}"#);
@@ -333,6 +342,16 @@ pub async fn decide(
         let back = LedgerDelta { kind: LedgerKind::RewardRedeem, contribution: 0, balance: cost };
         Ledger { household: household_id, by: me }.book(&mut tx, member, back, "redemption", redemption_id, Some("zurück")).await?;
     }
+    let title: String = sqlx::query_scalar("SELECT r.title FROM reward_redemptions x JOIN rewards r ON r.id = x.reward_id WHERE x.id = $1")
+        .bind(redemption_id)
+        .fetch_one(&mut *tx)
+        .await?;
+    let note = if req.approve {
+        Note::new(member, "redemption_approved", Category::Points, format!("„{title}“ ist freigegeben")).body("Viel Spaß!")
+    } else {
+        Note::new(member, "redemption_rejected", Category::Points, format!("„{title}“ diesmal nicht")).body(format!("Deine {cost} G sind wieder da."))
+    };
+    inbox::add(&mut tx, note.about("redemption", redemption_id)).await?;
     tx.commit().await?;
     let r = load(&state, redemption_id).await?;
     state.live.notify(household_id, r#"{"type":"points_changed"}"#);

@@ -1,4 +1,4 @@
-// Per-device preferences (KONZEPT §7.5): theme, sounds, vibration.
+// Per-device preferences (KONZEPT §7.5): theme, sounds, vibration, local reminders.
 // Stored locally on the device, not on the server.
 import { playSound, type SoundId } from "./sound";
 
@@ -10,10 +10,11 @@ interface Stored {
   theme: Theme;
   sound: boolean;
   vibration: boolean;
+  reminders: boolean;
 }
 
 function load(): Stored {
-  const fallback: Stored = { theme: "system", sound: true, vibration: true };
+  const fallback: Stored = { theme: "system", sound: true, vibration: true, reminders: true };
   try {
     const raw = localStorage.getItem(KEY);
     return raw ? { ...fallback, ...JSON.parse(raw) } : fallback;
@@ -26,17 +27,20 @@ class Settings {
   theme = $state<Theme>("system");
   sound = $state(true);
   vibration = $state(true);
+  /** Reminders on this device (bald fällig, check-in). */
+  reminders = $state(true);
 
   init() {
     const s = load();
     this.theme = s.theme;
     this.sound = s.sound;
     this.vibration = s.vibration;
+    this.reminders = s.reminders;
   }
 
   save() {
     try {
-      localStorage.setItem(KEY, JSON.stringify({ theme: this.theme, sound: this.sound, vibration: this.vibration }));
+      localStorage.setItem(KEY, JSON.stringify({ theme: this.theme, sound: this.sound, vibration: this.vibration, reminders: this.reminders }));
     } catch {
       /* storage unavailable: keep in memory */
     }

@@ -52,6 +52,10 @@
       <h1 class="page-title">Hallo {meName}</h1>
     </div>
   </div>
+  <a class="bell" href="/postfach" aria-label="Postfach{taskStore.unread ? `, ${taskStore.unread} neu` : ''}">
+    <Icon name="bell" size={20} />
+    {#if taskStore.unread}<span class="badge">{taskStore.unread > 9 ? "9+" : taskStore.unread}</span>{/if}
+  </a>
   <span class="streak" class:cold={!streak.today}
     title={streak.today ? "Serie: Tage mit mindestens einer erledigten Aufgabe" : "Heute noch eine Aufgabe, dann geht die Serie weiter"}>
     <Icon name="flame" size={16} />{streak.days} {streak.days === 1 ? "Tag" : "Tage"}
@@ -177,6 +181,35 @@
     font-weight: 700;
     font-size: 0.85rem;
     white-space: nowrap;
+  }
+
+  .bell {
+    position: relative;
+    margin-left: auto;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    color: var(--fg);
+    background: var(--surface);
+    border: 1px solid var(--line);
+  }
+
+  .badge {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 4px;
+    border-radius: 9px;
+    background: var(--over);
+    color: #fff;
+    font-size: 0.7rem;
+    font-weight: 800;
+    display: grid;
+    place-items: center;
   }
 
   .streak.cold {

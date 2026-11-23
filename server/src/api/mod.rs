@@ -2,6 +2,7 @@
 
 pub mod auth;
 pub mod households;
+pub mod inbox;
 pub mod members;
 pub mod period;
 pub mod points;

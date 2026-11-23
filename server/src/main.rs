@@ -25,6 +25,13 @@ async fn main() -> anyhow::Result<()> {
 
     let mut state = AppState::new(db, config.jwt_secret.as_bytes());
     state.trust_proxy = config.trust_proxy;
+    match &config.fcm_service_account {
+        Some(path) => {
+            state.push = Some(std::sync::Arc::new(punkte_server::push::Fcm::from_service_account_file(path)?));
+            tracing::info!("push over FCM enabled");
+        }
+        None => tracing::info!("FCM_SERVICE_ACCOUNT not set: no push, inbox only"),
+    }
     let scheduler = tokio::spawn(scheduler::run(state.clone()));
 
     let listener = TcpListener::bind(&config.bind_addr)

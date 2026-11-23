@@ -5,8 +5,10 @@ pub mod api;
 pub mod auth;
 pub mod config;
 pub mod error;
+pub mod inbox;
 pub mod live;
 pub mod period;
+pub mod push;
 pub mod ratelimit;
 pub mod routes;
 pub mod scheduler;
@@ -22,6 +24,8 @@ pub struct AppState {
     pub live: Arc<live::Hub>,
     /// Take the client address from `X-Forwarded-For` (only behind a trusted proxy).
     pub trust_proxy: bool,
+    /// Push over FCM; None = not configured (inbox and live updates only).
+    pub push: Option<Arc<push::Fcm>>,
 }
 
 impl AppState {
@@ -32,6 +36,7 @@ impl AppState {
             limiter: Arc::new(ratelimit::RateLimiter::default()),
             live: Arc::new(live::Hub::default()),
             trust_proxy: false,
+            push: None,
         }
     }
 }

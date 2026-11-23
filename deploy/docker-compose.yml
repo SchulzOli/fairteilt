@@ -32,6 +32,11 @@ services:
       TRUST_PROXY: "1"
       CORS_ORIGINS: ${CORS_ORIGINS:-http://tauri.localhost,https://tauri.localhost,tauri://localhost}
       RUST_LOG: ${RUST_LOG:-punkte_server=info,tower_http=info}
+      # Push over FCM: path of the Firebase service account inside the container (empty = no push)
+      FCM_SERVICE_ACCOUNT: ${FCM_SERVICE_ACCOUNT:-}
+    volumes:
+      # Put firebase-service-account.json into deploy/secrets/ (never commit it)
+      - ./secrets:/run/secrets:ro
     depends_on:
       db:
         condition: service_healthy

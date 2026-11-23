@@ -52,7 +52,7 @@ pnpm --dir app install; pnpm --dir app tauri dev
 In der App unter **Mehr → Server** `http://localhost:8080` eintragen und „Verbindung testen“.
 Die Vorschau „Abschluss ausprobieren“ unter Regeln rechnet den Ausgleich offline mit `punkte-core` (im Tauri-Kern).
 
-### API (Stand M4)
+### API (Stand M5)
 
 | Route | Zweck |
 | --- | --- |
@@ -85,7 +85,27 @@ Die Vorschau „Abschluss ausprobieren“ unter Regeln rechnet den Ausgleich off
 | `GET` · `PUT /api/v1/households/{id}/rules` · `PUT …/goal` | Regeln des Haushalts (Punkte, Abschluss, Familienziel); Familienziel allein |
 | `GET` · `POST /api/v1/households/{id}/rewards` · `PATCH` · `DELETE …/rewards/{rid}` | Belohnungskatalog |
 | `POST /api/v1/rewards/{rid}/redeem` · `GET …/households/{id}/redemptions` · `POST /api/v1/redemptions/{xid}/decide` | Einlösen, Freigabe |
+| `GET /api/v1/households/{id}/inbox` · `…/inbox/unread` · `POST …/inbox/read` | Postfach, ungelesene, als gelesen markieren |
+| `GET` · `PUT /api/v1/households/{id}/notification-prefs` | Push-Kategorien und Ruhezeit je Person |
+| `POST` · `DELETE /api/v1/devices` | Push-Token des Geräts an- und abmelden |
 | `GET /api/v1/households/{id}/live?token=` | WebSocket: `tasks_changed` / `rooms_changed` / `points_changed`; persönlich (`member`): `credited`, `returned`, `received`, `transfer_declined`, `reversed` |
+
+## Push einrichten (Firebase)
+
+Ohne Firebase funktioniert alles außer Push aufs Handy: Postfach, Live-Updates und lokale
+Erinnerungen der App. Für Push:
+
+1. In der [Firebase-Konsole](https://console.firebase.google.com/) ein Projekt anlegen und eine
+   Android-App mit dem Paketnamen `eu.olitech.fairteilt` hinzufügen.
+2. `google-services.json` herunterladen und nach `app/src-tauri/gen/android/app/` legen
+   (steht in `.gitignore`, kommt nie ins Repo).
+3. Unter Projekteinstellungen → Dienstkonten einen privaten Schlüssel erzeugen und als
+   `deploy/secrets/firebase-service-account.json` auf den Server legen; in `deploy/.env`
+   `FCM_SERVICE_ACCOUNT=/run/secrets/firebase-service-account.json` setzen. Lokal genügt
+   `$env:FCM_SERVICE_ACCOUNT = '<Pfad>'` vor `cargo run`.
+
+Der Server meldet beim Start „push over FCM enabled“. Der Push-Empfang in der Android-App
+(Token an `POST /api/v1/devices` melden) wird eingebaut, sobald `google-services.json` vorliegt.
 
 ## App-Icon
 

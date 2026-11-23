@@ -8,6 +8,7 @@
   import CheckIn from "$lib/CheckIn.svelte";
   import NoticeBar from "$lib/NoticeBar.svelte";
   import { taskStore } from "$lib/tasks.svelte";
+  import * as reminders from "$lib/reminders";
 
   let { children } = $props();
 
@@ -33,8 +34,32 @@
   // Tasks and rooms of the active household, live over the WebSocket.
   $effect(() => {
     const hid = session.status === "ready" ? session.membership?.household_id : undefined;
-    if (hid) taskStore.start(hid);
+    if (hid) taskStore.start(hid, session.membership?.membership_id);
     else taskStore.stop();
+  });
+
+  // Local reminders for my own tasks (bald fällig, check-in), planned after every reload.
+  $effect(() => {
+    void taskStore.version;
+    const me = session.membership?.membership_id;
+    if (settings.reminders && session.status === "ready" && !session.profile) void reminders.sync(taskStore.tasks, me);
+    else void reminders.clear();
+  });
+
+  // Buttons on a reminder: like the in-app check-in; a tap opens the task.
+  reminders.setActionHandler(async (actionId, taskId) => {
+    try {
+      if (actionId === "snooze") await taskStore.action(taskId, "snooze", 10);
+      else if (actionId === "later") await taskStore.action(taskId, "pause");
+      else if (actionId === "done") {
+        const t = taskStore.tasks.find((x) => x.id === taskId);
+        const open = t?.steps.filter((s) => s.done_at === null) ?? [];
+        if (open.length === 0) await taskStore.action(taskId, "done");
+        for (const s of open) await taskStore.checkStep(taskId, s.id);
+      } else void goto(`/aufgabe/${taskId}`);
+    } catch {
+      void goto(`/aufgabe/${taskId}`);
+    }
   });
 
   const tabs: { href: string; label: string; icon: IconName }[] = [

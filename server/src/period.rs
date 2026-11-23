@@ -17,6 +17,7 @@ use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use crate::api::tasks::{Household, household};
+use crate::inbox::{self, Category, Note};
 use crate::error::{AppError, AppResult};
 use crate::AppState;
 
@@ -102,6 +103,12 @@ pub async fn ensure_period(db: &PgPool, household_id: Uuid) -> AppResult<PeriodR
         .execute(&mut *tx)
         .await?;
     schedule(&mut tx, "close_period", serde_json::json!({ "period_id": period.id }), end).await?;
+    if let Some(hours) = policy.warn_before_end_hours {
+        let at = end - Duration::hours(i64::from(hours));
+        if at > now {
+            schedule(&mut tx, "warn_period", serde_json::json!({ "period_id": period.id }), at).await?;
+        }
+    }
     tx.commit().await?;
     Ok(period)
 }
@@ -196,6 +203,14 @@ pub async fn check_goal(db: &PgPool, household_id: Uuid) -> AppResult<(PeriodRow
             status = result;
             decided_at = Some(at);
             decided_now = Some(result);
+            let mut conn = db.acquire().await?;
+            let (title, body) = match result {
+                RaceStatus::Won => ("Geschafft! Ihr habt Krümel geschlagen".to_string(), format!("Familienbelohnung: {}", g.reward)),
+                _ => ("Krümel war diesmal schneller".to_string(), "Nächste Runde, neues Glück.".to_string()),
+            };
+            for m in inbox::members(&mut conn, household_id, false, None).await? {
+                inbox::add(&mut conn, Note::new(m, "goal", Category::Period, title.clone()).body(body.clone())).await?;
+            }
         }
     }
     let goal = GoalDto { target: g.target, reward: g.reward, family_xp: family, krumel_xp: krumel, status, decided_at };
@@ -251,7 +266,15 @@ pub async fn close_period(db: &PgPool, period_id: Uuid) -> AppResult<Option<Uuid
     let hid = period.household_id;
     let hh = household(db, hid).await?;
     let (policy, _) = period_policy(db, hid).await?;
+    let inputs = period_inputs(db, &period, &hh).await?;
+    let result = settle(&policy, &inputs);
+    let family: i64 = result.total_contribution;
+    close_tx(db, &period, &policy, &result, family).await
+}
 
+/// Per-member input for the settlement of `period` (XP so far, carry, availability).
+async fn period_inputs(db: &PgPool, period: &PeriodRow, hh: &Household) -> AppResult<Vec<MemberPeriodInput>> {
+    let hid = period.household_id;
     #[derive(sqlx::FromRow)]
     struct Member {
         id: Uuid,
@@ -280,15 +303,23 @@ pub async fn close_period(db: &PgPool, period_id: Uuid) -> AppResult<Option<Uuid
         inputs.push(MemberPeriodInput {
             member_id: m.id,
             weight: m.weight,
-            availability: availability(db, m.id, &period, &hh).await?,
+            availability: availability(db, m.id, period, hh).await?,
             contribution: m.contribution,
             carry_in: m.carry_in,
             quota: None,
         });
     }
-    let result = settle(&policy, &inputs);
-    let family: i64 = result.total_contribution;
+    Ok(inputs)
+}
 
+async fn close_tx(
+    db: &PgPool,
+    period: &PeriodRow,
+    policy: &PeriodPolicy,
+    result: &punkte_core::Settlement,
+    family: i64,
+) -> AppResult<Option<Uuid>> {
+    let hid = period.household_id;
     let mut tx = db.begin().await?;
     let still_running: Option<String> =
         sqlx::query_scalar("SELECT status FROM periods WHERE id = $1 FOR UPDATE").bind(period.id).fetch_optional(&mut *tx).await?;
@@ -300,7 +331,7 @@ pub async fn close_period(db: &PgPool, period_id: Uuid) -> AppResult<Option<Uuid
     sqlx::query("INSERT INTO settlements (id, period_id, policy, auto_approve_at) VALUES ($1, $2, $3, $4)")
         .bind(settlement_id)
         .bind(period.id)
-        .bind(serde_json::to_value(&policy).map_err(anyhow::Error::from)?)
+        .bind(serde_json::to_value(policy).map_err(anyhow::Error::from)?)
         .bind(auto_at)
         .execute(&mut *tx)
         .await?;
@@ -334,6 +365,11 @@ pub async fn close_period(db: &PgPool, period_id: Uuid) -> AppResult<Option<Uuid
     sqlx::query("UPDATE periods SET status = 'settling' WHERE id = $1").bind(period.id).execute(&mut *tx).await?;
     if let Some(at) = auto_at {
         schedule(&mut tx, "approve_settlement", serde_json::json!({ "settlement_id": settlement_id }), at).await?;
+    }
+    for admin in inbox::members(&mut tx, hid, true, None).await? {
+        let body = if auto_at.is_some() { "Ansehen und freigeben, sonst geschieht das automatisch." } else { "Ansehen und freigeben." };
+        inbox::add(&mut tx, Note::new(admin, "settlement_draft", Category::Period, "Der Abschluss ist fertig").body(body).about("settlement", settlement_id))
+            .await?;
     }
     tx.commit().await?;
     ensure_period(db, hid).await?;
@@ -380,6 +416,10 @@ pub async fn approve_settlement(db: &PgPool, settlement_id: Uuid, by: Option<Uui
         if penalty > 0 {
             catch_up_tasks(&mut tx, hid, member, penalty, settlement_id, &hh).await?;
         }
+    }
+    for m in inbox::members(&mut tx, hid, false, by).await? {
+        inbox::add(&mut tx, Note::new(m, "settlement_approved", Category::Period, "Der Abschluss ist freigegeben").body(note.clone()).about("settlement", settlement_id))
+            .await?;
     }
     sqlx::query("UPDATE settlements SET status = 'approved', approved_by = $2, approved_at = now() WHERE id = $1")
         .bind(settlement_id)
@@ -440,13 +480,14 @@ async fn catch_up_tasks(
     let picked = pick_penalty_tasks(due, &options, 5);
     if picked.is_empty() {
         let points = due.clamp(hh.policy.task_min, hh.policy.task_max);
+        let task_id = Uuid::new_v4();
         sqlx::query(
             "INSERT INTO tasks (id, household_id, title, description, icon, kind, status, assignee_id, due_at, cycle_start,
                                 points_min, points_default, points_max, settlement_id)
              VALUES ($1, $2, 'Aufholaufgabe', 'Was genau, besprecht ihr gemeinsam.', 'star', 'penalty', 'claimed', $3, $4, $5,
                      $6, $6, $6, $7)",
         )
-        .bind(Uuid::new_v4())
+        .bind(task_id)
         .bind(household)
         .bind(member)
         .bind(due_at)
@@ -455,6 +496,8 @@ async fn catch_up_tasks(
         .bind(settlement_id)
         .execute(&mut **tx)
         .await?;
+        inbox::add(tx, Note::new(member, "catch_up", Category::Tasks, "Neue Aufholaufgabe").body("Was genau, besprecht ihr gemeinsam.").about("task", task_id))
+            .await?;
         return Ok(());
     }
     for template in picked {
@@ -481,6 +524,42 @@ async fn catch_up_tasks(
         .bind(template)
         .execute(&mut **tx)
         .await?;
+        let title: String = sqlx::query_scalar("SELECT title FROM tasks WHERE id = $1").bind(task_id).fetch_one(&mut **tx).await?;
+        inbox::add(tx, Note::new(member, "catch_up", Category::Tasks, format!("Aufholaufgabe: „{title}“")).body("Fällig in einer Woche.").about("task", task_id))
+            .await?;
     }
     Ok(())
+}
+
+/// Warning before the period ends (KONZEPT §5.3): members clearly behind their share hear how
+/// many XP they are missing. Nothing happens if the period is no longer running.
+pub async fn warn_period(db: &PgPool, period_id: Uuid) -> AppResult<usize> {
+    let Some(period) = sqlx::query_as::<_, PeriodRow>("SELECT id, household_id, starts_at, ends_at, status FROM periods WHERE id = $1")
+        .bind(period_id)
+        .fetch_optional(db)
+        .await?
+    else {
+        return Ok(0);
+    };
+    if period.status != "running" {
+        return Ok(0);
+    }
+    let hh = household(db, period.household_id).await?;
+    let (policy, _) = period_policy(db, period.household_id).await?;
+    let result = settle(&policy, &period_inputs(db, &period, &hh).await?);
+    let hours = (period.ends_at - Utc::now()).num_hours().max(1);
+    let left = if hours >= 36 { format!("Noch {} Tage", (hours + 12) / 24) } else { format!("Noch {hours} Stunden") };
+    let mut conn = db.acquire().await?;
+    let mut n = 0;
+    for line in result.lines.iter().filter(|l| l.outcome == punkte_core::Outcome::Deficit) {
+        let missing = -line.deviation;
+        inbox::add(
+            &mut conn,
+            Note::new(line.member_id, "period_warning", Category::Period, format!("{left} bis zum Abschluss"))
+                .body(format!("Dir fehlen etwa {missing} XP bis zu deinem Anteil.")),
+        )
+        .await?;
+        n += 1;
+    }
+    Ok(n)
 }

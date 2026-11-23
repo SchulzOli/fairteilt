@@ -391,7 +391,7 @@ Periodenabschluss. Kein zusätzlicher Dienst nötig, mehrere Instanzen wären sp
 | `memberships` | id, household_id, user_id, role, weight, color, active |
 | `invites` | id, household_id, code_hash, role, expires_at, used_by |
 | `sessions` | id, user_id, device_name, refresh_hash, expires_at, revoked_at |
-| `devices` | id, user_id, platform, push_token, push_provider |
+| `devices` | id, user_id, platform, push_provider, push_token (eindeutig), last_seen_at |
 | `rooms` | id, household_id, name, icon, color, position |
 | `task_templates` | id, household_id, title, kind, points_min/default/max, schedule (jsonb), step_order, assignment (jsonb), approval, reminders (jsonb) |
 | `tasks` | id, household_id, template_id, room_id, title, icon, kind, status (+ `in_progress`), assignee_id, cycle_start, due_at, scheduled_start/end, started_at, remind_at, points_* (Kopie), completed_by, completed_at, approved_by, approved_at, review_note, version |
@@ -404,10 +404,10 @@ Periodenabschluss. Kein zusätzlicher Dienst nötig, mehrere Instanzen wären sp
 | `family_goals` | period_id, target, reward, boost_percent, status (running/won/lost), decided_at |
 | `settlements` / `settlement_lines` | Abrechnung je Periode und Mitglied (Ziel, Leistung, Abweichung, Folge), auto_approve_at; Aufholaufgaben verweisen per `tasks.settlement_id` |
 | `absences` | member_id, from, to, reason |
+| `notifications` / `notification_prefs` | Postfach (Kategorie, Bezug, gelesen, Push gesendet); Push-Kategorien und Ruhezeit je Mitglied |
 | `rewards` / `reward_redemptions` | Katalog (Preis, Freigabe, Bestand, Abkühlzeit) und Einlösungen (Preis, Status, Entscheidung) |
 | `boards` / `board_items` | Canvas: Zonen, Karten (task_id), Position, Größe |
 | `saved_views` | owner_id, shared, filter (jsonb), layout, sort |
-| `notification_prefs` | member_id, quiet_hours, channels (jsonb), digest_time |
 | `jobs` | id, kind, run_at, payload, attempts, locked_until |
 
 ---

@@ -14,6 +14,7 @@ use uuid::Uuid;
 
 use crate::api::households::membership;
 use crate::api::tasks::household;
+use crate::inbox::{self, Category, Note};
 use crate::auth::AuthUser;
 use crate::error::{AppError, AppResult};
 use crate::AppState;
@@ -279,6 +280,14 @@ pub async fn reverse(
     let g_back = g.min(have.max(0));
     let delta = LedgerDelta { kind: LedgerKind::ManualAdjust, contribution: -xp, balance: -g_back };
     Ledger { household: household_id, by: me }.book(&mut tx, member, delta, "ledger", entry_id, Some(note)).await?;
+    let who = inbox::name(&mut tx, me).await?;
+    inbox::add(
+        &mut tx,
+        Note::new(member, "reversed", Category::Points, format!("„{}“ zurückgenommen", title.as_deref().unwrap_or("Aufgabe")))
+            .body(format!("„{note}“ – {who}"))
+            .about("ledger", entry_id),
+    )
+    .await?;
     tx.commit().await?;
     state.live.notify(household_id, r#"{"type":"points_changed"}"#);
     state.live.notify_json(
@@ -329,6 +338,14 @@ async fn sent_this_period(tx: &mut Transaction<'_, Postgres>, member: Uuid, sinc
     .bind(except)
     .fetch_one(&mut **tx)
     .await?)
+}
+
+/// Inbox entry for the receiver of a transfer.
+async fn note_received(tx: &mut Transaction<'_, Postgres>, t: &TransferDto) -> AppResult<()> {
+    let from = inbox::name(tx, t.from_id).await?;
+    inbox::add(tx, Note::new(t.to_id, "received", Category::Points, format!("{from} hat dir {} G geschickt", t.amount)).body(format!("„{}“", t.note)).about("transfer", t.id))
+        .await?;
+    Ok(())
 }
 
 /// Personal event for the receiver of a transfer.
@@ -389,6 +406,18 @@ pub async fn create_transfer(
     .await?;
     if !pending {
         execute(&mut tx, household_id, &transfer, me).await?;
+        note_received(&mut tx, &transfer).await?;
+    } else {
+        let (from, to) = (inbox::name(&mut tx, me).await?, inbox::name(&mut tx, req.to).await?);
+        for admin in inbox::members(&mut tx, household_id, true, Some(me)).await? {
+            inbox::add(
+                &mut tx,
+                Note::new(admin, "transfer_request", Category::Points, format!("{from} möchte {} G an {to} geben", transfer.amount))
+                    .body(format!("„{}“", transfer.note))
+                    .about("transfer", transfer.id),
+            )
+            .await?;
+        }
     }
     tx.commit().await?;
     state.live.notify(household_id, r#"{"type":"points_changed"}"#);
@@ -452,8 +481,12 @@ pub async fn decide_transfer(
         let sent = sent_this_period(&mut tx, t.from_id, crate::period::period_start(&state.db, household_id).await?, Some(t.id)).await?;
         hh.policy.check_transfer(t.amount, have, sent).map_err(|e| AppError::BadRequest(e.to_string()))?;
         execute(&mut tx, household_id, &t, me).await?;
+        note_received(&mut tx, &t).await?;
         "done"
     } else {
+        let to = inbox::name(&mut tx, t.to_id).await?;
+        inbox::add(&mut tx, Note::new(t.from_id, "transfer_declined", Category::Points, format!("{} G an {to} nicht freigegeben", t.amount)).about("transfer", t.id))
+            .await?;
         "declined"
     };
     let t = sqlx::query_as::<_, TransferDto>(concat!(

@@ -8,6 +8,8 @@ node_modules/
 .DS_Store
 # Firebase / signing material never goes into the repo
 google-services.json
+firebase-service-account*.json
+/deploy/secrets/
 GoogleService-Info.plist
 *.jks
 *.keystore

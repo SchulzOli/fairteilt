@@ -24,9 +24,25 @@ struct Job {
     max_attempts: i32,
 }
 
+/// Makes sure the recurring jobs exist (reminder sweep every few minutes).
+pub async fn ensure_recurring(db: &PgPool) -> sqlx::Result<()> {
+    sqlx::query(
+        "INSERT INTO jobs (id, kind, run_at) SELECT gen_random_uuid(), 'reminders', now()
+         WHERE NOT EXISTS (SELECT 1 FROM jobs WHERE kind = 'reminders' AND done_at IS NULL)",
+    )
+    .execute(db)
+    .await?;
+    Ok(())
+}
+
+const REMINDER_EVERY_SECS: f64 = 300.0;
+
 pub async fn run(state: AppState) {
     tracing::info!("scheduler started");
     let db = state.db.clone();
+    if let Err(err) = ensure_recurring(&db).await {
+        tracing::warn!(%err, "could not schedule reminders");
+    }
     loop {
         match claim(&db).await {
             Ok(Some(job)) => {
@@ -114,7 +130,24 @@ async fn dispatch(state: &AppState, job: &Job) -> anyhow::Result<()> {
             }
             Ok(())
         }
-        // M5: "send_reminder" …
+        "send_push" => crate::inbox::deliver(state, id_in(&job.payload, "notification_id")?).await,
+        "reminders" => {
+            let n = crate::inbox::sweep_reminders(state).await.map_err(|e| anyhow::anyhow!("{e:?}"))?;
+            if n > 0 {
+                tracing::info!(n, "reminders written");
+            }
+            // Next sweep in a few minutes (a new job, so this one can finish).
+            sqlx::query("INSERT INTO jobs (id, kind, run_at) VALUES (gen_random_uuid(), 'reminders', now() + make_interval(secs => $1))")
+                .bind(REMINDER_EVERY_SECS)
+                .execute(&state.db)
+                .await?;
+            Ok(())
+        }
+        "warn_period" => {
+            let n = crate::period::warn_period(&state.db, id_in(&job.payload, "period_id")?).await.map_err(|e| anyhow::anyhow!("{e:?}"))?;
+            tracing::info!(n, "period warnings written");
+            Ok(())
+        }
         other => anyhow::bail!("no handler for job kind '{other}'"),
     }
 }
