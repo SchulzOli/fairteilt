@@ -60,6 +60,7 @@ Die Vorschau „Abschluss ausprobieren“ unter Regeln rechnet den Ausgleich off
 | `GET /api/v1/meta` | Version und Standardregeln für neue Haushalte |
 | `POST /api/v1/preview/settlement` | Ausgleich durchrechnen: `{ policy, members }` → `Settlement` |
 | `POST /api/v1/auth/register` · `/login` | Konto anlegen / anmelden → Zugriffstoken (15 min) + Refresh-Token |
+| `POST /api/v1/auth/google` | Mit Google anmelden: ID-Token prüfen, Konto finden, per E-Mail verbinden oder anlegen ([Einrichtung](docs/GOOGLE-LOGIN.md)) |
 | `POST /api/v1/auth/refresh` · `/logout` | Refresh-Token tauschen (rotierend) / Gerät abmelden |
 | `GET /api/v1/me` · `DELETE /api/v1/me` | eigenes Konto und Haushalte; Konto löschen (`{ password }`) |
 | `GET /api/v1/me/export` | alle Daten zum eigenen Konto als JSON-Datei |
@@ -73,6 +74,8 @@ Die Vorschau „Abschluss ausprobieren“ unter Regeln rechnet den Ausgleich off
 | `POST /api/v1/auth/pin` | Profilwechsel per PIN, nur von einem Gerät des Haushalts (Sperre nach 5 Fehlversuchen) |
 | `GET` · `POST /api/v1/households/{id}/rooms` · `PATCH` · `DELETE …/rooms/{rid}` | Räume (Kinder nur lesen) |
 | `GET` · `POST /api/v1/households/{id}/templates` | Vorlagen mit Rhythmus, Zuweisung, Schritten; legt die erste Runde an (außer „auf Abruf“) |
+| `PATCH` · `DELETE /api/v1/templates/{tid}` | Einrichtung ändern (offene Runde folgt, solange sie nicht begonnen ist) / löschen |
+| `PUT /api/v1/tasks/{tid}/room` | Aufgabe samt Einrichtung in einen anderen Raum |
 | `POST /api/v1/templates/{tid}/trigger` | „Ist wieder nötig“: öffnet eine Runde einer Vorlage „auf Abruf“ |
 | `GET /api/v1/households/{id}/shopping` | Einkaufslisten mit Artikeln, offener Runde und Vorschlägen |
 | `POST /api/v1/households/{id}/lists` · `PATCH` · `DELETE /api/v1/lists/{lid}` | Listen (Erwachsene), jede mit eigener Aufgabe |

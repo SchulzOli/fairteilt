@@ -155,6 +155,66 @@ pub async fn login(
     Ok(Json(start_session(&state, user, device(req.device_name)).await?))
 }
 
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+#[derive(Deserialize)]
+pub struct GoogleLoginRequest {
+    /// The ID token from Google (Credential Manager / Google Identity Services).
+    pub id_token: String,
+    pub device_name: Option<String>,
+}
+
+/// Sign in with Google. Known Google account → its user. Else a user with the same (verified)
+/// e-mail gets linked to it. Else a new account without a password; the app then continues
+/// as after registering (create or join a household).
+pub async fn google(
+    State(state): State<AppState>,
+    client: ClientKey,
+    Json(req): Json<GoogleLoginRequest>,
+) -> AppResult<(StatusCode, Json<TokenResponse>)> {
+    state.limiter.check(&format!("google:{}", client.0), 30, Duration::from_secs(900))?;
+    let claims = state.google.verify(req.id_token.trim()).await?;
+    let email = claims.email.as_deref().unwrap_or_default().trim().to_lowercase();
+    let known: Option<(Uuid, Option<String>, String)> =
+        sqlx::query_as("SELECT id, email, display_name FROM users WHERE google_sub = $1").bind(&claims.sub).fetch_optional(&state.db).await?;
+    if let Some((id, mail, name)) = known {
+        let user = UserDto { id, email: mail, display_name: name };
+        return Ok((StatusCode::OK, Json(start_session(&state, user, device(req.device_name)).await?)));
+    }
+    let linked: Option<(Uuid, String)> = sqlx::query_as(
+        "UPDATE users SET google_sub = $2, updated_at = now() WHERE email = $1 AND google_sub IS NULL RETURNING id, display_name",
+    )
+    .bind(&email)
+    .bind(&claims.sub)
+    .fetch_optional(&state.db)
+    .await?;
+    if let Some((id, name)) = linked {
+        let user = UserDto { id, email: Some(email), display_name: name };
+        return Ok((StatusCode::OK, Json(start_session(&state, user, device(req.device_name)).await?)));
+    }
+    let name: String = claims
+        .given_name
+        .or(claims.name)
+        .map(|n| n.trim().to_string())
+        .filter(|n| !n.is_empty())
+        .unwrap_or_else(|| email.split('@').next().unwrap_or("Ich").to_string())
+        .chars()
+        .take(40)
+        .collect();
+    let id = Uuid::new_v4();
+    let inserted = sqlx::query("INSERT INTO users (id, email, display_name, google_sub) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING")
+        .bind(id)
+        .bind(&email)
+        .bind(&name)
+        .bind(&claims.sub)
+        .execute(&state.db)
+        .await?;
+    if inserted.rows_affected() == 0 {
+        return Err(AppError::Conflict("Dieses Konto ist schon mit einem anderen Google-Konto verbunden.".into()));
+    }
+    let user = UserDto { id, email: Some(email), display_name: name };
+    Ok((StatusCode::CREATED, Json(start_session(&state, user, device(req.device_name)).await?)))
+}
+
 /// Rotates the refresh token: the old one stops working, the session lives on.
 pub async fn refresh(State(state): State<AppState>, Json(req): Json<RefreshRequest>) -> AppResult<Json<TokenResponse>> {
     let (new_token, new_hash) = new_refresh_token();

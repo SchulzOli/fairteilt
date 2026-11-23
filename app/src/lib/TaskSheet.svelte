@@ -25,7 +25,8 @@
 
 <script lang="ts">
   import { untrack } from "svelte";
-  import type { Assignment, Schedule, TemplateApproval } from "$lib/generated";
+  import type { Assignment, CreateTemplateRequest, Schedule, TemplateApproval, TemplateDto } from "$lib/generated";
+  import { shopping } from "$lib/shopping.svelte";
   import { session } from "$lib/session.svelte";
   import { feedback } from "$lib/settings.svelte";
   import { TASK_ICONS, iconOf, taskStore } from "$lib/tasks.svelte";
@@ -33,32 +34,43 @@
   import type { AnimalName } from "$lib/ui/Avatar.svelte";
   import Icon from "$lib/ui/Icon.svelte";
 
-  let { onclose, preset, roomId }: { onclose: () => void; preset?: TaskPreset; roomId?: string } = $props();
+  let {
+    onclose,
+    preset,
+    roomId,
+    template,
+  }: { onclose: () => void; preset?: TaskPreset; roomId?: string; /** Edit this setup instead of creating one. */ template?: TemplateDto } = $props();
 
   type Rhythm = "once" | "interval" | "weekly" | "on_call";
   type Who = "open" | "fixed" | "rotation" | "least_loaded";
   const WEEKDAYS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
 
   // The form starts from the preset once; later prop changes do not reset what was typed.
-  const init = untrack(() => ({ preset, roomId }));
+  const init = untrack(() => ({ preset, roomId, t: template }));
+  const t0 = init.t;
   const initialRoom = () =>
-    init.roomId ?? (init.preset ? taskStore.rooms.find((r) => r.name === init.preset!.room)?.id : undefined) ?? null;
+    t0 ? t0.room_id : (init.roomId ?? (init.preset ? taskStore.rooms.find((r) => r.name === init.preset!.room)?.id : undefined) ?? null);
+  const s0 = t0?.schedule;
+  const a0 = t0?.assignment;
 
-  let title = $state(init.preset?.title ?? "");
+  let title = $state(t0?.title ?? init.preset?.title ?? "");
   let room = $state<string | null>(initialRoom());
-  let icon = $state<IconName | null>(init.preset?.icon ?? null);
-  let rhythm = $state<Rhythm>("interval");
-  let days = $state(init.preset?.days ?? 7);
-  let weekdays = $state<number[]>([]);
+  let icon = $state<IconName | null>((t0?.icon as IconName | null) ?? init.preset?.icon ?? null);
+  let rhythm = $state<Rhythm>(s0 ? (s0.type as Rhythm) : "interval");
+  let days = $state(s0?.type === "interval" ? s0.days : (init.preset?.days ?? 7));
+  let weekdays = $state<number[]>(s0?.type === "weekly" ? [...s0.weekdays] : []);
   /** "Auf Abruf": due this many days after it was called (0 = no due date). */
-  let dueAfter = $state(2);
-  let xp = $state(init.preset?.xp ?? 10);
-  let who = $state<Who>("open");
-  let people = $state<string[]>([]);
-  let steps = $state<string[]>([...(init.preset?.steps ?? [])]);
-  let sequential = $state(init.preset?.sequential ?? false);
-  let duration = $state<number | null>(init.preset?.duration ?? null);
-  let approval = $state<TemplateApproval>("household");
+  let dueAfter = $state(s0?.type === "on_call" ? (s0.due_after_days ?? 0) : 2);
+  let xp = $state(t0?.points.default ?? init.preset?.xp ?? 10);
+  let who = $state<Who>(a0 ? (a0.type as Who) : "open");
+  let people = $state<string[]>(a0?.type === "fixed" ? [a0.member] : a0?.type === "rotation" || a0?.type === "least_loaded" ? [...a0.members] : []);
+  let steps = $state<string[]>([...(t0?.steps ?? init.preset?.steps ?? [])]);
+  let sequential = $state(t0 ? t0.step_order === "sequential" : (init.preset?.sequential ?? false));
+  let duration = $state<number | null>(t0 ? t0.duration_min : (init.preset?.duration ?? null));
+  let approval = $state<TemplateApproval>(t0?.approval ?? "household");
+  let confirmDelete = $state(false);
+  /** The task of a shopping list: its rhythm stays "auf Abruf". */
+  const isList = $derived(!!t0 && shopping.lists.some((l) => l.template_id === t0.id));
   let newStep = $state("");
   let busy = $state(false);
   let error = $state("");
@@ -91,6 +103,23 @@
     return { type: "open" };
   }
 
+  async function remove() {
+    if (!t0) return;
+    if (!confirmDelete) return void (confirmDelete = true);
+    busy = true;
+    error = "";
+    try {
+      await session.request("DELETE", `/templates/${t0.id}`);
+      taskStore.scheduleReload();
+      feedback("step");
+      onclose();
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    } finally {
+      busy = false;
+    }
+  }
+
   async function save(e: SubmitEvent) {
     e.preventDefault();
     error = "";
@@ -98,7 +127,7 @@
     if (who !== "open" && people.length === 0) return (error = "Bitte wähle, wer die Aufgabe macht.");
     busy = true;
     try {
-      await taskStore.createTemplate({
+      const body: CreateTemplateRequest = {
         title: title.trim(),
         room_id: room,
         icon,
@@ -111,7 +140,13 @@
         duration_min: duration,
         due_at: null,
         approval,
-      });
+      };
+      if (t0) {
+        await session.request("PATCH", `/templates/${t0.id}`, body);
+        taskStore.scheduleReload();
+      } else {
+        await taskStore.createTemplate(body);
+      }
       feedback("confirm");
       onclose();
     } catch (err) {
@@ -125,7 +160,7 @@
 <div class="backdrop" role="presentation" onclick={(e) => e.target === e.currentTarget && onclose()}>
   <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
     <div class="row between">
-      <h2 id="sheet-title">Neue Aufgabe</h2>
+      <h2 id="sheet-title">{t0 ? "Aufgabe bearbeiten" : "Neue Aufgabe"}</h2>
       <button class="icon-btn" aria-label="Schließen" onclick={onclose}><Icon name="close" size={20} /></button>
     </div>
 
@@ -157,7 +192,8 @@
       </div>
 
       <div class="field"><span>Wie oft?</span>
-        <div class="seg" role="radiogroup" aria-label="Rhythmus">
+        {#if isList}<p class="muted small">Einkaufen bleibt „auf Abruf“: Die Liste ruft die Aufgabe, sobald etwas draufsteht.</p>{/if}
+        <div class="seg" role="radiogroup" aria-label="Rhythmus" class:locked={isList}>
           <button type="button" role="radio" aria-checked={rhythm === "interval"} class:sel={rhythm === "interval"} onclick={() => (rhythm = "interval")}>Alle X Tage</button>
           <button type="button" role="radio" aria-checked={rhythm === "weekly"} class:sel={rhythm === "weekly"} onclick={() => (rhythm = "weekly")}>Wochentage</button>
           <button type="button" role="radio" aria-checked={rhythm === "on_call"} class:sel={rhythm === "on_call"} onclick={() => (rhythm = "on_call")}>Auf Abruf</button>
@@ -256,8 +292,16 @@
         </div>
       </div>
 
+      {#if t0}
+        <p class="muted small">Name, Symbol und Raum ändern sich sofort. XP, Schritte, Rhythmus und Zuweisung gelten für die offene Runde, solange sie noch niemand begonnen hat, sonst ab der nächsten.</p>
+      {/if}
       {#if error}<p class="err" role="alert">{error}</p>{/if}
-      <button class="primary" type="submit" disabled={busy || !title.trim()}>Aufgabe anlegen</button>
+      <button class="primary" type="submit" disabled={busy || !title.trim()}>{t0 ? "Speichern" : "Aufgabe anlegen"}</button>
+      {#if t0 && !isList}
+        <button type="button" class="danger" class:confirm={confirmDelete} disabled={busy} onclick={remove}>
+          <Icon name="trash" size={18} />{confirmDelete ? "Wirklich löschen? Die offene Runde fällt weg." : "Aufgabe löschen"}
+        </button>
+      {/if}
     </form>
   </div>
 </div>
@@ -385,5 +429,23 @@
 
   .err {
     color: var(--over);
+  }
+
+  .locked {
+    pointer-events: none;
+    opacity: 0.55;
+  }
+
+  .danger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    background: transparent;
+    color: var(--over);
+  }
+
+  .danger.confirm {
+    background: var(--over-soft);
   }
 </style>

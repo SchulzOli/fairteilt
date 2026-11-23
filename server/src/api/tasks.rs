@@ -29,7 +29,7 @@ use crate::error::{AppError, AppResult};
 use crate::AppState;
 
 const DEFAULT_CHECKIN_MIN: i32 = 25;
-const MAX_STEPS: usize = 20;
+pub(crate) const MAX_STEPS: usize = 20;
 
 // ---------------------------------------------------------------- household context
 
@@ -64,7 +64,7 @@ pub(crate) fn month_start(tz: Tz, now: DateTime<Utc>) -> DateTime<Utc> {
         .unwrap_or(now - Duration::days(31))
 }
 
-fn kind_str(k: TaskKind) -> &'static str {
+pub(crate) fn kind_str(k: TaskKind) -> &'static str {
     match k {
         TaskKind::Regular => "regular",
         TaskKind::Reward => "reward",
@@ -326,7 +326,7 @@ pub(crate) fn default_range(policy: &PointPolicy) -> PointRange {
 }
 
 /// XP per member in the current calendar month (household time zone), for "least loaded".
-async fn month_load(tx: &mut Transaction<'_, Postgres>, household_id: Uuid, tz: Tz, now: DateTime<Utc>) -> AppResult<Vec<(Uuid, i64)>> {
+pub(crate) async fn month_load(tx: &mut Transaction<'_, Postgres>, household_id: Uuid, tz: Tz, now: DateTime<Utc>) -> AppResult<Vec<(Uuid, i64)>> {
     // XP in the running period (the calendar month as a fallback before the first period).
     let since: Option<DateTime<Utc>> =
         sqlx::query_scalar("SELECT starts_at FROM periods WHERE household_id = $1 AND status = 'running'").bind(household_id).fetch_optional(&mut **tx).await?;
@@ -343,7 +343,7 @@ async fn month_load(tx: &mut Transaction<'_, Postgres>, household_id: Uuid, tz: 
     Ok(rows)
 }
 
-async fn active_members(tx: &mut Transaction<'_, Postgres>, household_id: Uuid) -> AppResult<Vec<Uuid>> {
+pub(crate) async fn active_members(tx: &mut Transaction<'_, Postgres>, household_id: Uuid) -> AppResult<Vec<Uuid>> {
     Ok(sqlx::query_scalar("SELECT id FROM memberships WHERE household_id = $1 AND active").bind(household_id).fetch_all(&mut **tx).await?)
 }
 
@@ -434,15 +434,15 @@ pub(crate) async fn spawn_round(
     Ok(task_id)
 }
 
-pub async fn create_template(
-    State(state): State<AppState>,
-    user: AuthUser,
-    Path(household_id): Path<Uuid>,
-    Json(req): Json<CreateTemplateRequest>,
-) -> AppResult<(StatusCode, Json<CreateTemplateResponse>)> {
-    let creator = planner(&state, &user, household_id).await?;
-    let hh = household(&state.db, household_id).await?;
+pub(crate) struct CheckedTemplate {
+    pub title: String,
+    pub range: PointRange,
+    pub steps: Vec<String>,
+    pub icon: Option<String>,
+}
 
+/// The rules for a template's fields, the same when creating and when editing.
+pub(crate) fn check_template(req: &CreateTemplateRequest, hh: &Household) -> AppResult<CheckedTemplate> {
     let title = req.title.trim();
     if title.is_empty() || title.chars().count() > 80 {
         return Err(AppError::BadRequest("Der Titel muss 1 bis 80 Zeichen lang sein.".into()));
@@ -461,25 +461,43 @@ pub async fn create_template(
         return Err(AppError::BadRequest("Die Dauer liegt zwischen 1 und 240 Minuten.".into()));
     }
     let icon = check_icon(&req.icon)?;
+    Ok(CheckedTemplate { title: title.to_string(), range, steps, icon })
+}
 
-    let mut tx = state.db.begin().await?;
+/// The room belongs to the household, the assigned people are in it.
+pub(crate) async fn check_room_and_people(tx: &mut Transaction<'_, Postgres>, household_id: Uuid, req: &CreateTemplateRequest) -> AppResult<()> {
     if let Some(room) = req.room_id {
         let ok: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM rooms WHERE id = $1 AND household_id = $2)")
             .bind(room)
             .bind(household_id)
-            .fetch_one(&mut *tx)
+            .fetch_one(&mut **tx)
             .await?;
         if !ok {
             return Err(AppError::BadRequest("Diesen Raum gibt es im Haushalt nicht.".into()));
         }
     }
-    let members = active_members(&mut tx, household_id).await?;
+    let members = active_members(tx, household_id).await?;
     if req.assignment.members().iter().any(|m| !members.contains(m)) {
         return Err(AppError::BadRequest("Zuweisung an jemanden, der nicht im Haushalt ist.".into()));
     }
     if matches!(&req.assignment, Assignment::Rotation { members, .. } | Assignment::LeastLoaded { members } if members.is_empty()) {
         return Err(AppError::BadRequest("Bitte mindestens eine Person für die Zuweisung wählen.".into()));
     }
+    Ok(())
+}
+
+pub async fn create_template(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(household_id): Path<Uuid>,
+    Json(req): Json<CreateTemplateRequest>,
+) -> AppResult<(StatusCode, Json<CreateTemplateResponse>)> {
+    let creator = planner(&state, &user, household_id).await?;
+    let hh = household(&state.db, household_id).await?;
+    let CheckedTemplate { title, range, steps, icon } = check_template(&req, &hh)?;
+    let title = title.as_str();
+    let mut tx = state.db.begin().await?;
+    check_room_and_people(&mut tx, household_id, &req).await?;
 
     let template_id = Uuid::new_v4();
     sqlx::query(

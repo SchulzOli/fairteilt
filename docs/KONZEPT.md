@@ -256,7 +256,7 @@ Ohne Bestätigungspflicht geht `done` direkt auf `completed`. Jeder Statuswechse
 
 | Ansicht | Inhalt |
 | --- | --- |
-| **Heute** (Start) | oben Familienziel (Rennen gegen Krümel) und eigene Serie, darunter meine Aufgaben mit Zustandsbalken, dann offene Aufgaben mit Bonus |
+| **Heute** (Start) | oben Familienziel (Rennen gegen Krümel) und eigene Serie, darunter meine Aufgaben mit Zustandsbalken, dann offene Aufgaben mit Bonus. Jede Karte zeigt, wer dran ist (Tier oder „offen“). Erledigt wird nie direkt auf der Karte (seit 23.11.2026): „+“ übernimmt eine offene Aufgabe, Antippen öffnet die Aufgabe; dort Schritte abhaken, „Erledigt“ oder „Abgeben“ |
 | **Plan · Räume** | Räume mit Zustand und LP-Summe, Aufgaben je Raum |
 | **Plan · Kalender** | Tag / Woche / Monat / Agenda. Ziehen auf einen Zeitslot plant die Aufgabe ein. Wiederholungen werden aufgefaltet. Farbe = Mitglied |
 | **Plan · Board** | freie Fläche mit Karten und Zonen (je Person, Raum, Tag). Karte in eine Personen-Zone ziehen = zuweisen, in eine Tages-Zone = einplanen. Zoomen und Schieben mit zwei Fingern |

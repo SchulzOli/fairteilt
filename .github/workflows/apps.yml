@@ -35,6 +35,8 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   VITE_SERVER_URL: ${{ inputs.server_url || 'https://fairteilt.oli-tech.eu' }}
+  # "Mit Google anmelden": OAuth web client ID (repository variable, public; empty = no button)
+  VITE_GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
 
 jobs:
   android:

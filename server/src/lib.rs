@@ -5,6 +5,7 @@ pub mod api;
 pub mod auth;
 pub mod config;
 pub mod error;
+pub mod google;
 pub mod idempotency;
 pub mod inbox;
 pub mod live;
@@ -27,6 +28,8 @@ pub struct AppState {
     pub trust_proxy: bool,
     /// Push over FCM; None = not configured (inbox and live updates only).
     pub push: Option<Arc<push::Fcm>>,
+    /// Sign in with Google; off until OAuth client IDs are configured.
+    pub google: Arc<google::GoogleAuth>,
 }
 
 impl AppState {
@@ -38,6 +41,7 @@ impl AppState {
             live: Arc::new(live::Hub::default()),
             trust_proxy: false,
             push: None,
+            google: Arc::new(google::GoogleAuth::new(Vec::new())),
         }
     }
 }

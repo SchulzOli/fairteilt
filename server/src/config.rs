@@ -13,6 +13,8 @@ pub struct Config {
     pub trust_proxy: bool,
     /// Path to the Firebase service account JSON (push over FCM). Unset = no push.
     pub fcm_service_account: Option<String>,
+    /// OAuth client IDs for "Mit Google anmelden" (comma-separated). Unset = off.
+    pub google_client_ids: Vec<String>,
 }
 
 impl Config {
@@ -35,6 +37,12 @@ impl Config {
         }
         let trust_proxy = matches!(std::env::var("TRUST_PROXY").as_deref(), Ok("1") | Ok("true"));
         let fcm_service_account = std::env::var("FCM_SERVICE_ACCOUNT").ok().filter(|p| !p.trim().is_empty());
-        Ok(Self { database_url, bind_addr, cors_origins, jwt_secret, trust_proxy, fcm_service_account })
+        let google_client_ids = std::env::var("GOOGLE_CLIENT_IDS")
+            .unwrap_or_default()
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+        Ok(Self { database_url, bind_addr, cors_origins, jwt_secret, trust_proxy, fcm_service_account, google_client_ids })
     }
 }

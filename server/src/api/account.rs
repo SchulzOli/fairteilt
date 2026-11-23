@@ -152,7 +152,7 @@ async fn forget_membership(tx: &mut Transaction<'_, Postgres>, member: Uuid) -> 
 /// Removes everything personal of a user account and keeps an anonymous row.
 async fn forget_user(tx: &mut Transaction<'_, Postgres>, user: Uuid) -> AppResult<()> {
     sqlx::query(
-        "UPDATE users SET email = NULL, password_hash = NULL, display_name = 'Gelöschtes Konto', deleted_at = now(), updated_at = now() WHERE id = $1",
+        "UPDATE users SET email = NULL, password_hash = NULL, google_sub = NULL, display_name = 'Gelöschtes Konto', deleted_at = now(), updated_at = now() WHERE id = $1",
     )
     .bind(user)
     .execute(&mut **tx)

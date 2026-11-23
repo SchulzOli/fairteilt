@@ -15,6 +15,7 @@ Erledigt: CI, TypeScript-Typen aus `punkte-core` und Server, Design-Grundlage in
 | Betrieb | Server nach [BETRIEB.md](BETRIEB.md) einrichten, Wiederherstellung einmal echt proben |
 | Konto | Play-Console-Konto, Upload-Schlüssel erzeugen und als GitHub-Secrets hinterlegen ([Anleitung](store/PLAY-STORE.md)) |
 | Konto | Apple-Developer-Konto für TestFlight und Push auf iOS |
+| Konto | Google-OAuth-Clients (Web + Android) anlegen, Client-ID auf Server und als GitHub-Variable eintragen ([Anleitung](GOOGLE-LOGIN.md)) |
 | Entscheidung | Datenschutzerklärung ([Entwurf](DATENSCHUTZ.md)) ausfüllen und veröffentlichen; Zielgruppe im Play Store (18+ oder Familienrichtlinie) |
 | Betrieb | Hetzner-Cloud-Server (x86) bestellen, DNS `fairteilt.oli-tech.eu` setzen (bis zur Alpha) |
 | Betrieb | Tablet für die Wandanzeige festlegen |
@@ -173,6 +174,15 @@ mit Maus und Finger (am Handy kurz drücken, dann ziehen): Einträge auf Tag ode
 „Noch ohne Termin“ einplanen, auf „Ohne Uhrzeit“ austragen; Board-Liste: auf Person oder Tag ziehen.
 Board mit breiteren Zonen und Zoom-Knöpfen. **„Wann?“** auf jeder Aufgabe (und auf der Einkaufsliste):
 Tag und Uhrzeit wählen; bei Aufgaben „auf Abruf“ wie Einkaufen wird der gewählte Tag auch die Fälligkeit.
+
+**Ergänzt am 23.11.2026:** **Einrichtung ändern**: Stift an jeder Aufgabe unter Plan · Räume öffnet das
+Aufgabenformular mit der bestehenden Einrichtung (Name, Raum, Symbol, Rhythmus, XP, Zuweisung, Schritte,
+Bestätigung, Dauer) und „Aufgabe löschen“. Name, Symbol und Raum gelten sofort, der Rest für die offene
+Runde, solange sie niemand begonnen hat, sonst ab der nächsten. Aufgaben per Ziehen in einen anderen Raum,
+**Räume löschen** (Aufgaben bleiben, ohne Raum). **Heute ohne direktes Abhaken:** „+“ übernimmt, Antippen
+öffnet die Aufgabe, dort erledigen, Schritte abhaken oder „Abgeben“. **Mit Google anmelden** (Android über
+den Credential Manager, im Browser über Google Identity Services, Server prüft das ID-Token; Einrichtung:
+[GOOGLE-LOGIN.md](GOOGLE-LOGIN.md)).
 
 ### M7 Offline & Stores
 

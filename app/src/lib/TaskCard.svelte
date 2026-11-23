@@ -4,6 +4,8 @@
   import { session } from "$lib/session.svelte";
   import { feedback } from "$lib/settings.svelte";
   import { conditionOf, dueText, iconOf, isQueued, memberName, minutesSince, stepsDone, taskStore } from "$lib/tasks.svelte";
+  // Cards never finish a task directly (since 23.11.2026): "+" takes an open task over, the
+  // task page is where it is done (steps, "Erledigt", giving it back).
   import Avatar from "$lib/ui/Avatar.svelte";
   import type { AnimalName } from "$lib/ui/Avatar.svelte";
   import ConditionBar from "$lib/ui/ConditionBar.svelte";
@@ -11,10 +13,10 @@
   import ReviewSheet from "$lib/ReviewSheet.svelte";
   import { shopping } from "$lib/shopping.svelte";
 
-  let { task }: { task: TaskDto } = $props();
+  let { task, onedit }: { task: TaskDto; /** Planners: pencil to change the setup. */ onedit?: () => void } = $props();
 
-  let celebrating = $state(false);
-  let earned = $state("");
+  let taking = $state(false);
+  let taken = $state(false);
   let reviewing = $state(false);
   let error = $state("");
 
@@ -27,7 +29,6 @@
   // Shopping (M8): finished in the shopping mode, where the cart is checked off.
   const list = $derived(shopping.listOf(task));
   const toBuy = $derived(list ? list.items.filter((i) => !i.checked_at).length : 0);
-  const guided = $derived(hasSteps || !!task.list_id);
   const assignee = $derived(session.members.find((m) => m.membership_id === task.assignee_id));
   const isMine = $derived(task.assignee_id !== null && task.assignee_id === session.membership?.membership_id);
   const submitted = $derived(task.status === "submitted");
@@ -35,51 +36,33 @@
     submitted && session.membership?.role !== "child" && task.completed_by !== session.membership?.membership_id,
   );
 
-  // Confetti pieces fly out of the check button; everything stays inside the card.
-  const COLORS = ["var(--coin-bg)", "#d63384", "var(--xp)", "var(--primary)", "#e8660f", "var(--fresh)", "#2563eb", "var(--over)"];
-  const pieces = Array.from({ length: 30 }, (_, i) => ({
-    x: -(12 + ((i * 53) % 220)),
-    y: ((i * 37) % 56) - 30,
-    r: ((i * 71) % 400) - 200,
-    w: [5, 4, 6, 3, 5][i % 5],
-    h: [8, 7, 6, 9, 5][i % 5],
-    d: ((i * 13) % 30) / 100,
-    c: COLORS[i % COLORS.length],
-    round: i % 5 === 2,
-  }));
+  const isOpen = $derived(task.assignee_id === null && (task.status === "open" || task.status === "claimed"));
 
   const open = () => goto(`/aufgabe/${task.id}`);
 
-  async function complete() {
-    if (celebrating) return;
-    // Tasks with steps are finished step by step on their page (XP only at the end), shopping
-    // in the shopping mode.
-    if (guided) return open();
+  /** "+": this open task is mine now. Tapping my card then opens it. */
+  async function take() {
+    if (taking) return;
     error = "";
+    taking = true;
     try {
-      celebrating = true;
-      taskStore.hold(1600);
-      const res = await taskStore.action(task.id, "done");
-      earned = isQueued(res)
-        ? "Gespeichert · kommt gleich an"
-        : res.submitted
-        ? "Prima! Wartet aufs OK"
-        : `+${res.xp_awarded ?? task.xp} XP${res.bounty_paid ? ` · +${res.bounty_paid} G` : ""}`;
-      // A submitted task stays in the list (waiting for an adult): end the celebration.
-      if (res.submitted) setTimeout(() => (celebrating = false), 1500);
-      feedback("done");
+      const res = await taskStore.action(task.id, "claim");
+      taken = true;
+      setTimeout(() => (taken = false), 1400);
+      feedback(isQueued(res) ? "step" : "confirm");
     } catch (e) {
-      celebrating = false;
       error = e instanceof Error ? e.message : String(e);
+    } finally {
+      taking = false;
     }
   }
 </script>
 
-<article class="task" class:celebrating class:overdue={condition >= 1} class:running>
+<article class="task" class:editable={!!onedit} class:taken class:overdue={condition >= 1} class:running class:mine={isMine}>
   <button class="hit" aria-label="Öffnen: {task.title}" onclick={open}></button>
   <div class="ic" aria-hidden="true"><Icon name={iconOf(task.icon, iconOf(room?.icon))} size={20} /></div>
   <div class="body">
-    <h3 class:done={celebrating}>{task.title}</h3>
+    <h3>{task.title}</h3>
     <div class="meta">
       {#if room}<span>{room.name}</span><span aria-hidden="true">·</span>{/if}
       {#if submitted}
@@ -101,8 +84,10 @@
   <div class="right">
     <span class="xp-chip">{task.xp} XP</span>
     {#if task.bounty > 0}<span class="coin-chip">+{task.bounty}</span>{/if}
-    {#if assignee && !isMine}
-      <Avatar animal={assignee.animal as AnimalName} color={assignee.color} size={22} name={assignee.display_name} />
+    {#if assignee}
+      <span class="who"><Avatar animal={assignee.animal as AnimalName} color={assignee.color} size={22} name={assignee.display_name} />{#if isMine}<small>du</small>{/if}</span>
+    {:else}
+      <span class="who nobody" title="noch offen">offen</span>
     {/if}
   </div>
   {#if submitted}
@@ -111,27 +96,24 @@
     {:else}
       <span class="check waiting" aria-hidden="true"><Icon name="timer" size={18} /></span>
     {/if}
-  {:else if guided}
-    <button class="check go" aria-label="{running ? 'Weiter' : 'Starten'}: {task.title}" onclick={open}>
-      <Icon name={running ? "chevron" : task.list_id ? "cart" : "play"} size={16} />
+  {:else if isOpen}
+    <button class="check take" class:busy={taking} aria-label="Übernehmen: {task.title}" disabled={taking} onclick={take}>
+      <Icon name="plus" size={20} />
+    </button>
+  {:else if isMine}
+    <button class="check go" aria-label="Öffnen: {task.title}" onclick={open}>
+      <Icon name={running ? "timer" : task.list_id ? "cart" : "chevron"} size={18} />
     </button>
   {:else}
-    <button class="check" class:on={celebrating} aria-label="Erledigt: {task.title}" onclick={complete}>
-      <Icon name="check" size={18} />
-    </button>
+    <span class="check spacer" aria-hidden="true"></span>
+  {/if}
+  {#if onedit}
+    <button class="edit" aria-label="Einrichtung bearbeiten: {task.title}" onclick={onedit}><Icon name="edit" size={16} /></button>
   {/if}
   <div class="cond"><ConditionBar value={condition} /></div>
 
-  {#if celebrating}
-    <span class="fly" aria-hidden="true">{earned || `+${task.xp} XP`}</span>
-    <span class="confetti" aria-hidden="true">
-      {#each pieces as p, i (i)}
-        <i
-          class:round={p.round}
-          style="--x:{p.x}px;--y:{p.y}px;--r:{p.r}deg;--w:{p.w}px;--h:{p.h}px;--d:{p.d}s;background:{p.c}"
-        ></i>
-      {/each}
-    </span>
+  {#if taken}
+    <span class="fly" aria-hidden="true">Deine Aufgabe</span>
   {/if}
 </article>
 
@@ -235,9 +217,9 @@
     border-color: color-mix(in srgb, var(--over) 45%, var(--line));
   }
 
-  .task.celebrating {
-    background: color-mix(in srgb, var(--fresh) 9%, var(--surface));
-    border-color: color-mix(in srgb, var(--fresh) 45%, var(--line));
+  .task.taken {
+    background: color-mix(in srgb, var(--primary) 7%, var(--surface));
+    border-color: color-mix(in srgb, var(--primary) 45%, var(--line));
   }
 
   .ic {
@@ -253,11 +235,6 @@
     font-family: var(--font-body);
     font-size: 1rem;
     font-weight: 700;
-  }
-
-  h3.done {
-    text-decoration: line-through;
-    opacity: 0.6;
   }
 
   .meta {
@@ -316,14 +293,77 @@
     z-index: 2;
   }
 
-  .check.on {
-    background: var(--fresh);
-    border-color: var(--fresh);
-    color: #fff;
+  /* "+": take an open task over */
+  .check.take {
+    border-style: dashed;
+    border-color: color-mix(in srgb, var(--primary) 55%, var(--line));
+    color: var(--primary);
+  }
+
+  .check.take:hover:not(:disabled) {
+    background: var(--primary-soft);
+    border-style: solid;
+  }
+
+  .check.take.busy {
+    opacity: 0.5;
+  }
+
+  .check.spacer {
+    border: none;
+    min-height: var(--tap);
+  }
+
+  .who {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .who small {
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--muted);
+  }
+
+  .who.nobody {
+    padding: 0 7px;
+    border-radius: 999px;
+    border: 1.5px dashed var(--line);
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--muted);
+  }
+
+  /* The pencil sits in the bottom row, next to the bar. */
+  .edit {
+    position: relative;
+    z-index: 2;
+    grid-row: 2;
+    grid-column: 4;
+    justify-self: center;
+    width: 30px;
+    min-height: 26px;
+    padding: 0;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: transparent;
+    color: var(--muted);
+  }
+
+  .edit:hover {
+    background: var(--surface-2);
+    color: var(--fg);
   }
 
   .cond {
     grid-column: 2 / -1;
+    grid-row: 2;
+  }
+
+  .editable .cond {
+    grid-column: 2 / 4;
   }
 
   .fly {
@@ -332,44 +372,14 @@
     top: 50%;
     transform: translateY(-50%);
     z-index: 3;
-    background: var(--xp);
-    color: #fff;
+    background: var(--primary);
+    color: var(--primary-fg);
     font-weight: 800;
     font-size: 0.8rem;
     border-radius: 999px;
     padding: 2px 9px;
     white-space: nowrap;
     animation: fly-in 1.4s ease-out forwards;
-  }
-
-  .confetti {
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    z-index: 1;
-  }
-
-  .confetti i {
-    position: absolute;
-    right: 28px;
-    top: 50%;
-    width: var(--w);
-    height: var(--h);
-    border-radius: 2px;
-    opacity: 0;
-    animation: burst 1.3s cubic-bezier(0.15, 0.7, 0.3, 1) forwards;
-    animation-delay: var(--d);
-  }
-
-  .confetti i.round {
-    border-radius: 50%;
-  }
-
-  @keyframes burst {
-    0% { transform: translate(0, 0) rotate(0deg) scale(0.3); opacity: 0; }
-    10% { opacity: 1; }
-    50% { transform: translate(var(--x), var(--y)) rotate(var(--r)) scale(1); opacity: 1; }
-    100% { transform: translate(calc(var(--x) * 1.1), calc(var(--y) + 26px)) rotate(calc(var(--r) * 3)); opacity: 0; }
   }
 
   @keyframes fly-in {
@@ -380,9 +390,4 @@
     100% { transform: translateY(-110%); opacity: 0; }
   }
 
-  @media (prefers-reduced-motion: reduce) {
-    .confetti {
-      display: none;
-    }
-  }
 </style>

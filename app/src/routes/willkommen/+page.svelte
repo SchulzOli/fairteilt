@@ -1,5 +1,6 @@
 <script lang="ts">
   import { ApiError, session } from "$lib/session.svelte";
+  import { GoogleCancelled, googleNative, googleWeb, nativeIdToken, renderGoogleButton } from "$lib/google";
   import AnimalPicker from "$lib/ui/AnimalPicker.svelte";
 
   type Mode = "login" | "register" | "child";
@@ -15,6 +16,38 @@
 
   let busy = $state(false);
   let error = $state<string | null>(null);
+
+  // "Mit Google anmelden": Android shows our button (Google's sheet), the browser Google's own.
+  let googleEl = $state<HTMLElement | null>(null);
+  const withGoogle = $derived(mode !== "child" && (googleNative() || googleWeb()));
+
+  async function google(idToken: string) {
+    error = null;
+    busy = true;
+    session.setServerUrl(server);
+    try {
+      await session.loginWithGoogle(idToken);
+    } catch (err) {
+      error = err instanceof ApiError ? err.message : "Die Anmeldung mit Google hat nicht geklappt.";
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function googleTap() {
+    error = null;
+    try {
+      await google(await nativeIdToken());
+    } catch (err) {
+      if (!(err instanceof GoogleCancelled)) error = err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  $effect(() => {
+    if (!googleEl || !googleWeb()) return;
+    const dark = matchMedia("(prefers-color-scheme: dark)").matches && document.documentElement.dataset.theme !== "light";
+    renderGoogleButton(googleEl, (t) => void google(t), dark).catch((e) => (error = e.message));
+  });
 
   async function submit(e: SubmitEvent) {
     e.preventDefault();
@@ -50,6 +83,21 @@
   <button role="tab" aria-selected={mode === "child"} class:sel={mode === "child"} onclick={() => (mode = "child")}>Kinder-Code</button>
 </div>
 
+{#if withGoogle}
+  <section class="google card">
+    {#if googleNative()}
+      <button class="gbtn" disabled={busy} onclick={googleTap}>
+        <svg viewBox="0 0 48 48" width="20" height="20" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9.1 3.6l6.8-6.8C35.8 2.4 30.3 0 24 0 14.6 0 6.6 5.4 2.6 13.3l7.9 6.1C12.4 13.6 17.7 9.5 24 9.5z"/><path fill="#4285F4" d="M46.1 24.6c0-1.6-.1-3.1-.4-4.6H24v9h12.4c-.5 2.9-2.2 5.3-4.6 6.9l7.4 5.7c4.3-4 6.9-9.9 6.9-17z"/><path fill="#FBBC05" d="M10.5 28.6c-.5-1.4-.8-2.9-.8-4.6s.3-3.2.8-4.6l-7.9-6.1C1 16.6 0 20.2 0 24s1 7.4 2.6 10.7l7.9-6.1z"/><path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.4-5.7c-2.1 1.4-4.8 2.3-8.5 2.3-6.3 0-11.6-4.1-13.5-9.9l-7.9 6.1C6.6 42.6 14.6 48 24 48z"/></svg>
+        Mit Google fortfahren
+      </button>
+    {:else}
+      <div class="gweb" bind:this={googleEl}></div>
+    {/if}
+    <p class="muted small">Neu hier? Dann legt das gleich dein Konto an. Hast du schon eins mit derselben E-Mail, wird es verbunden.</p>
+  </section>
+  <p class="or"><span>oder mit E-Mail</span></p>
+{/if}
+
 <form class="card stack" onsubmit={submit}>
   {#if mode === "child"}
     <p class="muted small">Für Kinder ohne E-Mail: Lass dir von deinen Eltern einen Kinder-Code geben.</p>
@@ -82,6 +130,54 @@
 </form>
 
 <style>
+  .google {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-2);
+    margin-top: var(--space-3);
+  }
+
+  .gbtn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    min-height: 48px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--fg);
+  }
+
+  .gweb {
+    display: flex;
+    justify-content: center;
+    min-height: 44px;
+  }
+
+  .google p {
+    margin: 0;
+    text-align: center;
+  }
+
+  .or {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    margin: var(--space-3) 0;
+    color: var(--muted);
+    font-size: 0.8rem;
+  }
+
+  .or::before,
+  .or::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: var(--line);
+  }
+
   .hero {
     display: flex;
     flex-direction: column;

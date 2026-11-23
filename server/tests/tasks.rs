@@ -285,3 +285,61 @@ async fn live_updates(db: PgPool) {
     assert_eq!((personal["member"].as_str(), personal["xp"].as_i64(), personal["g"].as_i64()), (Some(sam_mid.as_str()), Some(10), Some(10)));
     assert_eq!((personal["task"].as_str(), personal["note"].as_str()), (Some("Fenster putzen"), Some("Danke!")));
 }
+
+/// What was set up can be changed: name, steps, rhythm and who is on it follow in the open
+/// round (it was not started yet); a task moves to another room; deleting drops the open
+/// round. Shopping stays "auf Abruf" and is deleted with its list only.
+#[sqlx::test(migrator = "punkte_server::MIGRATOR")]
+async fn edit_move_and_delete_a_setup(db: PgPool) {
+    let app = routes::router(AppState::new(db, SECRET), &[]);
+    let (alex, sam, hid, alex_mid, sam_mid) = family(&app).await;
+    let (s, b) = call(&app, "POST", &format!("/api/v1/households/{hid}/templates"), Some(&alex), Some(json!({
+        "title": "Bad putzen", "schedule": { "type": "interval", "days": 7 }, "assignment": { "type": "fixed", "member": alex_mid },
+        "steps": ["Waschbecken", "Spiegel"], "step_order": "free"
+    }))).await;
+    assert_eq!(s, StatusCode::CREATED, "{b}");
+    let tid = b["template_id"].as_str().unwrap().to_string();
+    let task = b["task"]["id"].as_str().unwrap().to_string();
+
+    // Edit: new name, a third step, every 3 days, Sam instead of Alex.
+    let (s, e) = call(&app, "PATCH", &format!("/api/v1/templates/{tid}"), Some(&sam), Some(json!({
+        "title": "Bad gründlich", "schedule": { "type": "interval", "days": 3 }, "assignment": { "type": "fixed", "member": sam_mid },
+        "steps": ["Waschbecken", "Spiegel", "Boden"], "step_order": "sequential"
+    }))).await;
+    assert_eq!(s, StatusCode::NO_CONTENT, "{e}");
+    let (_, t) = call(&app, "GET", &format!("/api/v1/tasks/{task}"), Some(&alex), None).await;
+    assert_eq!((t["title"].as_str(), t["assignee_id"].as_str(), t["steps"].as_array().unwrap().len(), t["step_order"].as_str()),
+        (Some("Bad gründlich"), Some(sam_mid.as_str()), 3, Some("sequential")));
+    let days = (ts(&t["due_at"]) - Utc::now()).num_hours();
+    assert!((60..=96).contains(&days), "due in about three days, got {days} h");
+    let (_, list) = call(&app, "GET", &format!("/api/v1/households/{hid}/templates"), Some(&alex), None).await;
+    let tpl = list.as_array().unwrap().iter().find(|x| x["id"] == tid.as_str()).unwrap().clone();
+    assert_eq!((tpl["title"].as_str(), tpl["steps"].as_array().unwrap().len()), (Some("Bad gründlich"), 3));
+
+    // Move to a room: the task and its setup.
+    let (_, room) = call(&app, "POST", &format!("/api/v1/households/{hid}/rooms"), Some(&alex), Some(json!({ "name": "Bad" }))).await;
+    let rid = room["id"].as_str().unwrap().to_string();
+    let (s, _) = call(&app, "PUT", &format!("/api/v1/tasks/{task}/room"), Some(&alex), Some(json!({ "room_id": rid }))).await;
+    assert_eq!(s, StatusCode::NO_CONTENT);
+    let (_, t) = call(&app, "GET", &format!("/api/v1/tasks/{task}"), Some(&alex), None).await;
+    assert_eq!(t["room_id"].as_str(), Some(rid.as_str()));
+    let (_, list) = call(&app, "GET", &format!("/api/v1/households/{hid}/templates"), Some(&alex), None).await;
+    assert_eq!(list.as_array().unwrap().iter().find(|x| x["id"] == tid.as_str()).unwrap()["room_id"].as_str(), Some(rid.as_str()));
+
+    // Delete: gone from the templates and from the open tasks.
+    let (s, _) = call(&app, "DELETE", &format!("/api/v1/templates/{tid}"), Some(&alex), None).await;
+    assert_eq!(s, StatusCode::NO_CONTENT);
+    let (_, list) = call(&app, "GET", &format!("/api/v1/households/{hid}/templates"), Some(&alex), None).await;
+    assert!(!list.as_array().unwrap().iter().any(|x| x["id"] == tid.as_str()));
+    let (_, open) = call(&app, "GET", &format!("/api/v1/households/{hid}/tasks"), Some(&alex), None).await;
+    assert!(!open.as_array().unwrap().iter().any(|x| x["id"] == task.as_str()));
+
+    // Shopping: stays "auf Abruf", is not deleted on its own.
+    let einkaufen = list.as_array().unwrap().iter().find(|x| x["title"] == "Einkaufen").unwrap()["id"].as_str().unwrap().to_string();
+    let (s, _) = call(&app, "PATCH", &format!("/api/v1/templates/{einkaufen}"), Some(&alex), Some(json!({
+        "title": "Einkaufen", "schedule": { "type": "interval", "days": 7 }, "assignment": { "type": "open" }, "steps": [], "step_order": "free"
+    }))).await;
+    assert_eq!(s, StatusCode::BAD_REQUEST);
+    let (s, _) = call(&app, "DELETE", &format!("/api/v1/templates/{einkaufen}"), Some(&alex), None).await;
+    assert_eq!(s, StatusCode::CONFLICT);
+}

@@ -12,3 +12,4 @@ pub mod rewards;
 pub mod rooms;
 pub mod shopping;
 pub mod tasks;
+pub mod templates;

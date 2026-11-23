@@ -351,6 +351,21 @@ class TaskStore {
     return room;
   }
 
+  /** Deletes a room; its tasks stay, without a room. */
+  async deleteRoom(id: string): Promise<void> {
+    await session.request("DELETE", `/households/${this.hid}/rooms/${id}`);
+    this.rooms = this.rooms.filter((r) => r.id !== id);
+    this.tasks = this.tasks.map((t) => (t.room_id === id ? { ...t, room_id: null } : t));
+    this.scheduleReload();
+  }
+
+  /** Moves a task (and its setup) to another room; null = without a room. */
+  async moveToRoom(taskId: string, roomId: string | null): Promise<void> {
+    this.tasks = this.tasks.map((t) => (t.id === taskId ? { ...t, room_id: roomId } : t));
+    await session.request("PUT", `/tasks/${taskId}/room`, { room_id: roomId });
+    this.scheduleReload();
+  }
+
   /** Adult confirms (optionally with adjusted XP and a message) or sends the task back. */
   async review(id: string, approve: boolean, points: number | null, note: string | null): Promise<TaskActionResponse> {
     const res = await session.request<TaskActionResponse>("POST", `/tasks/${id}/review`, { approve, points, note });

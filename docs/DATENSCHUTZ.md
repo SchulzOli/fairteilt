@@ -18,6 +18,7 @@ diesem Server selbst verantwortlich. Diese Erklärung gilt für den Server `fair
 | Daten | Zweck | Rechtsgrundlage |
 | --- | --- | --- |
 | E-Mail-Adresse, Passwort (nur als Argon2id-Hash), Anzeigename | Konto, Anmeldung | Art. 6 Abs. 1 lit. b DSGVO (Vertrag) |
+| Bei „Mit Google anmelden“: Googles Konto-Kennung, E-Mail-Adresse und Vorname aus dem Google-Konto (kein Passwort, kein Zugriff auf Google-Daten) | Konto, Anmeldung | Art. 6 Abs. 1 lit. b DSGVO (Vertrag) |
 | Kinderprofile: Anzeigename, Tier, Farbe, PIN (nur als Hash), keine E-Mail | Profil im Haushalt | Art. 6 Abs. 1 lit. b, angelegt von den Eltern |
 | Inhalte des Haushalts: Räume, Aufgaben, Erledigungen, Punkte, Übertragungen, Belohnungen, Abschlüsse, Postfach | Kernfunktion der App | Art. 6 Abs. 1 lit. b |
 | Geräte: Anmelde-Sitzungen (Refresh-Token als Hash, Gerätename), Push-Token | angemeldet bleiben, Benachrichtigungen | Art. 6 Abs. 1 lit. b |
@@ -33,6 +34,10 @@ Es gibt **keine Werbung, kein Tracking und keine Analyse-Dienste**. Daten werden
   Übermittelt werden das Push-Token des Geräts sowie Titel und kurzer Text der Benachrichtigung.
   Dabei ist eine Übermittlung in die USA möglich (EU-US Data Privacy Framework). Push lässt sich
   je Kategorie in der App ausschalten; ohne Push bleiben Postfach und Erinnerungen in der App.
+- **Anmeldung mit Google (freiwillig):** Wer „Mit Google anmelden“ wählt, meldet sich bei Google
+  (Google Ireland Ltd.) an; Google erfährt dabei, dass die Anmeldung für Fairteilt erfolgt, und gibt
+  uns Konto-Kennung, E-Mail-Adresse und Namen weiter. Eine Übermittlung in die USA ist möglich
+  (EU-US Data Privacy Framework). Die Anmeldung mit E-Mail und Passwort bleibt jederzeit möglich.
 - **Backups:** [Hetzner Storage Box / eigener Speicher], verschlüsselt, Aufbewahrung [30] Tage.
 
 ## 4. Speicherdauer

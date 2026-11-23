@@ -12,6 +12,8 @@
   import type { TemplateDto, TriggerResponse } from "$lib/generated";
   import { shopping } from "$lib/shopping.svelte";
   import { goto } from "$app/navigation";
+  import { draggable } from "$lib/plan/drag";
+  import { feedback } from "$lib/settings.svelte";
 
   type View = "rooms" | "calendar" | "board" | "views";
   const VIEW_KEY = "fairteilt.plan";
@@ -36,6 +38,9 @@
   }
   let openRoom = $state<string | null>(null);
   let sheet = $state<{ roomId?: string } | null>(null);
+  /** The setup being edited (pencil on a task). */
+  let editing = $state<TemplateDto | null>(null);
+  let deleting = $state<string | null>(null);
   let adding = $state(false);
   let roomName = $state("");
   let roomIcon = $state<IconName>("sofa");
@@ -94,6 +99,38 @@
     });
   });
 
+  const templateOf = (templateId: string | null) => (templateId ? templates.find((t) => t.id === templateId) : undefined);
+
+  /** Drag a task onto another room (planners). Drop keys: "room:<id>", "room:" = without room. */
+  const roomDrag = (taskId: string, roomId: string | null) => ({
+    enabled: planner,
+    ondrop: (key: string) => {
+      if (!key.startsWith("room:")) return;
+      const target = key.slice(5) || null;
+      if (target === roomId) return;
+      error = "";
+      taskStore.moveToRoom(taskId, target).then(
+        () => {
+          feedback("step");
+          if (target) openRoom = target;
+        },
+        (e) => (error = e instanceof Error ? e.message : String(e)),
+      );
+    },
+  });
+
+  async function deleteRoom(id: string) {
+    if (deleting !== id) return void (deleting = id);
+    error = "";
+    try {
+      await taskStore.deleteRoom(id);
+      deleting = null;
+      openRoom = null;
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
+    }
+  }
+
   async function addRoom(e: SubmitEvent) {
     e.preventDefault();
     error = "";
@@ -120,7 +157,7 @@
 {#if view === "rooms"}
   <div class="stack">
     {#each roomRows as r (r.id)}
-      <article class="card room" class:expanded={openRoom === r.id}>
+      <article class="card room" class:expanded={openRoom === r.id} data-drop="room:{r.id}">
         <button class="room-head" aria-expanded={openRoom === r.id} onclick={() => (openRoom = openRoom === r.id ? null : r.id)}>
           <span class="ic" aria-hidden="true"><Icon name={r.icon} size={22} /></span>
           <span class="name">
@@ -132,9 +169,19 @@
         </button>
         {#if openRoom === r.id}
           <div class="stack inner">
-            {#each r.tasks as task (task.id)}<TaskCard {task} />{/each}
+            {#each r.tasks as task (task.id)}
+              {@const tpl = templateOf(task.template_id)}
+              <div class="drag-task" use:draggable={roomDrag(task.id, task.room_id)}>
+                <TaskCard {task} onedit={planner && tpl ? () => (editing = tpl) : undefined} />
+              </div>
+            {/each}
             {#if planner}
               <button class="add-task" onclick={() => (sheet = { roomId: r.id || undefined })}><Icon name="plus" size={18} />Aufgabe in {r.name}</button>
+              {#if r.id}
+                <button class="del-room" class:confirm={deleting === r.id} onclick={() => deleteRoom(r.id)}>
+                  <Icon name="trash" size={16} />{deleting === r.id ? `„${r.name}“ wirklich löschen? Die Aufgaben bleiben, ohne Raum.` : "Raum löschen"}
+                </button>
+              {/if}
             {/if}
           </div>
         {/if}
@@ -176,7 +223,10 @@
       <button class="add-room-btn" onclick={() => (adding = true)}><Icon name="plus" size={18} />Raum hinzufügen</button>
     {/if}
   {/if}
-  <p class="muted small hint">Der Balken eines Raums zeigt seine dringendste Aufgabe. Wer früher erledigt, setzt den Balken zurück.</p>
+  <p class="muted small hint">
+    Der Balken eines Raums zeigt seine dringendste Aufgabe. Wer früher erledigt, setzt den Balken zurück.
+    {#if planner}Stift = Einrichtung ändern. Aufgaben in einen anderen Raum ziehen (am Handy kurz drücken).{/if}
+  </p>
 {:else if view === "calendar"}
   <Calendar />
 {:else if view === "board"}
@@ -191,6 +241,10 @@
 
 {#if sheet}
   <TaskSheet roomId={sheet.roomId} onclose={() => (sheet = null)} />
+{/if}
+
+{#if editing}
+  <TaskSheet template={editing} onclose={() => (editing = null)} />
 {/if}
 
 <style>
@@ -264,6 +318,44 @@
 
   .inner {
     padding: 0 var(--space-3) var(--space-3);
+  }
+
+  .room:global([data-over]) {
+    border-color: var(--primary);
+    background: var(--primary-soft);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 20%, transparent);
+  }
+
+  :global(body.is-dragging) .room {
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 18%, transparent);
+  }
+
+  .drag-task {
+    border-radius: var(--radius);
+    -webkit-touch-callout: none;
+  }
+
+  .drag-task:global(.drag-source) {
+    opacity: 0.35;
+  }
+
+  :global(.drag-task.drag-ghost) {
+    box-shadow: 0 14px 30px rgb(0 0 0 / 0.25);
+    border-radius: var(--radius);
+  }
+
+  .del-room {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    background: transparent;
+    color: var(--over);
+    font-size: 0.9rem;
+  }
+
+  .del-room.confirm {
+    background: var(--over-soft);
   }
 
   .add-task,

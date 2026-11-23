@@ -89,6 +89,17 @@ fn save_file(app: tauri::AppHandle, name: String, content: String) -> Result<Str
     Ok(path.display().to_string())
 }
 
+/// The app's own plugin for signing in with Google; the command lives in Kotlin.
+#[cfg(target_os = "android")]
+fn google_signin<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
+    tauri::plugin::Builder::new("google-signin")
+        .setup(|_app, api| {
+            api.register_android_plugin("eu.olitech.fairteilt", "GoogleSignInPlugin")?;
+            Ok(())
+        })
+        .build()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
@@ -98,6 +109,9 @@ pub fn run() {
     // QR scanning (join a household by code) exists on phones only.
     #[cfg(mobile)]
     let builder = builder.plugin(tauri_plugin_barcode_scanner::init());
+    // "Mit Google anmelden" through Android's Credential Manager (GoogleSignIn.kt).
+    #[cfg(target_os = "android")]
+    let builder = builder.plugin(google_signin());
     builder
         .invoke_handler(tauri::generate_handler![
             server_health,

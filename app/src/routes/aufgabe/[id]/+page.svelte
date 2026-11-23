@@ -96,6 +96,9 @@
   const pause = () => act(async () => void (local = (await taskStore.action(id, "pause")).task));
   const claim = () => act(async () => void (local = (await taskStore.action(id, "claim")).task));
   const skip = () => act(async () => void (local = (await taskStore.action(id, "cancel")).task));
+  /** Give it back: the task is open again for anyone. */
+  const giveBack = () => act(async () => void (local = (await taskStore.action(id, "unclaim")).task));
+  const mine = $derived(!!task && task.assignee_id === me && (task.status === "claimed" || task.status === "in_progress"));
 
   const complete = () =>
     act(async () => {
@@ -250,6 +253,9 @@
           {#if task.steps.length === 0 && !list}<button disabled={busy} onclick={complete}><Icon name="check" size={18} />Schon erledigt</button>{/if}
         </div>
         {#if list}<p class="muted small center">Abhaken legt in den Wagen. XP gibt es mit „Einkauf fertig“.</p>{/if}
+      {/if}
+      {#if mine}
+        <button class="give-back" disabled={busy} onclick={giveBack}>Abgeben · wieder für alle offen</button>
       {/if}
       {#if error}<p class="err" role="alert">{error}</p>{/if}
     </section>
@@ -469,6 +475,16 @@
     display: flex;
     flex-direction: column;
     gap: 4px;
+  }
+
+  .give-back {
+    align-self: center;
+    min-height: 36px;
+    background: transparent;
+    color: var(--muted);
+    font-size: 0.85rem;
+    text-decoration: underline;
+    text-underline-offset: 3px;
   }
 
   .when {
