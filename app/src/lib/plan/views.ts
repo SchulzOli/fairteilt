@@ -69,7 +69,7 @@ export function applyView(tasks: TaskDto[], view: Pick<ViewDto, "filter" | "sort
 export const STATUS_LABEL: Record<string, string> = {
   open: "Offen",
   claimed: "Übernommen",
-  in_progress: "Läuft",
+  in_progress: "Im Laden",
   submitted: "Wartet aufs OK",
 };
 

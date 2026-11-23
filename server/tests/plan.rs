@@ -122,12 +122,11 @@ async fn m6_calendar_planning_board(db: PgPool) {
     assert_eq!((s, t["status"].as_str(), t["assignee_id"].as_str()), (StatusCode::OK, Some("claimed"), Some(f.mia_mid.as_str())));
     let (_, inbox) = call(&app, "GET", &format!("/api/v1/households/{}/inbox", f.hid), Some(&f.mia), None).await;
     assert_eq!(inbox[0]["title"], "Neue Aufgabe für dich: „Spülmaschine“");
-    // Back to open; a started task stays with whoever works on it.
+    // Back to open; then Alex takes it himself.
     let (_, t) = call(&app, "PUT", &format!("/api/v1/tasks/{dishes_task}/assign"), Some(&f.sam), Some(json!({ "assignee_id": null }))).await;
-    assert_eq!(t["status"], "open");
-    call(&app, "POST", &format!("/api/v1/tasks/{dishes_task}/action"), Some(&f.alex), Some(json!({ "action": "start" }))).await;
-    let (s, _) = call(&app, "PUT", &format!("/api/v1/tasks/{dishes_task}/assign"), Some(&f.sam), Some(json!({ "assignee_id": f.mia_mid }))).await;
-    assert_eq!(s, StatusCode::CONFLICT);
+    assert_eq!((t["status"].as_str(), t["assignee_id"].as_str()), (Some("open"), None));
+    let (s, r) = call(&app, "POST", &format!("/api/v1/tasks/{dishes_task}/action"), Some(&f.alex), Some(json!({ "action": "claim" }))).await;
+    assert_eq!((s, r["task"]["assignee_id"].as_str()), (StatusCode::OK, Some(f.alex_mid.as_str())), "{r}");
 
     // Card positions; a recurring card keeps its place in the next round.
     let board = format!("/api/v1/households/{}/board", f.hid);
@@ -136,12 +135,15 @@ async fn m6_calendar_planning_board(db: PgPool) {
     call(&app, "PUT", &board, Some(&f.alex), Some(json!({ "task_id": dishes_task, "x": 300.0, "y": 40.0 }))).await;
     let (s, _) = call(&app, "PUT", &board, Some(&f.mia), Some(json!({ "task_id": dishes_task, "x": 1.0, "y": 1.0 }))).await;
     assert_eq!(s, StatusCode::FORBIDDEN);
-    call(&app, "POST", &format!("/api/v1/tasks/{dishes_task}/action"), Some(&f.alex), Some(json!({ "action": "done" }))).await;
+    let (s, r) = call(&app, "POST", &format!("/api/v1/tasks/{dishes_task}/action"), Some(&f.alex), Some(json!({ "action": "done" }))).await;
+    assert_eq!(s, StatusCode::OK, "{r}");
     let (_, items) = call(&app, "GET", &board, Some(&f.mia), None).await;
     let items = items.as_array().unwrap();
     assert_eq!(items.len(), 1);
     assert_eq!((items[0]["x"].as_f64(), items[0]["template_id"].as_str()), (Some(300.0), dishes["template_id"].as_str()));
-    let _ = &f.sam;
+    // A finished round is not handed to anyone any more.
+    let (s, _) = call(&app, "PUT", &format!("/api/v1/tasks/{dishes_task}/assign"), Some(&f.sam), Some(json!({ "assignee_id": f.mia_mid }))).await;
+    assert_eq!(s, StatusCode::CONFLICT);
 }
 
 #[sqlx::test(migrator = "punkte_server::MIGRATOR")]

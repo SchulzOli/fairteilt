@@ -24,8 +24,6 @@
   function consequence(l: SettlementLineDto): string {
     const parts: string[] = [];
     if (l.penalty_points_due > 0) parts.push(`Aufholaufgaben für ${l.penalty_points_due} XP`);
-    if (l.balance_delta > 0) parts.push(`+${l.balance_delta} G`);
-    if (l.balance_delta < 0) parts.push(`${l.balance_delta} G`);
     if (l.carry_next > 0) parts.push(`${l.carry_next} XP mehr im nächsten Monat`);
     if (l.carry_next < 0) parts.push(`${-l.carry_next} XP Vorsprung für den nächsten Monat`);
     return parts.join(" · ");
@@ -70,7 +68,7 @@
   {#if draft}
     <p class="muted small">
       {settlement.auto_approve_at ? `Wird am ${dayTime.format(new Date(settlement.auto_approve_at))} automatisch freigegeben.` : "Wartet auf Freigabe."}
-      Erst dann gibt es Guthaben und Aufholaufgaben.
+      Erst dann gibt es Aufholaufgaben.
     </p>
     {#if session.isAdmin}
       <button class="primary" disabled={busy} onclick={approve}>Jetzt freigeben</button>

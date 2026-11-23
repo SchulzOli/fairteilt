@@ -1,25 +1,24 @@
 <script lang="ts">
-  // Punkte (KONZEPT §7.3): own account, transfers, history; the family's accounts in member
-  // order (no ranking). XP measure work, G (Guthaben) can be given away.
+  // Punkte (KONZEPT §7.3): own XP and streak, the family's monthly goal (adults set it up),
+  // closings, history, and the family in member order (no ranking). Only XP since 23.11.2026:
+  // no Guthaben, no transfers, no rewards catalog; bonus XP on tasks is a gift with a
+  // monthly allowance.
+  import GoalSheet from "$lib/GoalSheet.svelte";
   import SettlementCard from "$lib/SettlementCard.svelte";
-  import type { LedgerEntryDto, ReverseResponse, TransferDto } from "$lib/generated";
+  import type { LedgerEntryDto, ReverseResponse } from "$lib/generated";
   import { session } from "$lib/session.svelte";
-  import { feedback } from "$lib/settings.svelte";
   import { memberName, taskStore } from "$lib/tasks.svelte";
   import Avatar from "$lib/ui/Avatar.svelte";
   import type { AnimalName } from "$lib/ui/Avatar.svelte";
   import Icon from "$lib/ui/Icon.svelte";
+  import Krumel from "$lib/ui/Krumel.svelte";
 
   let history = $state<LedgerEntryDto[]>([]);
   let more = $state(false);
-  let transfers = $state<TransferDto[]>([]);
-  let sending = $state(false);
-  let to = $state<string | null>(null);
-  let amount = $state(5);
-  let note = $state("");
   let busy = $state(false);
   let error = $state("");
   let sent = $state("");
+  let goalSheet = $state(false);
   /** Admins: whose history is shown (null = your own). */
   let viewing = $state<string | null>(null);
   let reversing = $state<string | null>(null);
@@ -28,10 +27,12 @@
   const hid = $derived(session.membership?.household_id);
   const me = $derived(session.membership?.membership_id);
   const account = $derived(taskStore.myAccount);
-  const others = $derived(session.members.filter((m) => m.membership_id !== me));
-  const pending = $derived(transfers.filter((t) => t.status === "pending"));
-  const isChild = $derived(session.membership?.role === "child");
+  const goal = $derived(taskStore.period?.goal);
+  const familyPct = $derived(goal ? Math.min(100, (goal.family_xp / Math.max(1, goal.target)) * 100) : 0);
+  const krumelPct = $derived(goal ? Math.min(100, (goal.krumel_xp / Math.max(1, goal.target)) * 100) : 0);
   const PAGE = 20;
+  /** Only what moved XP (older Guthaben entries are not shown any more). */
+  const shown = $derived(history.filter((e) => e.contribution_delta !== 0));
 
   async function loadHistory(append = false) {
     if (!hid) return;
@@ -42,36 +43,12 @@
     more = rows.length === PAGE;
   }
 
-  async function loadTransfers() {
-    if (!hid) return;
-    transfers = await session.request<TransferDto[]>("GET", `/households/${hid}/transfers`);
-  }
-
   // Reload whenever the live channel reports changes (taskStore.version counts reloads).
   $effect(() => {
     void taskStore.version;
+    void viewing;
     void loadHistory().catch((e) => (error = e.message));
-    void loadTransfers().catch(() => {});
   });
-
-  async function send(e: SubmitEvent) {
-    e.preventDefault();
-    if (!to) return (error = "Bitte wähle, an wen.");
-    busy = true;
-    error = "";
-    try {
-      const t = await session.request<TransferDto>("POST", `/households/${hid}/transfers`, { to, amount, note: note.trim() });
-      feedback("coin");
-      sent = t.status === "pending" ? `Ein Erwachsener gibt die ${t.amount} G an ${memberName(t.to_id)} noch frei.` : `${t.amount} G an ${memberName(t.to_id)} geschickt.`;
-      sending = false;
-      note = "";
-      taskStore.scheduleReload();
-    } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
-    } finally {
-      busy = false;
-    }
-  }
 
   /** Admins take back a task credit (counter-entry with a reason). */
   async function reverse(e: LedgerEntryDto) {
@@ -79,25 +56,11 @@
     error = "";
     try {
       const r = await session.request<ReverseResponse>("POST", `/households/${hid}/ledger/${e.id}/reverse`, { note: reason.trim() });
-      sent = `Zurückgenommen: ${r.xp} XP${r.g ? ` und ${r.g} G` : ""}.`;
+      sent = `Zurückgenommen: ${r.xp} XP.`;
       reversing = null;
       reason = "";
       taskStore.scheduleReload();
       await loadHistory();
-    } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
-    } finally {
-      busy = false;
-    }
-  }
-
-  async function decide(t: TransferDto, approve: boolean) {
-    busy = true;
-    error = "";
-    try {
-      await session.request("POST", `/transfers/${t.id}/decide`, { approve });
-      taskStore.scheduleReload();
-      await loadTransfers();
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {
@@ -111,18 +74,8 @@
     switch (e.kind) {
       case "task_reward":
         return task;
-      case "bounty_hold":
-        return `Bonus auf ${task}`;
       case "bounty_payout":
         return `Bonus für ${task}`;
-      case "bounty_refund":
-        return `Bonus zurück: ${task}`;
-      case "transfer_in":
-        return `Von ${memberName(e.counterpart_id)}`;
-      case "transfer_out":
-        return `An ${memberName(e.counterpart_id)}`;
-      case "reward_redeem":
-        return e.balance_delta < 0 ? `Belohnung: ${e.task_title ?? ""}` : `Belohnung zurück: ${e.task_title ?? ""}`;
       case "settlement_bonus":
         return "Bonus aus dem Abschluss";
       case "penalty_deduction":
@@ -142,84 +95,54 @@
 
 <h1 class="page-title">Punkte</h1>
 
-<section class="card account" aria-label="Dein Konto">
+<section class="card account" aria-label="Deine XP">
   <div class="big">
-    <span class="coin" aria-hidden="true">G</span>
+    <span class="xp-badge" aria-hidden="true">XP</span>
     <div>
-      <div class="num">{account?.balance ?? 0} <small>G</small></div>
-      <div class="muted small">Guthaben zum Verschenken und für Boni</div>
+      <div class="num">{account?.xp_month ?? 0} <small>XP</small></div>
+      <div class="muted small">diesen Monat</div>
     </div>
   </div>
   <div class="stats">
-    <div><b>{account?.xp_month ?? 0}</b><span class="muted small">XP diesen Monat</span></div>
-    <div><b class="flame"><Icon name="flame" size={16} />{account?.streak.days ?? 0}</b><span class="muted small">{account?.streak.days === 1 ? "Tag" : "Tage"} Serie</span></div>
+    <div><b class="flame" class:cold={!account?.streak.today}><Icon name="flame" size={16} />{account?.streak.days ?? 0}</b><span class="muted small">{account?.streak.days === 1 ? "Tag" : "Tage"} Serie</span></div>
     <div><b>{account?.xp_total ?? 0}</b><span class="muted small">XP insgesamt</span></div>
+    <div><b>{account?.bonus_left ?? 0}</b><span class="muted small">XP zum Verschenken</span></div>
   </div>
   {#if account && account.waiting > 0}
     <p class="muted small">{account.waiting} {account.waiting === 1 ? "Aufgabe wartet" : "Aufgaben warten"} noch auf Bestätigung.</p>
   {/if}
+  <p class="muted small">XP zum Verschenken setzt du als Bonus auf Aufgaben anderer: Wer sie erledigt, bekommt sie obendrauf.</p>
   {#if sent}<p class="ok" role="status">{sent}</p>{/if}
-  {#if !sending}
-    <button class="primary" disabled={(account?.balance ?? 0) <= 0} onclick={() => ((sending = true), (sent = ""), (amount = Math.min(5, account?.balance ?? 0)))}>
-      Guthaben übertragen
-    </button>
-  {:else}
-    <form class="stack" onsubmit={send}>
-      <div class="field"><span>An wen?</span>
-        <div class="people">
-          {#each others as m (m.membership_id)}
-            <button type="button" class="person" class:sel={to === m.membership_id} onclick={() => (to = m.membership_id)}>
-              <Avatar animal={m.animal as AnimalName} color={m.color} size={28} />{m.display_name}
-            </button>
-          {/each}
-        </div>
-      </div>
-      <div class="field"><span>Wie viel?</span>
-        <div class="stepper">
-          <button type="button" aria-label="Weniger" disabled={amount <= 1} onclick={() => (amount = Math.max(1, amount - 5))}>−</button>
-          <b>{amount} G</b>
-          <button type="button" aria-label="Mehr" disabled={amount >= (account?.balance ?? 0)} onclick={() => (amount = Math.min(account?.balance ?? 0, amount + 5))}>+</button>
-        </div>
-      </div>
-      <label class="field"><span>Wofür?</span>
-        <input id="transfer-note" type="text" bind:value={note} maxlength="200" required placeholder="z. B. Danke fürs Müll-Rausbringen" />
-      </label>
-      {#if isChild}<p class="muted small">Ein Erwachsener gibt die Übertragung noch frei.</p>{/if}
-      <div class="two">
-        <button type="button" onclick={() => (sending = false)}>Abbrechen</button>
-        <button class="primary" type="submit" disabled={busy || !to || !note.trim()}>Schicken</button>
-      </div>
-    </form>
-  {/if}
   {#if error}<p class="err" role="alert">{error}</p>{/if}
 </section>
 
-<a class="card rewards-link" href="/belohnungen">
-  <span class="coin" aria-hidden="true">G</span>
-  <span><b>Belohnungen</b><br /><span class="muted small">Guthaben einlösen: Film aussuchen, länger aufbleiben …</span></span>
-  <Icon name="chevron" size={18} />
-</a>
+<h2 class="section-title">Monatsziel</h2>
+{#if goal}
+  <section class="card goal" aria-label="Monatsziel der Familie">
+    <div class="goal-head">
+      <span class="goal-ic" aria-hidden="true"><Icon name="flag" size={20} /></span>
+      <div class="goal-text">
+        <b>{goal.target} XP gemeinsam</b>
+        <span class="muted small">Belohnung: {goal.reward}</span>
+      </div>
+      {#if session.isAdmin}<button class="edit-goal" onclick={() => (goalSheet = true)}><Icon name="edit" size={16} />Ändern</button>{/if}
+    </div>
+    <div class="race" aria-hidden="true">
+      <div class="lane"><span class="who">Wir</span><span class="track"><i class="fam" style="width: {familyPct}%"></i></span><b>{goal.family_xp}</b></div>
+      <div class="lane"><span class="who"><Krumel size={18} /></span><span class="track"><i class="krumel" style="width: {krumelPct}%"></i></span><b>{goal.krumel_xp}</b></div>
+    </div>
+    <p class="muted small">
+      {goal.status === "won" ? `Geschafft! ${goal.reward} gehört euch.` : goal.status === "lost" ? "Krümel war diesmal schneller." : goal.family_xp >= goal.krumel_xp ? "Ihr liegt vor Krümel." : `Krümel liegt ${goal.krumel_xp - goal.family_xp} XP vorn.`}
+    </p>
+  </section>
+{:else}
+  <p class="muted">Das Monatsziel erscheint, sobald der Monat läuft.</p>
+{/if}
 
 {#if taskStore.period?.settlements.length}
   <h2 class="section-title">Abschluss</h2>
   <div class="stack">
     {#each taskStore.period.settlements.slice(0, 2) as s (s.id)}<SettlementCard settlement={s} />{/each}
-  </div>
-{/if}
-
-{#if session.isAdmin && pending.length}
-  <h2 class="section-title">Freigeben</h2>
-  <div class="stack">
-    {#each pending as t (t.id)}
-      <article class="card release">
-        <div><b>{memberName(t.from_id)}</b> möchte <b>{t.amount} G</b> an <b>{memberName(t.to_id)}</b> geben</div>
-        <div class="muted small">„{t.note}“</div>
-        <div class="two">
-          <button disabled={busy} onclick={() => decide(t, false)}>Ablehnen</button>
-          <button class="primary" disabled={busy} onclick={() => decide(t, true)}>Freigeben</button>
-        </div>
-      </article>
-    {/each}
   </div>
 {/if}
 
@@ -235,21 +158,19 @@
     {/each}
   </div>
 {/if}
-{#if history.length === 0}
-  <p class="muted">Noch keine Buchungen. Erledige eine Aufgabe, dann taucht sie hier auf.</p>
+{#if shown.length === 0}
+  <p class="muted">Noch keine XP. Erledige eine Aufgabe, dann taucht sie hier auf.</p>
 {:else}
   <ul class="card history">
-    {#each history as e (e.id)}
+    {#each shown as e (e.id)}
       <li>
         <div class="what">
           <span>{describe(e)}</span>
-          {#if e.note && e.kind !== "transfer_in" && e.kind !== "transfer_out"}<span class="note">„{e.note}“{#if e.created_by && e.created_by !== me && e.kind === "task_reward"}{` · ${memberName(e.created_by)}`}{/if}</span>
-          {:else if e.note}<span class="note">„{e.note}“</span>{/if}
+          {#if e.note}<span class="note">„{e.note}“{#if e.created_by && e.created_by !== me && e.kind === "task_reward"}{` · ${memberName(e.created_by)}`}{/if}</span>{/if}
           <span class="muted small">{day.format(new Date(e.created_at))}</span>
         </div>
         <div class="amounts">
-          {#if e.contribution_delta !== 0}<span class="xp-chip" class:struck={e.reversed}>{signed(e.contribution_delta)} XP</span>{/if}
-          {#if e.balance_delta !== 0}<span class="g" class:minus={e.balance_delta < 0} class:struck={e.reversed}>{signed(e.balance_delta)} G</span>{/if}
+          <span class="xp-chip" class:struck={e.reversed}>{signed(e.contribution_delta)} XP</span>
           {#if e.reversed}<span class="muted small">zurückgenommen</span>
           {:else if viewing && viewing !== me && e.kind === "task_reward" && reversing !== e.id}
             <button class="undo" onclick={() => ((reversing = e.id), (reason = ""))}>Zurücknehmen</button>
@@ -262,7 +183,7 @@
               <button type="button" onclick={() => (reversing = null)}>Abbrechen</button>
               <button class="primary" type="submit" disabled={busy || !reason.trim()}>Zurücknehmen</button>
             </div>
-            <p class="muted small">Die XP und das Guthaben dieser Aufgabe werden gegengebucht, ein Bonus bleibt.</p>
+            <p class="muted small">Die XP dieser Aufgabe werden gegengebucht.</p>
           </form>
         {/if}
       </li>
@@ -279,14 +200,16 @@
       <div class="member">
         <Avatar animal={m.animal as AnimalName} color={m.color} size={32} />
         <span class="name">{m.display_name}</span>
-        <span class="muted small">{a.xp_month} XP</span>
-        <span class="g">{a.balance} G</span>
+        <span class="xp-chip">{a.xp_month} XP</span>
         <span class="flame small" class:cold={!a.streak.today}><Icon name="flame" size={14} />{a.streak.days}</span>
       </div>
     {/if}
   {/each}
 </div>
 
+{#if goalSheet}
+  <GoalSheet onclose={() => (goalSheet = false)} />
+{/if}
 
 <style>
   .account {
@@ -302,18 +225,17 @@
     gap: var(--space-3);
   }
 
-  .coin {
+  .xp-badge {
     width: 52px;
     height: 52px;
-    border-radius: 50%;
-    background: var(--coin-bg);
-    color: #5a3a04;
+    border-radius: 16px;
+    background: var(--xp-soft);
+    color: var(--xp);
     display: grid;
     place-items: center;
     font-family: var(--font-display);
     font-weight: 800;
-    font-size: 1.4rem;
-    box-shadow: inset 0 -3px 0 rgb(0 0 0 / 0.15);
+    font-size: 1.1rem;
   }
 
   .num {
@@ -325,7 +247,7 @@
 
   .num small {
     font-size: 1rem;
-    color: var(--coin);
+    color: var(--xp);
   }
 
   .stats {
@@ -360,73 +282,118 @@
     color: var(--muted);
   }
 
-  .people {
+  /* ---- monthly goal ---- */
+  .goal {
     display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    font-weight: 400;
+    flex-direction: column;
+    gap: var(--space-3);
   }
 
-  .person {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 0 12px 0 4px;
-    border-radius: 999px;
-    min-height: 40px;
-  }
-
-  .person.sel {
-    background: var(--primary-soft);
-    border-color: var(--primary);
-    color: var(--primary);
-    font-weight: 700;
-  }
-
-  .stepper {
+  .goal-head {
     display: flex;
     align-items: center;
     gap: var(--space-3);
-    font-weight: 400;
   }
 
-  .stepper button {
+  .goal-ic {
     width: 40px;
-    min-height: 40px;
-    padding: 0;
-    border-radius: 50%;
-    font-size: 1.2rem;
-  }
-
-  .stepper b {
-    font-size: 1.3rem;
-  }
-
-  .two {
+    height: 40px;
+    border-radius: 13px;
+    background: var(--primary-soft);
+    color: var(--primary);
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    place-items: center;
+    flex: none;
+  }
+
+  .goal-text {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .goal-text b {
+    font-family: var(--font-display);
+    font-size: 1.1rem;
+  }
+
+  .edit-goal {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 38px;
+    padding: 0 12px;
+    border-radius: 999px;
+    background: var(--surface-2);
+    font-size: 0.85rem;
+  }
+
+  .race {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .lane {
+    display: grid;
+    grid-template-columns: 34px 1fr 44px;
+    align-items: center;
     gap: var(--space-2);
   }
 
-  .release {
-    display: flex;
-    flex-direction: column;
+  .lane .who {
+    font-size: 0.8rem;
+    font-weight: 800;
+    display: grid;
+    place-items: center;
+  }
+
+  .lane b {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .track {
+    height: 10px;
+    border-radius: 999px;
+    background: var(--surface-2);
+    overflow: hidden;
+  }
+
+  .track i {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+  }
+
+  .track .fam {
+    background: var(--primary);
+  }
+
+  .track .krumel {
+    background: var(--krumel);
+  }
+
+  /* ---- history ---- */
+  .two {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 1fr;
     gap: var(--space-2);
   }
 
   .history {
     list-style: none;
     margin: 0;
-    padding: 0 var(--space-4);
+    padding: 0;
   }
 
   .history li {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: space-between;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: var(--space-2);
     align-items: center;
-    gap: var(--space-3);
-    padding: var(--space-3) 0;
+    padding: var(--space-3);
     border-bottom: 1px solid var(--line);
   }
 
@@ -441,8 +408,8 @@
   }
 
   .note {
+    font-size: 0.85rem;
     font-style: italic;
-    font-size: 0.9rem;
   }
 
   .amounts {
@@ -450,41 +417,29 @@
     flex-direction: column;
     align-items: flex-end;
     gap: 4px;
-    white-space: nowrap;
-  }
-
-  .g {
-    font-weight: 800;
-    color: var(--coin);
-    font-variant-numeric: tabular-nums;
-  }
-
-  .g.minus {
-    color: var(--muted);
   }
 
   .whose {
     display: flex;
-    flex-wrap: wrap;
     gap: 6px;
-    margin-bottom: var(--space-3);
+    overflow-x: auto;
+    margin-bottom: var(--space-2);
   }
 
   .whose button {
+    flex: none;
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    min-height: 36px;
-    padding: 0 12px 0 4px;
+    min-height: 38px;
+    padding: 0 12px 0 6px;
     border-radius: 999px;
-    font-size: 0.9rem;
+    font-size: 0.85rem;
   }
 
   .whose button.sel {
     background: var(--primary-soft);
-    border-color: var(--primary);
     color: var(--primary);
-    font-weight: 700;
   }
 
   .struck {
@@ -494,31 +449,33 @@
 
   .undo {
     min-height: 30px;
-    padding: 0 10px;
+    padding: 0 8px;
+    background: transparent;
+    color: var(--over);
     font-size: 0.8rem;
   }
 
   .reverse {
-    flex-basis: 100%;
+    grid-column: 1 / -1;
     display: flex;
     flex-direction: column;
     gap: var(--space-2);
   }
 
   .more {
-    display: block;
-    margin: var(--space-3) auto 0;
+    width: 100%;
+    margin-top: var(--space-2);
   }
 
   .family {
     display: flex;
     flex-direction: column;
-    gap: var(--space-3);
+    gap: var(--space-2);
   }
 
   .member {
     display: grid;
-    grid-template-columns: 32px 1fr auto auto auto;
+    grid-template-columns: auto 1fr auto auto;
     align-items: center;
     gap: var(--space-3);
   }
@@ -529,26 +486,9 @@
 
   .ok {
     color: var(--ok);
-    font-weight: 700;
   }
 
   .err {
     color: var(--over);
-  }
-
-  .rewards-link {
-    display: grid;
-    grid-template-columns: 40px 1fr auto;
-    align-items: center;
-    gap: var(--space-3);
-    margin-top: var(--space-3);
-    color: inherit;
-    text-decoration: none;
-  }
-
-  .rewards-link .coin {
-    width: 40px;
-    height: 40px;
-    font-size: 1.1rem;
   }
 </style>

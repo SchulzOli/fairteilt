@@ -161,7 +161,7 @@
               <span class="tt">
                 <b>{t.title}</b>
                 <span class="small">
-                  {t.status === "submitted" ? "wartet aufs OK" : t.status === "in_progress" ? "läuft" : `${t.xp} XP`}{#if t.steps.length} · {stepsDone(t)}/{t.steps.length}{/if}
+                  {t.status === "submitted" ? "wartet aufs OK" : t.status === "in_progress" ? "kauft ein" : `${t.xp} XP`}{#if t.steps.length} · {stepsDone(t)}/{t.steps.length}{/if}
                 </span>
               </span>
               {#if cheer?.id === t.id}<span class="cheer">{cheer.text}</span>{/if}

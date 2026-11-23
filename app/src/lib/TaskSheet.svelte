@@ -66,7 +66,8 @@
   let people = $state<string[]>(a0?.type === "fixed" ? [a0.member] : a0?.type === "rotation" || a0?.type === "least_loaded" ? [...a0.members] : []);
   let steps = $state<string[]>([...(t0?.steps ?? init.preset?.steps ?? [])]);
   let sequential = $state(t0 ? t0.step_order === "sequential" : (init.preset?.sequential ?? false));
-  let duration = $state<number | null>(t0 ? t0.duration_min : (init.preset?.duration ?? null));
+  // No timer since 23.11.2026: the duration is kept as it was set, the form does not ask for it.
+  const duration = t0 ? t0.duration_min : null;
   let approval = $state<TemplateApproval>(t0?.approval ?? "household");
   let confirmDelete = $state(false);
   /** The task of a shopping list: its rhythm stays "auf Abruf". */
@@ -284,16 +285,8 @@
         <small class="muted">{approval === "household" ? "Aufgaben von Kindern bestätigt ein Erwachsener." : approval === "always" ? "Jemand anderes bestätigt immer." : "Zählt sofort, ohne Bestätigung."}</small>
       </div>
 
-      <div class="field"><span>Dauer <small class="muted">(danach fragt Fairteilt kurz nach)</small></span>
-        <div class="chips">
-          {#each [5, 10, 15, 25, 30, 45, 60] as d (d)}
-            <button type="button" class="chip" class:sel={duration === d} onclick={() => (duration = duration === d ? null : d)}>{d} Min.</button>
-          {/each}
-        </div>
-      </div>
-
       {#if t0}
-        <p class="muted small">Name, Symbol und Raum ändern sich sofort. XP, Schritte, Rhythmus und Zuweisung gelten für die offene Runde, solange sie noch niemand begonnen hat, sonst ab der nächsten.</p>
+        <p class="muted small">Name, Symbol und Raum ändern sich sofort. XP, Schritte, Rhythmus und Zuweisung gelten für die offene Runde, solange noch niemand dran ist, sonst ab der nächsten.</p>
       {/if}
       {#if error}<p class="err" role="alert">{error}</p>{/if}
       <button class="primary" type="submit" disabled={busy || !title.trim()}>{t0 ? "Speichern" : "Aufgabe anlegen"}</button>

@@ -3,11 +3,11 @@ import type { TaskDto } from "./TaskDto";
 
 export type TaskActionResponse = { task: TaskDto, 
 /**
- * XP credited when this action completed the task (directly or by approval).
+ * XP credited to the caller when this action completed the task (their share).
  */
 xp_awarded: number | null, 
 /**
- * Bonus G paid out together with the XP.
+ * Bonus XP that was on the task (shared like the XP, included in `xp_awarded`).
  */
 bounty_paid: number | null, 
 /**

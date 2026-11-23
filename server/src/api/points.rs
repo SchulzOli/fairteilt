@@ -1,10 +1,10 @@
-//! Points ledger, accounts with streak, history and transfers (M3, KONZEPT §4.4, §4.5, §6).
+//! Points ledger, accounts with streak and history (M3, KONZEPT §4.4, §6).
 //!
-//! The ledger is append-only: balances are sums over entries, corrections are counter-entries.
-//! XP (`contribution`) measure work and only come from tasks; G (`balance`) can move freely.
+//! The ledger is append-only: sums over entries, corrections are counter-entries. XP
+//! (`contribution`) measure work and only come from tasks. Guthaben (`balance`) is no longer
+//! earned or moved (since 23.11.2026); old entries stay in the books.
 
 use axum::extract::{Path, Query, State};
-use axum::http::StatusCode;
 use axum::Json;
 use chrono::{DateTime, NaiveDate, Utc};
 use punkte_core::{LedgerDelta, LedgerKind, Streak, streak};
@@ -76,7 +76,7 @@ pub(crate) async fn balance(tx: &mut Transaction<'_, Postgres>, member: Uuid) ->
 #[derive(Serialize)]
 pub struct AccountDto {
     pub membership_id: Uuid,
-    /// Guthaben (G): transferable, for bonuses and rewards.
+    /// Guthaben (G) from before 23.11.2026; no longer earned or shown.
     pub balance: i64,
     /// XP earned in the current month (the period until settlement arrives in M4).
     pub xp_month: i64,
@@ -84,6 +84,8 @@ pub struct AccountDto {
     pub streak: Streak,
     /// Own tasks waiting for someone to confirm them.
     pub waiting: i64,
+    /// Bonus XP this member can still give away this month (household rule `bonus_xp_per_month`).
+    pub bonus_left: i64,
 }
 
 /// Accounts of all active members (in member order, no ranking).
@@ -98,29 +100,33 @@ pub async fn accounts(State(state): State<AppState>, user: AuthUser, Path(househ
         xp_month: i64,
         xp_total: i64,
         waiting: i64,
+        bonus_given: i64,
     }
     let rows = sqlx::query_as::<_, Row>(
         "SELECT m.id,
                 COALESCE(SUM(l.balance_delta), 0)::BIGINT AS balance,
                 COALESCE(SUM(l.contribution_delta) FILTER (WHERE l.created_at >= $2), 0)::BIGINT AS xp_month,
                 COALESCE(SUM(l.contribution_delta), 0)::BIGINT AS xp_total,
-                (SELECT COUNT(*) FROM tasks t WHERE t.completed_by = m.id AND t.status = 'submitted') AS waiting
+                (SELECT COUNT(*) FROM tasks t WHERE t.completed_by = m.id AND t.status = 'submitted') AS waiting,
+                (SELECT COALESCE(SUM(b.amount), 0) FROM bounties b
+                 WHERE b.pledger_id = m.id AND b.created_at >= $3 AND b.status <> 'refunded')::BIGINT AS bonus_given
          FROM memberships m LEFT JOIN ledger_entries l ON l.member_id = m.id
          WHERE m.household_id = $1 AND m.active
          GROUP BY m.id, m.seq ORDER BY m.seq",
     )
     .bind(household_id)
     .bind(crate::period::period_start(&state.db, household_id).await?)
+    .bind(crate::api::tasks::month_start(hh.tz, now))
     .fetch_all(&state.db)
     .await?;
 
-    // Streak: local days with at least one credited task (the day the work was done).
-    // A credit an admin took back does not count.
+    // Streak: local days with at least one credited task (the day the work was done), for
+    // everyone who shared it. A credit an admin took back does not count.
     let days: Vec<(Uuid, NaiveDate)> = sqlx::query_as(
-        "SELECT DISTINCT completed_by, (completed_at AT TIME ZONE $2)::date FROM tasks
-         WHERE household_id = $1 AND status = 'completed' AND completed_by IS NOT NULL AND completed_at > now() - interval '400 days'
-           AND NOT EXISTS (SELECT 1 FROM ledger_entries r JOIN ledger_entries c ON c.ref_type = 'ledger' AND c.ref_id = r.id
-                           WHERE r.ref_type = 'task' AND r.ref_id = tasks.id AND r.kind = 'task_reward')",
+        "SELECT DISTINCT r.member_id, (t.completed_at AT TIME ZONE $2)::date
+         FROM ledger_entries r JOIN tasks t ON r.ref_type = 'task' AND t.id = r.ref_id
+         WHERE r.household_id = $1 AND r.kind = 'task_reward' AND t.status = 'completed' AND t.completed_at > now() - interval '400 days'
+           AND NOT EXISTS (SELECT 1 FROM ledger_entries c WHERE c.ref_type = 'ledger' AND c.ref_id = r.id)",
     )
     .bind(household_id)
     .bind(hh.tz.name())
@@ -139,6 +145,7 @@ pub async fn accounts(State(state): State<AppState>, user: AuthUser, Path(househ
                     xp_total: r.xp_total,
                     streak: streak(&mine, today),
                     waiting: r.waiting,
+                    bonus_left: (hh.policy.bonus_xp_per_month - r.bonus_given).max(0),
                 }
             })
             .collect(),
@@ -295,218 +302,4 @@ pub async fn reverse(
         serde_json::json!({ "type": "reversed", "member": member, "by": me, "task": title, "xp": xp, "g": g_back, "note": note }),
     );
     Ok(Json(ReverseResponse { xp, g: g_back }))
-}
-
-// ---------------------------------------------------------------- transfers
-
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
-#[derive(Deserialize)]
-pub struct TransferRequest {
-    pub to: Uuid,
-    pub amount: i64,
-    /// Always with a note ("Danke fürs Müll-Rausbringen").
-    pub note: String,
-}
-
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
-#[derive(Serialize, sqlx::FromRow)]
-pub struct TransferDto {
-    pub id: Uuid,
-    pub from_id: Uuid,
-    pub to_id: Uuid,
-    pub amount: i64,
-    pub note: String,
-    /// `done`, `pending` (a child's transfer waiting for an admin) or `declined`.
-    pub status: String,
-    pub created_at: DateTime<Utc>,
-}
-
-macro_rules! transfer_columns {
-    () => {
-        "id, from_id, to_id, amount, note, status, created_at"
-    };
-}
-
-/// G sent (or waiting to be sent) by `member` this month.
-async fn sent_this_period(tx: &mut Transaction<'_, Postgres>, member: Uuid, since: DateTime<Utc>, except: Option<Uuid>) -> AppResult<i64> {
-    Ok(sqlx::query_scalar(
-        "SELECT COALESCE(SUM(amount), 0)::BIGINT FROM transfers
-         WHERE from_id = $1 AND status IN ('done', 'pending') AND created_at >= $2 AND ($3::uuid IS NULL OR id <> $3)",
-    )
-    .bind(member)
-    .bind(since)
-    .bind(except)
-    .fetch_one(&mut **tx)
-    .await?)
-}
-
-/// Inbox entry for the receiver of a transfer.
-async fn note_received(tx: &mut Transaction<'_, Postgres>, t: &TransferDto) -> AppResult<()> {
-    let from = inbox::name(tx, t.from_id).await?;
-    inbox::add(tx, Note::new(t.to_id, "received", Category::Points, format!("{from} hat dir {} G geschickt", t.amount)).body(format!("„{}“", t.note)).about("transfer", t.id))
-        .await?;
-    Ok(())
-}
-
-/// Personal event for the receiver of a transfer.
-fn received(t: &TransferDto) -> serde_json::Value {
-    serde_json::json!({ "type": "received", "member": t.to_id, "by": t.from_id, "g": t.amount, "note": t.note })
-}
-
-async fn execute(tx: &mut Transaction<'_, Postgres>, household: Uuid, t: &TransferDto, by: Uuid) -> AppResult<()> {
-    let (out, inn) = LedgerDelta::transfer(t.amount);
-    let ledger = Ledger { household, by };
-    ledger.book(tx, t.from_id, out, "transfer", t.id, None).await?;
-    ledger.book(tx, t.to_id, inn, "transfer", t.id, None).await?;
-    Ok(())
-}
-
-pub async fn create_transfer(
-    State(state): State<AppState>,
-    user: AuthUser,
-    Path(household_id): Path<Uuid>,
-    Json(req): Json<TransferRequest>,
-) -> AppResult<(StatusCode, Json<TransferDto>)> {
-    let (me, role) = membership(&state, user.user_id, household_id).await?;
-    let hh = household(&state.db, household_id).await?;
-    let note = req.note.trim();
-    if note.is_empty() || note.chars().count() > 200 {
-        return Err(AppError::BadRequest("Bitte schreib kurz dazu, wofür (bis 200 Zeichen).".into()));
-    }
-    if req.to == me {
-        return Err(AppError::BadRequest("An dich selbst kannst du nichts übertragen.".into()));
-    }
-    let mut tx = state.db.begin().await?;
-    let to_ok: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM memberships WHERE id = $1 AND household_id = $2 AND active)")
-        .bind(req.to)
-        .bind(household_id)
-        .fetch_one(&mut *tx)
-        .await?;
-    if !to_ok {
-        return Err(AppError::BadRequest("Diese Person ist nicht im Haushalt.".into()));
-    }
-    lock_member(&mut tx, me).await?;
-    let have = balance(&mut tx, me).await?;
-    let sent = sent_this_period(&mut tx, me, crate::period::period_start(&state.db, household_id).await?, None).await?;
-    hh.policy.check_transfer(req.amount, have, sent).map_err(|e| AppError::BadRequest(e.to_string()))?;
-
-    let pending = role == "child" && hh.policy.child_transfer_needs_approval;
-    let transfer = sqlx::query_as::<_, TransferDto>(
-        "INSERT INTO transfers (id, household_id, from_id, to_id, amount, note, status) VALUES ($1, $2, $3, $4, $5, $6, $7)
-         RETURNING id, from_id, to_id, amount, note, status, created_at",
-    )
-    .bind(Uuid::new_v4())
-    .bind(household_id)
-    .bind(me)
-    .bind(req.to)
-    .bind(req.amount)
-    .bind(note)
-    .bind(if pending { "pending" } else { "done" })
-    .fetch_one(&mut *tx)
-    .await?;
-    if !pending {
-        execute(&mut tx, household_id, &transfer, me).await?;
-        note_received(&mut tx, &transfer).await?;
-    } else {
-        let (from, to) = (inbox::name(&mut tx, me).await?, inbox::name(&mut tx, req.to).await?);
-        for admin in inbox::members(&mut tx, household_id, true, Some(me)).await? {
-            inbox::add(
-                &mut tx,
-                Note::new(admin, "transfer_request", Category::Points, format!("{from} möchte {} G an {to} geben", transfer.amount))
-                    .body(format!("„{}“", transfer.note))
-                    .about("transfer", transfer.id),
-            )
-            .await?;
-        }
-    }
-    tx.commit().await?;
-    state.live.notify(household_id, r#"{"type":"points_changed"}"#);
-    if !pending {
-        state.live.notify_json(household_id, received(&transfer));
-    }
-    Ok((StatusCode::CREATED, Json(transfer)))
-}
-
-/// Your own transfers; admins also see all transfers waiting for a decision.
-pub async fn list_transfers(State(state): State<AppState>, user: AuthUser, Path(household_id): Path<Uuid>) -> AppResult<Json<Vec<TransferDto>>> {
-    let (me, role) = membership(&state, user.user_id, household_id).await?;
-    let rows = sqlx::query_as::<_, TransferDto>(concat!(
-        "SELECT ",
-        transfer_columns!(),
-        " FROM transfers WHERE household_id = $1 AND (from_id = $2 OR to_id = $2 OR ($3 AND status = 'pending'))
-         ORDER BY created_at DESC LIMIT 50"
-    ))
-    .bind(household_id)
-    .bind(me)
-    .bind(role == "admin")
-    .fetch_all(&state.db)
-    .await?;
-    Ok(Json(rows))
-}
-
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
-#[derive(Deserialize)]
-pub struct DecideTransferRequest {
-    pub approve: bool,
-}
-
-/// Admins release or decline a child's transfer.
-pub async fn decide_transfer(
-    State(state): State<AppState>,
-    user: AuthUser,
-    Path(transfer_id): Path<Uuid>,
-    Json(req): Json<DecideTransferRequest>,
-) -> AppResult<Json<TransferDto>> {
-    let household_id: Uuid = sqlx::query_scalar("SELECT household_id FROM transfers WHERE id = $1")
-        .bind(transfer_id)
-        .fetch_optional(&state.db)
-        .await?
-        .ok_or(AppError::NotFound)?;
-    let (me, role) = membership(&state, user.user_id, household_id).await?;
-    if role != "admin" {
-        return Err(AppError::Forbidden("Übertragungen von Kindern geben Admins frei.".into()));
-    }
-    let hh = household(&state.db, household_id).await?;
-    let mut tx = state.db.begin().await?;
-    let t = sqlx::query_as::<_, TransferDto>(concat!("SELECT ", transfer_columns!(), " FROM transfers WHERE id = $1 FOR UPDATE"))
-        .bind(transfer_id)
-        .fetch_one(&mut *tx)
-        .await?;
-    if t.status != "pending" {
-        return Err(AppError::Conflict("Über diese Übertragung ist schon entschieden.".into()));
-    }
-    let status = if req.approve {
-        lock_member(&mut tx, t.from_id).await?;
-        let have = balance(&mut tx, t.from_id).await?;
-        let sent = sent_this_period(&mut tx, t.from_id, crate::period::period_start(&state.db, household_id).await?, Some(t.id)).await?;
-        hh.policy.check_transfer(t.amount, have, sent).map_err(|e| AppError::BadRequest(e.to_string()))?;
-        execute(&mut tx, household_id, &t, me).await?;
-        note_received(&mut tx, &t).await?;
-        "done"
-    } else {
-        let to = inbox::name(&mut tx, t.to_id).await?;
-        inbox::add(&mut tx, Note::new(t.from_id, "transfer_declined", Category::Points, format!("{} G an {to} nicht freigegeben", t.amount)).about("transfer", t.id))
-            .await?;
-        "declined"
-    };
-    let t = sqlx::query_as::<_, TransferDto>(concat!(
-        "UPDATE transfers SET status = $2, decided_by = $3, decided_at = now() WHERE id = $1 RETURNING ",
-        transfer_columns!()
-    ))
-    .bind(transfer_id)
-    .bind(status)
-    .bind(me)
-    .fetch_one(&mut *tx)
-    .await?;
-    tx.commit().await?;
-    state.live.notify(household_id, r#"{"type":"points_changed"}"#);
-    if t.status == "done" {
-        state.live.notify_json(household_id, received(&t));
-    } else {
-        state.live.notify_json(
-            household_id,
-            serde_json::json!({ "type": "transfer_declined", "member": t.from_id, "by": me, "g": t.amount, "to": t.to_id }),
-        );
-    }
-    Ok(Json(t))
 }

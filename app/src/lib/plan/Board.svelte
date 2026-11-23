@@ -8,7 +8,7 @@
   import type { BoardItemDto, TaskDto } from "$lib/generated";
   import { session } from "$lib/session.svelte";
   import { feedback } from "$lib/settings.svelte";
-  import { conditionOf, dueText, iconOf, taskStore } from "$lib/tasks.svelte";
+  import { STATUS_LABEL, conditionOf, iconOf, statusOf, taskStore } from "$lib/tasks.svelte";
   import Avatar from "$lib/ui/Avatar.svelte";
   import type { AnimalName } from "$lib/ui/Avatar.svelte";
   import Icon from "$lib/ui/Icon.svelte";
@@ -128,7 +128,7 @@
     if (t.status === "in_progress") return "running";
     return conditionOf(t, taskStore.now) >= 1 ? "late" : "open";
   }
-  const metaOf = (t: TaskDto) => (t.status === "in_progress" ? "läuft" : dueText(t, taskStore.now));
+  const metaOf = (t: TaskDto) => (t.list_id && t.status === "in_progress" ? "kauft ein" : t.due_at ? STATUS_LABEL[statusOf(conditionOf(t, taskStore.now))] : "kein Termin");
   const memberOf = (id: string | null | undefined) => session.members.find((m) => m.membership_id === id);
   const dayFmt = new Intl.DateTimeFormat("de-DE", { day: "numeric", month: "numeric" });
   const canMove = (t: TaskDto) => planner && ["open", "claimed"].includes(t.status);

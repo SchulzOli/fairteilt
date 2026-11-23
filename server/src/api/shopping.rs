@@ -617,18 +617,30 @@ pub async fn check_item(
         // Already in the cart (a repeated request): nothing to do.
     } else {
         // The caller shops: the round is (or becomes) theirs, like checking a step starts a task.
+        // "In the shop" since the first item in the cart (no timer; `started_at` only marks
+        // which items were written down later). Helpers on the round shop too.
+        let helping = match &round {
+            Some((task_id, _, _)) => sqlx::query_scalar::<_, bool>("SELECT EXISTS (SELECT 1 FROM task_helpers WHERE task_id = $1 AND member_id = $2)")
+                .bind(*task_id)
+                .bind(me)
+                .fetch_one(&mut *tx)
+                .await?,
+            None => false,
+        };
         let shopping = match &round {
             Some((task_id, status, _)) if status == "in_progress" => Some(*task_id),
-            Some((task_id, status, assignee)) if (status == "open" || status == "claimed") && (assignee.is_none() || *assignee == Some(me)) => {
+            Some((task_id, status, assignee))
+                if (status == "open" || status == "claimed") && (assignee.is_none() || *assignee == Some(me) || helping) =>
+            {
                 lock_task(&mut tx, *task_id).await?;
-                let minutes = task_duration(&mut tx, *task_id).await?;
-                sqlx::query("UPDATE tasks SET status = 'in_progress', assignee_id = $2, started_at = $3, remind_at = $4, updated_at = $3 WHERE id = $1")
-                    .bind(*task_id)
-                    .bind(me)
-                    .bind(now)
-                    .bind(now + chrono::Duration::minutes(i64::from(minutes)))
-                    .execute(&mut *tx)
-                    .await?;
+                sqlx::query(
+                    "UPDATE tasks SET status = 'in_progress', assignee_id = COALESCE(assignee_id, $2), started_at = $3, remind_at = NULL, updated_at = $3 WHERE id = $1",
+                )
+                .bind(*task_id)
+                .bind(me)
+                .bind(now)
+                .execute(&mut *tx)
+                .await?;
                 record_event(&mut tx, *task_id, me, "started", serde_json::json!({})).await?;
                 started_task = Some(*task_id);
                 tasks_changed = true;
@@ -664,7 +676,3 @@ pub async fn check_item(
     Ok(Json(CheckItemResponse { item, started_task }))
 }
 
-async fn task_duration(tx: &mut Transaction<'_, Postgres>, task_id: Uuid) -> AppResult<i32> {
-    let d: Option<i32> = sqlx::query_scalar("SELECT duration_min FROM tasks WHERE id = $1").bind(task_id).fetch_one(&mut **tx).await?;
-    Ok(d.unwrap_or(45))
-}

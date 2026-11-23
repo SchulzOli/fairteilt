@@ -20,7 +20,7 @@ diesem Server selbst verantwortlich. Diese Erklärung gilt für den Server `fair
 | E-Mail-Adresse, Passwort (nur als Argon2id-Hash), Anzeigename | Konto, Anmeldung | Art. 6 Abs. 1 lit. b DSGVO (Vertrag) |
 | Bei „Mit Google anmelden“: Googles Konto-Kennung, E-Mail-Adresse und Vorname aus dem Google-Konto (kein Passwort, kein Zugriff auf Google-Daten) | Konto, Anmeldung | Art. 6 Abs. 1 lit. b DSGVO (Vertrag) |
 | Kinderprofile: Anzeigename, Tier, Farbe, PIN (nur als Hash), keine E-Mail | Profil im Haushalt | Art. 6 Abs. 1 lit. b, angelegt von den Eltern |
-| Inhalte des Haushalts: Räume, Aufgaben, Erledigungen, Punkte, Übertragungen, Belohnungen, Abschlüsse, Postfach | Kernfunktion der App | Art. 6 Abs. 1 lit. b |
+| Inhalte des Haushalts: Räume, Aufgaben, Erledigungen, Punkte, Abschlüsse, Postfach | Kernfunktion der App | Art. 6 Abs. 1 lit. b |
 | Geräte: Anmelde-Sitzungen (Refresh-Token als Hash, Gerätename), Push-Token | angemeldet bleiben, Benachrichtigungen | Art. 6 Abs. 1 lit. b |
 | Technische Protokolle des Servers (IP-Adresse, Zeitpunkt, Pfad), höchstens [7] Tage | Betrieb und Sicherheit | Art. 6 Abs. 1 lit. f (berechtigtes Interesse) |
 

@@ -129,6 +129,13 @@ pub async fn assign(
         .bind(if req.assignee_id.is_some() { "claimed" } else { "open" })
         .execute(&mut *tx)
         .await?;
+    // Reassigned on the board: a fresh start (an open task has nobody on it, the new person is
+    // not also a helper).
+    sqlx::query("DELETE FROM task_helpers WHERE task_id = $1 AND ($2::uuid IS NULL OR member_id = $2)")
+        .bind(task_id)
+        .bind(req.assignee_id)
+        .execute(&mut *tx)
+        .await?;
     record_event(&mut tx, task_id, me, "assigned", serde_json::json!({ "to": req.assignee_id })).await?;
     if let Some(to) = req.assignee_id
         && to != me

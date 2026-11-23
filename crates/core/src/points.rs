@@ -171,6 +171,14 @@ pub struct PointPolicy {
     pub quality_adjust: bool,
     /// Allow `penalty_deduction` to push a balance below zero.
     pub allow_negative_balance: bool,
+    /// XP each member may put on others' tasks per month as a bonus (a gift: it costs the
+    /// giver nothing, the people who do the task share it). 0 = no bonus.
+    #[serde(default = "default_bonus_per_month")]
+    pub bonus_xp_per_month: Points,
+}
+
+fn default_bonus_per_month() -> Points {
+    30
 }
 
 impl Default for PointPolicy {
@@ -188,6 +196,7 @@ impl Default for PointPolicy {
             approval: ApprovalRule::ChildrenOnly,
             quality_adjust: true,
             allow_negative_balance: false,
+            bonus_xp_per_month: default_bonus_per_month(),
         }
     }
 }

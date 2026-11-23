@@ -209,7 +209,7 @@ class TaskStore {
       } else if (type === "household_deleted") {
         // Gone for everyone: the app falls back to "Haushalt einrichten".
         void session.loadMe().catch(() => {});
-      } else if (type === "settlement_approved" || type === "rewards_changed") {
+      } else if (type === "settlement_approved") {
         this.scheduleReload();
       } else if (event.member) {
         this.personal(event);
@@ -233,22 +233,10 @@ class TaskStore {
     const note = e.note ? `„${e.note}“` : undefined;
     switch (e.type) {
       case "credited":
-        notices.show(`${who} hat „${e.task}“ bestätigt · +${e.xp} XP${e.g && e.g > 0 ? ` · +${e.g} G` : ""}`, "xp", note, "confirm");
+        notices.show(`${who} hat „${e.task}“ bestätigt · +${e.xp} XP`, "xp", note, "confirm");
         break;
       case "returned":
         notices.show(`„${e.task}“ bitte nochmal anschauen`, "info", note ?? `${who} hat sie zurückgegeben.`);
-        break;
-      case "received":
-        notices.show(`${who} hat dir ${e.g} G geschickt`, "coin", note, "coin");
-        break;
-      case "transfer_declined":
-        notices.show(`Deine ${e.g} G an ${memberName(e.to ?? null)} wurden nicht freigegeben`, "info");
-        break;
-      case "redemption_approved":
-        notices.show(`„${e.task}“ ist freigegeben`, "coin", `${who} hat zugestimmt. Viel Spaß!`, "confirm");
-        break;
-      case "redemption_rejected":
-        notices.show(`„${e.task}“ diesmal nicht`, "info", `Deine ${e.g} G sind wieder da.`);
         break;
       case "reversed":
         notices.show(`${who} hat „${e.task ?? "eine Aufgabe"}“ zurückgenommen`, "info", note);
@@ -285,23 +273,24 @@ class TaskStore {
   }
 
   // ---------- actions ----------
-  async action(id: string, action: TaskCommand, minutes?: number): Promise<TaskActionResponse> {
+  async action(id: string, action: TaskCommand): Promise<TaskActionResponse> {
     const title = this.tasks.find((t) => t.id === id)?.title ?? "Aufgabe";
-    const labels: Record<string, string> = { done: "erledigt", start: "gestartet", pause: "pausiert", claim: "übernommen", unclaim: "abgegeben", snooze: "verschoben", cancel: "übersprungen" };
-    const res = await outbox.send<TaskActionResponse>("POST", `/tasks/${id}/action`, { action, minutes: minutes ?? null }, `„${title}“ ${labels[action] ?? action}`);
+    const labels: Record<string, string> = { done: "erledigt", claim: "übernommen", unclaim: "abgegeben", cancel: "übersprungen" };
+    const res = await outbox.send<TaskActionResponse>("POST", `/tasks/${id}/action`, { action }, `„${title}“ ${labels[action] ?? action}`);
     if (!res) {
       const me = session.membership?.membership_id ?? null;
-      const now = Date.now();
       return this.queuedResult(id, (t) => {
         if (action === "done" || action === "cancel") return null;
-        if (action === "start") {
-          const remind = now + (t.duration_min ?? 25) * 60_000;
-          return { ...t, status: "in_progress", assignee_id: me, started_at: new Date(now).toISOString(), remind_at: new Date(remind).toISOString() };
+        // As on the server: open → mine; someone else's → I join (shared XP).
+        if (action === "claim") {
+          if (!t.assignee_id) return { ...t, status: "claimed", assignee_id: me };
+          return me && t.assignee_id !== me && !t.helpers.includes(me) ? { ...t, helpers: [...t.helpers, me] } : t;
         }
-        if (action === "pause") return { ...t, status: "claimed", started_at: null, remind_at: null };
-        if (action === "claim") return { ...t, status: "claimed", assignee_id: me };
-        if (action === "unclaim") return { ...t, status: "open", assignee_id: null };
-        if (action === "snooze") return { ...t, remind_at: new Date(now + (minutes ?? 10) * 60_000).toISOString() };
+        if (action === "unclaim") {
+          if (me && t.helpers.includes(me)) return { ...t, helpers: t.helpers.filter((h) => h !== me) };
+          const [next, ...rest] = t.helpers;
+          return next ? { ...t, assignee_id: next, helpers: rest } : { ...t, status: "open", assignee_id: null };
+        }
         return t;
       });
     }
@@ -320,7 +309,10 @@ class TaskStore {
       return this.queuedResult(taskId, (t) => {
         const steps = t.steps.map((s) => (s.id === stepId ? { ...s, done_at: now, done_by: me } : s));
         if (steps.every((s) => s.done_at)) return null;
-        return { ...t, steps, status: t.status === "in_progress" ? t.status : "in_progress", started_at: t.started_at ?? now, assignee_id: t.assignee_id ?? me };
+        // Working on a step: an open task becomes mine, on someone else's I join.
+        if (!t.assignee_id) return { ...t, steps, status: "claimed", assignee_id: me };
+        const helpers = me && t.assignee_id !== me && !t.helpers.includes(me) ? [...t.helpers, me] : t.helpers;
+        return { ...t, steps, helpers };
       });
     }
     if (res.xp_awarded !== null) this.hold(1800);
@@ -398,9 +390,7 @@ interface LiveEvent {
   by?: string;
   task?: string | null;
   xp?: number;
-  g?: number;
   note?: string | null;
-  to?: string;
   reward?: string;
 }
 
@@ -422,40 +412,10 @@ export function conditionOf(t: TaskDto, now: number): number {
   return Math.max(0, (now - start) / (due - start));
 }
 
-export type ConditionName = "fresh" | "due" | "overdue";
-export const conditionName = (c: number): ConditionName => (c >= 1 ? "overdue" : c >= 0.75 ? "due" : "fresh");
-
-function localDay(ms: number): number {
-  const d = new Date(ms);
-  return Math.floor(new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() / DAY + 0.5);
-}
-
-/** "in 3 Tagen fällig", "heute fällig", "seit 2 Tagen überfällig". */
-export function dueText(t: TaskDto, now: number): string {
-  if (!t.due_at) return "ohne Termin";
-  const due = Date.parse(t.due_at);
-  const days = localDay(due) - localDay(now);
-  if (due < now) {
-    if (days >= 0) return "überfällig";
-    return days === -1 ? "seit gestern überfällig" : `seit ${-days} Tagen überfällig`;
-  }
-  if (days <= 0) return "heute fällig";
-  if (days === 1) return "morgen fällig";
-  return `in ${days} Tagen fällig`;
-}
-
-/** Elapsed time, counting up: "4:07" or "1:02:09". */
-export function clock(fromIso: string, now: number): string {
-  const s = Math.max(0, Math.floor((now - Date.parse(fromIso)) / 1000));
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const sec = String(s % 60).padStart(2, "0");
-  return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${sec}` : `${m}:${sec}`;
-}
-
-export function minutesSince(fromIso: string, now: number): number {
-  return Math.max(0, Math.floor((now - Date.parse(fromIso)) / 60_000));
-}
+/** Four steps of how much time is left: Gut → Hat Zeit → Fällig → Überfällig. */
+export type Status = "good" | "time" | "due" | "over";
+export const statusOf = (c: number): Status => (c >= 1 ? "over" : c >= 0.75 ? "due" : c >= 0.5 ? "time" : "good");
+export const STATUS_LABEL: Record<Status, string> = { good: "Gut", time: "Hat Zeit", due: "Fällig", over: "Überfällig" };
 
 export function iconOf(name: string | null | undefined, fallback: IconName = "star"): IconName {
   return name && name in ICONS ? (name as IconName) : fallback;
@@ -469,4 +429,14 @@ export const stepsDone = (t: TaskDto) => t.steps.filter((s) => s.done_at !== nul
 export function memberName(id: string | null): string {
   if (!id) return "";
   return session.members.find((m) => m.membership_id === id)?.display_name ?? "";
+}
+
+/** Everyone on a task: who has it, then who joined ("+"). They share the XP. */
+export function peopleOn(t: TaskDto): string[] {
+  return [...(t.assignee_id ? [t.assignee_id] : []), ...t.helpers.filter((h) => h !== t.assignee_id)];
+}
+
+/** Is this member on the task (has it or joined)? */
+export function isOn(t: TaskDto, member: string | null | undefined): boolean {
+  return !!member && (t.assignee_id === member || t.helpers.includes(member));
 }

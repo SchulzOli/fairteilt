@@ -1,11 +1,12 @@
 <script lang="ts">
+  // A task on Heute (and in lists). Cards never finish a task (since 23.11.2026): "+" takes an
+  // open task or joins someone else's (the XP is shared), tapping opens the task page, where
+  // it is done. Everyone on it shows as an animal; tasks of others fade into the background.
   import { goto } from "$app/navigation";
   import type { TaskDto } from "$lib/generated";
   import { session } from "$lib/session.svelte";
   import { feedback } from "$lib/settings.svelte";
-  import { conditionOf, dueText, iconOf, isQueued, memberName, minutesSince, stepsDone, taskStore } from "$lib/tasks.svelte";
-  // Cards never finish a task directly (since 23.11.2026): "+" takes an open task over, the
-  // task page is where it is done (steps, "Erledigt", giving it back).
+  import { conditionOf, iconOf, isOn, isQueued, memberName, peopleOn, stepsDone, taskStore } from "$lib/tasks.svelte";
   import Avatar from "$lib/ui/Avatar.svelte";
   import type { AnimalName } from "$lib/ui/Avatar.svelte";
   import ConditionBar from "$lib/ui/ConditionBar.svelte";
@@ -20,34 +21,34 @@
   let reviewing = $state(false);
   let error = $state("");
 
-  const now = $derived(taskStore.now);
-  const condition = $derived(conditionOf(task, now));
+  const me = $derived(session.membership?.membership_id);
+  const condition = $derived(conditionOf(task, taskStore.now));
   const room = $derived(taskStore.roomOf(task));
-  const running = $derived(task.status === "in_progress");
   const done = $derived(stepsDone(task));
   const hasSteps = $derived(task.steps.length > 0);
-  // Shopping (M8): finished in the shopping mode, where the cart is checked off.
+  // Shopping (M8): finished on the task page, where the cart is checked off.
   const list = $derived(shopping.listOf(task));
   const toBuy = $derived(list ? list.items.filter((i) => !i.checked_at).length : 0);
-  const assignee = $derived(session.members.find((m) => m.membership_id === task.assignee_id));
-  const isMine = $derived(task.assignee_id !== null && task.assignee_id === session.membership?.membership_id);
+  const people = $derived(peopleOn(task).map((id) => session.members.find((m) => m.membership_id === id)).filter((m) => !!m));
+  const mine = $derived(isOn(task, me));
   const submitted = $derived(task.status === "submitted");
-  const canReview = $derived(
-    submitted && session.membership?.role !== "child" && task.completed_by !== session.membership?.membership_id,
-  );
-
-  const isOpen = $derived(task.assignee_id === null && (task.status === "open" || task.status === "claimed"));
+  const canReview = $derived(submitted && session.membership?.role !== "child" && task.completed_by !== me);
+  const canTake = $derived(!submitted && !mine && (task.status === "open" || task.status === "claimed" || task.status === "in_progress"));
+  /** Someone else's task: in the background, "+" still lets me join. */
+  const faded = $derived(people.length > 0 && !mine && !submitted);
 
   const open = () => goto(`/aufgabe/${task.id}`);
 
-  /** "+": this open task is mine now. Tapping my card then opens it. */
+  /** "+": an open task becomes mine; on someone else's I join and we share the XP. */
   async function take() {
     if (taking) return;
     error = "";
     taking = true;
+    const joining = people.length > 0;
     try {
       const res = await taskStore.action(task.id, "claim");
       taken = true;
+      flyText = joining ? "Du machst mit" : "Deine Aufgabe";
       setTimeout(() => (taken = false), 1400);
       feedback(isQueued(res) ? "step" : "confirm");
     } catch (e) {
@@ -56,36 +57,37 @@
       taking = false;
     }
   }
+  let flyText = $state("");
 </script>
 
-<article class="task" class:editable={!!onedit} class:taken class:overdue={condition >= 1} class:running class:mine={isMine}>
+<article class="task" class:editable={!!onedit} class:taken class:faded class:overdue={condition >= 1} class:mine>
   <button class="hit" aria-label="Öffnen: {task.title}" onclick={open}></button>
   <div class="ic" aria-hidden="true"><Icon name={iconOf(task.icon, iconOf(room?.icon))} size={20} /></div>
   <div class="body">
     <h3>{task.title}</h3>
     <div class="meta">
-      {#if room}<span>{room.name}</span><span aria-hidden="true">·</span>{/if}
+      {#if room}<span>{room.name}</span>{/if}
       {#if submitted}
         <span class="wait">{canReview ? `${memberName(task.completed_by)} ist fertig` : "wartet aufs OK"}</span>
-      {:else if running && task.started_at}
-        <span class="run"><Icon name="timer" size={14} />läuft seit {minutesSince(task.started_at, now)} Min.</span>
-      {:else}
-        <span class:late={condition >= 1}>{dueText(task, now)}</span>
       {/if}
       {#if hasSteps}<span class="steps">{done}/{task.steps.length} Schritte</span>{/if}
       {#if list}<span class="steps">{toBuy} Artikel</span>{/if}
       {#if task.on_call}<span class="chip oncall">auf Abruf</span>{/if}
       {#if task.kind === "penalty"}<span class="chip aufhol">Aufholaufgabe</span>{/if}
-      {#if task.kind === "reward"}<span class="chip reward">Belohnung</span>{/if}
     </div>
     {#if task.review_note && !submitted}<p class="note">„{task.review_note}“</p>{/if}
     {#if error}<p class="err" role="alert">{error}</p>{/if}
   </div>
   <div class="right">
-    <span class="xp-chip">{task.xp} XP</span>
-    {#if task.bounty > 0}<span class="coin-chip">+{task.bounty}</span>{/if}
-    {#if assignee}
-      <span class="who"><Avatar animal={assignee.animal as AnimalName} color={assignee.color} size={22} name={assignee.display_name} />{#if isMine}<small>du</small>{/if}</span>
+    <span class="xp-chip">{task.xp} XP{#if task.bounty > 0}<b class="bonus">+{task.bounty}</b>{/if}</span>
+    {#if people.length}
+      <span class="who" title={people.map((p) => p!.display_name).join(", ")}>
+        {#each people.slice(0, 3) as p (p!.membership_id)}
+          <span class="av"><Avatar animal={p!.animal as AnimalName} color={p!.color} size={22} name={p!.display_name} /></span>
+        {/each}
+        {#if people.length > 3}<small>+{people.length - 3}</small>{/if}
+        {#if mine}<small>du</small>{/if}
+      </span>
     {:else}
       <span class="who nobody" title="noch offen">offen</span>
     {/if}
@@ -94,26 +96,24 @@
     {#if canReview}
       <button class="check review" aria-label="Prüfen: {task.title}" onclick={() => (reviewing = true)}><Icon name="check" size={18} /></button>
     {:else}
-      <span class="check waiting" aria-hidden="true"><Icon name="timer" size={18} /></span>
+      <span class="check waiting" aria-hidden="true"><Icon name="flag" size={18} /></span>
     {/if}
-  {:else if isOpen}
-    <button class="check take" class:busy={taking} aria-label="Übernehmen: {task.title}" disabled={taking} onclick={take}>
+  {:else if canTake}
+    <button class="check take" class:busy={taking} aria-label="{people.length ? 'Mitmachen' : 'Übernehmen'}: {task.title}" disabled={taking} onclick={take}>
       <Icon name="plus" size={20} />
     </button>
-  {:else if isMine}
-    <button class="check go" aria-label="Öffnen: {task.title}" onclick={open}>
-      <Icon name={running ? "timer" : task.list_id ? "cart" : "chevron"} size={18} />
-    </button>
   {:else}
-    <span class="check spacer" aria-hidden="true"></span>
+    <button class="check go" aria-label="Öffnen: {task.title}" onclick={open}>
+      <Icon name={task.list_id ? "cart" : "chevron"} size={18} />
+    </button>
   {/if}
   {#if onedit}
     <button class="edit" aria-label="Einrichtung bearbeiten: {task.title}" onclick={onedit}><Icon name="edit" size={16} /></button>
   {/if}
-  <div class="cond"><ConditionBar value={condition} /></div>
+  <div class="cond"><ConditionBar value={condition} none={!task.due_at} /></div>
 
   {#if taken}
-    <span class="fly" aria-hidden="true">Deine Aufgabe</span>
+    <span class="fly" aria-hidden="true">{flyText}</span>
   {/if}
 </article>
 
@@ -155,16 +155,44 @@
     pointer-events: none;
   }
 
-  .task.running {
-    border-color: color-mix(in srgb, var(--primary) 45%, var(--line));
+  /* Someone else's task: in the background of the attention */
+  .task.faded {
+    background: color-mix(in srgb, var(--surface) 55%, var(--bg));
+    border-style: dashed;
   }
 
-  .run {
-    display: inline-flex;
-    align-items: center;
-    gap: 3px;
-    color: var(--primary);
-    font-weight: 700;
+  .task.faded .ic,
+  .task.faded .body,
+  .task.faded .right,
+  .task.faded .cond {
+    opacity: 0.55;
+    filter: saturate(0.4);
+    transition: opacity 0.2s, filter 0.2s;
+  }
+
+  .task.faded:hover .ic,
+  .task.faded:hover .body,
+  .task.faded:hover .right,
+  .task.faded:hover .cond {
+    opacity: 0.9;
+    filter: none;
+  }
+
+  .bonus {
+    margin-left: 5px;
+    padding-left: 5px;
+    border-left: 1px solid color-mix(in srgb, var(--xp) 35%, transparent);
+  }
+
+  .av {
+    display: grid;
+    margin-left: -6px;
+    border-radius: 50%;
+    box-shadow: 0 0 0 2px var(--surface);
+  }
+
+  .av:first-child {
+    margin-left: 0;
   }
 
   .steps {
@@ -246,11 +274,6 @@
     color: var(--muted);
   }
 
-  .late {
-    color: var(--over);
-    font-weight: 700;
-  }
-
   .chip {
     padding: 1px 8px;
     border-radius: 999px;
@@ -266,11 +289,6 @@
   .chip.oncall {
     background: var(--primary-soft);
     color: var(--primary);
-  }
-
-  .chip.reward {
-    background: var(--ok-soft);
-    color: var(--ok);
   }
 
   .right {
@@ -307,11 +325,6 @@
 
   .check.take.busy {
     opacity: 0.5;
-  }
-
-  .check.spacer {
-    border: none;
-    min-height: var(--tap);
   }
 
   .who {

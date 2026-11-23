@@ -101,7 +101,7 @@ async fn m5_inbox_and_reminders(db: PgPool) {
     assert_eq!(titles(&app, &f, &f.sam).await, ["Mia ist fertig: „Zimmer aufräumen“"]);
     call(&app, "POST", &format!("/api/v1/tasks/{tid}/review"), Some(&f.sam), Some(json!({ "approve": true, "note": "Super!" }))).await;
     let mine = inbox(&app, &f, &f.mia).await;
-    assert_eq!(mine[0]["title"], "„Zimmer aufräumen“ bestätigt · +10 XP · +10 G");
+    assert_eq!(mine[0]["title"], "„Zimmer aufräumen“ bestätigt · +10 XP", "XP only, no G any more");
     assert_eq!((mine[0]["body"].as_str(), mine[0]["ref_type"].as_str(), mine[0]["ref_id"].as_str()), (Some("„Super!“ – Sam"), Some("task"), Some(tid.as_str())));
 
     // Unread count and marking as read.

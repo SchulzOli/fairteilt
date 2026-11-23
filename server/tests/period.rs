@@ -1,4 +1,4 @@
-//! M4: monthly close (draft, approval, carry, catch-up tasks), the race against Krümel, rewards, rules.
+//! M4: monthly close (draft, approval, carry, catch-up tasks), the race against Krümel, rules.
 
 use axum::Router;
 use axum::body::Body;
@@ -230,58 +230,6 @@ async fn krumel_wins_when_tasks_lie_around(db: PgPool) {
     // Reaching the goal afterwards does not change the result.
     earn(&app, &f, &f.alex, "Großputz", 50).await;
     assert_eq!(period(&app, &f).await["goal"]["status"], "lost");
-}
-
-#[sqlx::test(migrator = "punkte_server::MIGRATOR")]
-async fn rewards(db: PgPool) {
-    let app = routes::router(AppState::new(db, SECRET), &[]);
-    let f = family(&app).await;
-    let path = format!("/api/v1/households/{}/rewards", f.hid);
-    let (s, _) = call(&app, "POST", &path, Some(&f.mia), Some(json!({ "title": "Alles", "cost": 1, "needs_approval": false }))).await;
-    assert_eq!(s, StatusCode::FORBIDDEN, "children do not create rewards");
-    let (s, film) = call(&app, "POST", &path, Some(&f.alex),
-        Some(json!({ "title": "Film aussuchen", "cost": 10, "needs_approval": false, "cooldown_hours": 24 }))).await;
-    assert_eq!(s, StatusCode::CREATED, "{film}");
-    let (_, ice) = call(&app, "POST", &path, Some(&f.alex),
-        Some(json!({ "title": "Eis", "cost": 5, "needs_approval": true, "stock": 1 }))).await;
-
-    earn(&app, &f, &f.mia, "Zimmer aufräumen", 15).await;
-    assert_eq!(balance(&app, &f, &f.mia_mid).await, 15);
-
-    // Film: straight away, then a cooldown.
-    let (s, r) = call(&app, "POST", &format!("/api/v1/rewards/{}/redeem", film["id"].as_str().unwrap()), Some(&f.mia), None).await;
-    assert_eq!((s, r["status"].as_str()), (StatusCode::CREATED, Some("approved")));
-    assert_eq!(balance(&app, &f, &f.mia_mid).await, 5);
-    let (s, _) = call(&app, "POST", &format!("/api/v1/rewards/{}/redeem", film["id"].as_str().unwrap()), Some(&f.mia), None).await;
-    assert_eq!(s, StatusCode::CONFLICT);
-    let (_, list) = call(&app, "GET", &path, Some(&f.mia), None).await;
-    assert!(list.as_array().unwrap().iter().any(|r| r["title"] == "Film aussuchen" && r["available_at"].is_string()));
-
-    // Eis: waits for an admin; the only one in stock.
-    let ice_id = ice["id"].as_str().unwrap();
-    let (s, r) = call(&app, "POST", &format!("/api/v1/rewards/{ice_id}/redeem"), Some(&f.mia), None).await;
-    assert_eq!((s, r["status"].as_str()), (StatusCode::CREATED, Some("requested")));
-    assert_eq!(balance(&app, &f, &f.mia_mid).await, 0);
-    let (s, _) = call(&app, "POST", &format!("/api/v1/rewards/{ice_id}/redeem"), Some(&f.sam), None).await;
-    assert_eq!(s, StatusCode::CONFLICT, "out of stock");
-    let (_, waiting) = call(&app, "GET", &format!("/api/v1/households/{}/redemptions", f.hid), Some(&f.alex), None).await;
-    assert_eq!(waiting.as_array().unwrap().len(), 1);
-
-    // Rejected: the G come back, and the stock is free again.
-    let rid = r["id"].as_str().unwrap();
-    let (s, r) = call(&app, "POST", &format!("/api/v1/redemptions/{rid}/decide"), Some(&f.alex), Some(json!({ "approve": false }))).await;
-    assert_eq!((s, r["status"].as_str()), (StatusCode::OK, Some("rejected")));
-    assert_eq!(balance(&app, &f, &f.mia_mid).await, 5);
-    let (s, _) = call(&app, "POST", &format!("/api/v1/redemptions/{rid}/decide"), Some(&f.alex), Some(json!({ "approve": true }))).await;
-    assert_eq!(s, StatusCode::CONFLICT);
-    let (_, list) = call(&app, "GET", &path, Some(&f.mia), None).await;
-    assert_eq!(list.as_array().unwrap().iter().find(|r| r["title"] == "Eis").unwrap()["left"], 1);
-
-    // Archived rewards disappear from the catalog.
-    let (s, _) = call(&app, "DELETE", &format!("{path}/{ice_id}"), Some(&f.alex), None).await;
-    assert_eq!(s, StatusCode::NO_CONTENT);
-    let (_, list) = call(&app, "GET", &path, Some(&f.mia), None).await;
-    assert_eq!(list.as_array().unwrap().len(), 1);
 }
 
 #[sqlx::test(migrator = "punkte_server::MIGRATOR")]

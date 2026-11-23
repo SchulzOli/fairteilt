@@ -10,7 +10,7 @@
   {#key notices.current.id}
     <button class="notice {notices.current.tone}" title="Antippen zum Schließen" onclick={() => notices.dismiss()}>
       <span class="ic" aria-hidden="true">
-        {#if notices.current.tone === "coin"}G{:else}<Icon name={icons[notices.current.tone]} size={18} />{/if}
+        <Icon name={icons[notices.current.tone]} size={18} />
       </span>
       <span class="text">
         <b>{notices.current.text}</b>

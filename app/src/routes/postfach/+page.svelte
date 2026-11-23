@@ -49,7 +49,6 @@
   async function open(n: NotificationDto) {
     if (!n.read_at) await markRead([n.id]).catch(() => {});
     if (n.ref_type === "task" && n.ref_id) void goto(`/aufgabe/${n.ref_id}`);
-    else if (n.ref_type === "redemption") void goto("/belohnungen");
     else if (n.ref_type) void goto("/punkte");
   }
 
@@ -71,7 +70,7 @@
   const categories: { key: keyof NotificationPrefsDto["push"]; label: string }[] = [
     { key: "tasks", label: "Neue Aufgaben, Bonus, Aufholaufgaben" },
     { key: "reviews", label: "Bestätigen, bestätigt, zurückgegeben" },
-    { key: "points", label: "Guthaben, Übertragungen, Belohnungen" },
+    { key: "points", label: "Punkte und Korrekturen" },
     { key: "period", label: "Abschluss und Familienziel" },
     { key: "reminders", label: "Eigene Aufgaben: bald fällig, überfällig" },
   ];
@@ -85,7 +84,7 @@
 </div>
 
 {#if items.length === 0}
-  <p class="muted">Noch nichts da. Hier landet, was dich betrifft: neue Aufgaben, Bestätigungen, Guthaben, der Abschluss.</p>
+  <p class="muted">Noch nichts da. Hier landet, was dich betrifft: neue Aufgaben, Bestätigungen, der Abschluss.</p>
 {:else}
   <ul class="card list">
     {#each items as n (n.id)}

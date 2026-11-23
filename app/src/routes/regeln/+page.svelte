@@ -92,20 +92,11 @@
   </fieldset>
 
   <fieldset class="card stack" disabled={!admin}>
-    <legend>Guthaben</legend>
-    <label class="toggle"><span>Bonus auf Aufgaben setzen</span><input type="checkbox" bind:checked={pp.bounty_enabled} /></label>
-    {#if pp.bounty_enabled}
-      <label class="field"><span>Höchstens {pp.bounty_max_per_pledge ?? "beliebig viel"} G pro Bonus</span>
-        <input type="range" min="5" max="200" step="5" value={pp.bounty_max_per_pledge ?? 200} oninput={(e) => (pp.bounty_max_per_pledge = Number(e.currentTarget.value))} />
-      </label>
-    {/if}
-    <label class="toggle"><span>Guthaben verschenken</span><input type="checkbox" bind:checked={pp.transfer_enabled} /></label>
-    {#if pp.transfer_enabled}
-      <label class="field"><span>Höchstens {pp.transfer_max_per_period ?? "beliebig viel"} G pro Abschlusszeitraum</span>
-        <input type="range" min="10" max="500" step="10" value={pp.transfer_max_per_period ?? 500} oninput={(e) => (pp.transfer_max_per_period = Number(e.currentTarget.value))} />
-      </label>
-      <label class="toggle"><span>Kinder brauchen dafür eine Freigabe</span><input type="checkbox" bind:checked={pp.child_transfer_needs_approval} /></label>
-    {/if}
+    <legend>XP-Bonus auf Aufgaben</legend>
+    <p class="muted small">Jeder kann XP als Bonus auf Aufgaben anderer setzen. Das kostet nichts; wer die Aufgabe erledigt, bekommt sie obendrauf (bei mehreren geteilt).</p>
+    <label class="field"><span>{pp.bonus_xp_per_month > 0 ? `Höchstens ${pp.bonus_xp_per_month} XP pro Person und Monat` : "Aus"}</span>
+      <input type="range" min="0" max="200" step="5" bind:value={pp.bonus_xp_per_month} />
+    </label>
   </fieldset>
 
   <fieldset class="card stack" disabled={!admin}>
@@ -129,18 +120,15 @@
       <select value={per.deficit_action.type} onchange={(e) => setDeficit(e.currentTarget.value as Deficit)}>
         <option value="carry_over">Wandert in den nächsten Zeitraum</option>
         <option value="penalty_tasks">Aufholaufgaben</option>
-        <option value="balance_deduction">Guthaben-Abzug</option>
-        <option value="zero_sum">Zahlt Guthaben an die mit Vorsprung</option>
         <option value="none">Nichts</option>
       </select>
-      {#if per.deficit_action.type === "carry_over" || per.deficit_action.type === "balance_deduction"}
+      {#if per.deficit_action.type === "carry_over"}
         <label class="inline">zu <input type="number" min="0" max="200" bind:value={per.deficit_action.percent} /> %</label>
       {/if}
     </div>
     <div class="field"><span>Bei Vorsprung</span>
       <select value={per.surplus_action.type} onchange={(e) => setSurplus(e.currentTarget.value as Surplus)}>
         <option value="carry_over">Wandert in den nächsten Zeitraum</option>
-        <option value="bonus">Guthaben-Bonus</option>
         <option value="none">Nichts</option>
       </select>
       {#if per.surplus_action.type !== "none"}

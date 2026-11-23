@@ -1,9 +1,24 @@
 # Fairteilt – Konzept
 
-Stand: 22.11.2026 · Status: Entwurf v0.2 (offene Fragen entschieden, §13)
+Stand: 23.11.2026 · Status: Entwurf v0.3
 
-**Fairteilt** ist eine Familien-App für Haushaltsaufgaben mit einstellbarem Punktesystem, periodischem Ausgleich,
-Belohnungen und Aufholaufgaben, Erinnerungen sowie Kalender- und Canvas-Planung.
+**Fairteilt** ist eine Familien-App für Haushaltsaufgaben mit XP, periodischem Ausgleich, Monatsziel
+und Aufholaufgaben, Erinnerungen sowie Kalender- und Canvas-Planung.
+
+> **Vereinfacht am 23.11.2026** (gilt vor allen älteren Stellen in diesem Dokument):
+> - **Nur noch XP.** Guthaben (G), Übertragungen und der Belohnungskatalog sind aus der App entfernt.
+>   Geblieben ist das **Monatsziel** der Familie (Rennen gegen Krümel, mit Familienbelohnung), das
+>   Erwachsene unter Punkte und Regeln einrichten.
+> - **XP-Bonus statt Kopfgeld:** Jeder kann XP als Bonus auf Aufgaben anderer setzen. Das ist ein
+>   Geschenk (kostet nichts) mit einem Monatsbudget pro Person (Regel `bonus_xp_per_month`, Standard 30).
+> - **Mehrere auf einer Aufgabe:** „+“ übernimmt eine offene Aufgabe oder macht bei einer fremden mit.
+>   Alle, die drauf sind, teilen sich XP und Bonus gleichmäßig (wer erledigt, zählt automatisch dazu).
+> - **Kein Timer:** kein Starten, Pausieren, keine Dauer und kein „Wie läuft's?“. Eine Aufgabe wird
+>   auf ihrer Seite erledigt (oder mit dem letzten Schritt). Einkaufen gilt ab dem ersten Artikel im
+>   Wagen als „im Laden“.
+> - **Zustand in vier Stufen:** Gut (< 50 % der Runde), Hat Zeit (< 75 %), Fällig (< 100 %),
+>   Überfällig; ein Balken, der sich von Grün nach Rot färbt. Der Text „in X Tagen fällig“ entfällt
+>   auf den Karten. Fremde Aufgaben stehen auf Heute ausgegraut am Ende.
 Plattformunabhängig als **Tauri-2-App**, gebaut vor allem fürs Handy. Als Nächstes folgt eine
 gemeinsame Einkaufsliste (§10); ein Finanzteil ist nicht mehr geplant.
 
@@ -32,8 +47,8 @@ gemeinsame Einkaufsliste (§10); ein Finanzteil ist nicht mehr geplant.
 | **Vorlage** | wiederverwendbare Aufgabe („Spülmaschine ausräumen“) mit Punkten, Wiederholung, Zuweisungsregel |
 | **Aufgabe** | ein konkretes Vorkommen mit Fälligkeit, Zuständigem und Status |
 | **Leistungspunkte (LP)** | messen die geleistete Arbeit. Grundlage für den Ausgleich, **nicht übertragbar**. In der Oberfläche heißen sie **XP** (Entscheidung 22.11.2026), im Konzept und Code bleibt es bei LP bzw. `contribution` |
-| **Guthaben (G)** | „Währung“: übertragbar, einlösbar für Belohnungen, einsetzbar als Bonus auf Aufgaben |
-| **Bonus (Kopfgeld)** | eigenes Guthaben, das ein Mitglied auf eine Aufgabe setzt. Bekommt, wer sie erledigt |
+| **Guthaben (G)** | *entfernt am 23.11.2026* (war: übertragbare Währung für Belohnungen und Boni) |
+| **Bonus** | XP, die ein Mitglied als Geschenk auf die Aufgabe eines anderen setzt (Monatsbudget). Bekommen, wer sie erledigt, geteilt wie die XP |
 | **Periode** | Abrechnungszeitraum (Woche, Monat, frei) für den Ausgleich |
 
 > **Warum zwei Punktearten?** Würde nur eine Zahl zählen, ließe sich die Fairness durch

@@ -3,7 +3,9 @@
   import type { TaskDto, TaskStepDto } from "$lib/generated";
   import { session } from "$lib/session.svelte";
   import { feedback } from "$lib/settings.svelte";
-  import { clock, conditionOf, dueText, iconOf, isQueued, memberName, stepsDone, taskStore } from "$lib/tasks.svelte";
+  import { conditionOf, iconOf, isOn, isQueued, memberName, peopleOn, stepsDone, taskStore } from "$lib/tasks.svelte";
+  import Avatar from "$lib/ui/Avatar.svelte";
+  import type { AnimalName } from "$lib/ui/Avatar.svelte";
   import ConditionBar from "$lib/ui/ConditionBar.svelte";
   import Icon from "$lib/ui/Icon.svelte";
   import ReviewSheet from "$lib/ReviewSheet.svelte";
@@ -21,6 +23,7 @@
   let reviewing = $state(false);
   let pledging = $state(false);
   let pledgeAmount = $state(5);
+  const dayFmt = new Intl.DateTimeFormat("de-DE", { weekday: "long", day: "numeric", month: "long" });
   let sparkle = $state<string | null>(null);
   let busy = $state(false);
   let error = $state("");
@@ -29,24 +32,22 @@
   const now = $derived(taskStore.now);
   const me = $derived(session.membership?.membership_id);
   const room = $derived(task ? taskStore.roomOf(task) : undefined);
+  /** Shopping: the round is "in the shop" since the first item went into the cart. */
   const running = $derived(task?.status === "in_progress");
   const condition = $derived(task ? conditionOf(task, now) : 0);
   const done = $derived(task ? stepsDone(task) : 0);
   const openSteps = $derived(task ? task.steps.length - done : 0);
   const sequential = $derived(task?.step_order === "sequential");
-  const checkinIn = $derived(
-    task?.remind_at && Date.parse(task.remind_at) > now ? Math.ceil((Date.parse(task.remind_at) - now) / 60_000) : null,
-  );
   const submitted = $derived(task?.status === "submitted");
   /** Into the calendar: adults everything, everyone their own (as on the server). */
   const canPlan = $derived(
-    !!task && !["submitted", "completed", "cancelled"].includes(task.status) && (session.membership?.role !== "child" || task.assignee_id === me),
+    !!task && !["submitted", "completed", "cancelled"].includes(task.status) && (session.membership?.role !== "child" || isOn(task, me)),
   );
   const canReview = $derived(submitted && session.membership?.role !== "child" && task?.completed_by !== me);
-  const canPledge = $derived(
-    !!task && !submitted && task.status !== "completed" && task.status !== "cancelled" && task.assignee_id !== me,
-  );
-  const balance = $derived(taskStore.myAccount?.balance ?? 0);
+  /** Bonus XP: a gift on others' tasks, within the monthly allowance. */
+  const canPledge = $derived(!!task && !submitted && task.status !== "completed" && task.status !== "cancelled" && !isOn(task, me));
+  const bonusLeft = $derived(taskStore.myAccount?.bonus_left ?? 0);
+  const people = $derived(task ? peopleOn(task).map((pid) => session.members.find((m) => m.membership_id === pid)).filter((m) => !!m) : []);
   const nextTask = $derived(finished?.next ? taskStore.tasks.find((t) => t.id === finished!.next) : undefined);
 
   // Shopping mode (M8): the list of this round's task, grouped as in the shop.
@@ -92,13 +93,12 @@
     }
   }
 
-  const start = () => act(async () => void (local = (await taskStore.action(id, "start")).task));
-  const pause = () => act(async () => void (local = (await taskStore.action(id, "pause")).task));
+  /** Open: it is mine. Someone else's: I join, the XP is shared. */
   const claim = () => act(async () => void (local = (await taskStore.action(id, "claim")).task));
   const skip = () => act(async () => void (local = (await taskStore.action(id, "cancel")).task));
-  /** Give it back: the task is open again for anyone. */
+  /** Leave the task: the next one on it takes over, or it is open again for anyone. */
   const giveBack = () => act(async () => void (local = (await taskStore.action(id, "unclaim")).task));
-  const mine = $derived(!!task && task.assignee_id === me && (task.status === "claimed" || task.status === "in_progress"));
+  const mine = $derived(!!task && isOn(task, me) && (task.status === "claimed" || task.status === "in_progress"));
 
   const complete = () =>
     act(async () => {
@@ -114,7 +114,7 @@
     act(async () => {
       local = await taskStore.pledge(id, pledgeAmount);
       pledging = false;
-      feedback("coin");
+      feedback("confirm");
     });
 
   const check = (step: TaskStepDto) =>
@@ -146,7 +146,8 @@
 
   function nextText(t: TaskDto): string {
     const who = memberName(t.assignee_id);
-    return `Nächste Runde ${dueText(t, now).replace(" fällig", "")}${who ? ` · ${who} ist dran` : ""}.`;
+    const when = t.due_at ? `fällig am ${dayFmt.format(new Date(t.due_at))}` : "ohne Termin";
+    return `Nächste Runde ${when}${who ? ` · ${who} ist dran` : ""}.`;
   }
 </script>
 
@@ -161,18 +162,26 @@
       <h1 class="page-title">{task.title}</h1>
       <div class="muted small">
         {room?.name ?? "Ohne Raum"} ·
-        {#if finished}erledigt{:else if task.assignee_id}{task.assignee_id === me ? "du bist" : `${memberName(task.assignee_id)} ist`} dran{:else}noch offen{/if}
+        {#if finished}erledigt{:else if people.length > 1}{people.length} machen mit{:else if task.assignee_id}{task.assignee_id === me ? "du bist" : `${memberName(task.assignee_id)} ist`} dran{:else}noch offen{/if}
       </div>
     </div>
     <span class="chips">
       <span class="xp-chip">{finished && !finished.submitted ? finished.xp : task.xp} XP</span>
-      {#if task.bounty > 0 && !finished}<span class="coin-chip">+{task.bounty}</span>{/if}
+      {#if task.bounty > 0 && !finished}<span class="xp-chip bonus">+{task.bounty} Bonus</span>{/if}
     </span>
     {#if !finished}
       <div class="cond">
-        <ConditionBar value={condition} />
-        <span class="small" class:late={condition >= 1}>{dueText(task, now)}</span>
+        <ConditionBar value={condition} none={!task.due_at} />
+        {#if task.due_at}<span class="muted small">fällig am {dayFmt.format(new Date(task.due_at))}</span>{/if}
       </div>
+      {#if people.length}
+        <div class="people">
+          {#each people as p (p!.membership_id)}
+            <span class="person"><Avatar animal={p!.animal as AnimalName} color={p!.color} size={26} />{p!.membership_id === me ? "du" : p!.display_name}</span>
+          {/each}
+          {#if people.length > 1}<span class="muted small">teilen sich die XP</span>{/if}
+        </div>
+      {/if}
       {#if canPlan}
         <button class="when" class:set={!!task.scheduled_start} onclick={() => (planning = true)}>
           <Icon name="plan" size={18} />
@@ -206,7 +215,8 @@
         <p class="muted">Ein Erwachsener schaut noch kurz drüber, dann bekommst du deine {task.xp} XP.</p>
       {:else}
         <h2>{list ? "Einkauf fertig, danke!" : "Geschafft!"}</h2>
-        <span class="xp-burst">+{finished.xp} XP{finished.bounty ? ` · +${finished.bounty} G` : ""}</span>
+        <span class="xp-burst">+{finished.xp} XP</span>
+        {#if people.length > 1}<p class="muted">Eure XP sind geteilt{finished.bounty ? `, der Bonus von ${finished.bounty} XP auch` : ""}.</p>{:else if finished.bounty}<p class="muted">Mit {finished.bounty} XP Bonus.</p>{/if}
         {#if list && bought}<p class="muted">{bought} Artikel gekauft.</p>{/if}
         {#if list && leftOver.length}<p class="muted">Bleibt auf der Liste: {leftOver.join(", ")}. „{task.title}“ kommt gleich wieder.</p>{/if}
         {#if nextTask}<p class="muted">{nextText(nextTask)}</p>{/if}
@@ -227,35 +237,23 @@
       <section class="card note"><span class="muted small">Nachricht</span><p>„{task.review_note}“</p></section>
     {/if}
     <section class="card status">
-      {#if running && task.started_at}
-        <div class="timer" aria-label="Läuft seit {clock(task.started_at, now)}">
-          <span class="muted small">läuft seit</span>
-          <span class="clock">{clock(task.started_at, now)}</span>
-          <span class="muted small">Die Zeit zählt nur hoch.{checkinIn !== null ? ` In ${checkinIn} Min. fragt Fairteilt kurz nach.` : ""}</span>
-        </div>
-        {#if list}
-          <div class="two">
-            <button disabled={busy} onclick={pause}><Icon name="pause" size={18} />Pause</button>
-            <button class="primary" disabled={busy || (inCart.length === 0 && toBuy.length > 0)} onclick={complete}><Icon name="check" size={18} />Einkauf fertig</button>
-          </div>
-          <p class="muted small center">{inCart.length} von {inCart.length + toBuy.length} im Wagen. Was übrig bleibt, kommt beim nächsten Mal.</p>
-        {:else}
-          <div class="two">
-            <button disabled={busy} onclick={pause}><Icon name="pause" size={18} />Pause</button>
-            <button class="primary" disabled={busy || openSteps > 0} onclick={complete}><Icon name="check" size={18} />Erledigt</button>
-          </div>
-          {#if openSteps > 0}<p class="muted small center">Noch {openSteps} {openSteps === 1 ? "Schritt" : "Schritte"}, dann ist sie erledigt.</p>{/if}
-        {/if}
+      {#if list}
+        <button class="primary go" disabled={busy || (inCart.length === 0 && toBuy.length > 0)} onclick={complete}><Icon name="check" size={20} />Einkauf fertig</button>
+        <p class="muted small center">
+          {running ? `${inCart.length} von ${inCart.length + toBuy.length} im Wagen. Was übrig bleibt, kommt beim nächsten Mal.` : "Abhaken legt in den Wagen. XP gibt es mit „Einkauf fertig“."}
+        </p>
+      {:else if task.steps.length === 0}
+        <button class="primary go" disabled={busy} onclick={complete}><Icon name="check" size={20} />Erledigt</button>
       {:else}
-        <button class="primary go" disabled={busy} onclick={start}><Icon name={list ? "cart" : "play"} size={20} />{list ? "Einkauf starten" : "Los geht's"}</button>
-        <div class="two">
-          {#if task.status === "open"}<button disabled={busy} onclick={claim}>Übernehmen</button>{/if}
-          {#if task.steps.length === 0 && !list}<button disabled={busy} onclick={complete}><Icon name="check" size={18} />Schon erledigt</button>{/if}
-        </div>
-        {#if list}<p class="muted small center">Abhaken legt in den Wagen. XP gibt es mit „Einkauf fertig“.</p>{/if}
+        <p class="muted small center">{openSteps > 0 ? `Noch ${openSteps} ${openSteps === 1 ? "Schritt" : "Schritte"}: Mit dem letzten ist die Aufgabe erledigt.` : "Alle Schritte erledigt."}</p>
+      {/if}
+      {#if !mine}
+        <button class="join" disabled={busy} onclick={claim}>
+          <Icon name="plus" size={18} />{people.length ? "Mitmachen · XP werden geteilt" : "Übernehmen"}
+        </button>
       {/if}
       {#if mine}
-        <button class="give-back" disabled={busy} onclick={giveBack}>Abgeben · wieder für alle offen</button>
+        <button class="give-back" disabled={busy} onclick={giveBack}>{people.length > 1 ? "Nicht mehr mitmachen" : "Abgeben · wieder für alle offen"}</button>
       {/if}
       {#if error}<p class="err" role="alert">{error}</p>{/if}
     </section>
@@ -321,20 +319,22 @@
       <section class="card bounty">
         {#if pledging}
           <div class="row between">
-            <span>Bonus aus deinem Guthaben <span class="muted small">({balance} G)</span></span>
+            <span>XP-Bonus verschenken</span>
+            <span class="muted small">noch {bonusLeft} XP diesen Monat</span>
           </div>
           <div class="stepper">
             <button type="button" aria-label="Weniger" disabled={pledgeAmount <= 1} onclick={() => (pledgeAmount = Math.max(1, pledgeAmount - 5))}>−</button>
-            <b>{pledgeAmount} G</b>
-            <button type="button" aria-label="Mehr" disabled={pledgeAmount >= balance} onclick={() => (pledgeAmount = Math.min(balance, pledgeAmount + 5))}>+</button>
+            <b>{pledgeAmount} XP</b>
+            <button type="button" aria-label="Mehr" disabled={pledgeAmount >= bonusLeft} onclick={() => (pledgeAmount = Math.min(bonusLeft, pledgeAmount + 5))}>+</button>
           </div>
+          <p class="muted small">Kostet dich nichts. Wer die Aufgabe erledigt, bekommt die XP obendrauf; machen mehrere mit, wird geteilt.</p>
           <div class="two">
             <button onclick={() => (pledging = false)}>Abbrechen</button>
-            <button class="primary" disabled={busy || pledgeAmount > balance} onclick={pledge}>Bonus setzen</button>
+            <button class="primary" disabled={busy || pledgeAmount > bonusLeft} onclick={pledge}>Bonus setzen</button>
           </div>
         {:else}
-          <button class="link-btn" disabled={balance <= 0} onclick={() => ((pledgeAmount = Math.min(5, balance)), (pledging = true))}>
-            <span class="coin-chip">G</span>{task.bounty > 0 ? "Bonus erhöhen" : "Bonus setzen"}{balance <= 0 ? " (kein Guthaben)" : ""}
+          <button class="link-btn" disabled={bonusLeft <= 0} onclick={() => ((pledgeAmount = Math.min(5, bonusLeft)), (pledging = true))}>
+            <span class="xp-chip">+XP</span>{task.bounty > 0 ? "Bonus erhöhen" : "XP-Bonus setzen"}{bonusLeft <= 0 ? " (diesen Monat aufgebraucht)" : ""}
           </button>
         {/if}
       </section>
@@ -517,9 +517,35 @@
     opacity: 0.8;
   }
 
-  .late {
-    color: var(--over);
+  .people {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 12px;
+  }
+
+  .person {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
     font-weight: 700;
+    font-size: 0.9rem;
+  }
+
+  .bonus {
+    background: var(--primary-soft);
+    color: var(--primary);
+  }
+
+  .join {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    background: transparent;
+    border: 2px dashed color-mix(in srgb, var(--primary) 50%, var(--line));
+    color: var(--primary);
   }
 
   .status {
@@ -527,23 +553,6 @@
     flex-direction: column;
     gap: var(--space-3);
     margin-bottom: var(--space-3);
-  }
-
-  .timer {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    text-align: center;
-    gap: 2px;
-  }
-
-  .clock {
-    font-family: var(--font-display);
-    font-size: 3rem;
-    font-weight: 700;
-    font-variant-numeric: tabular-nums;
-    color: var(--primary);
-    line-height: 1.1;
   }
 
   .two {

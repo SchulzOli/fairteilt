@@ -118,7 +118,7 @@
     const at = e.scheduled_start && withTime ? time.format(new Date(e.scheduled_start)) : "";
     const s = stateOf(e);
     const word =
-      s === "projected" ? "kommt" : s === "done" ? "erledigt" : s === "late" ? "überfällig" : s === "running" ? "läuft" : s === "submitted" ? "wartet aufs OK" : e.scheduled_start ? "" : "fällig";
+      s === "projected" ? "kommt" : s === "done" ? "erledigt" : s === "late" ? "überfällig" : s === "running" ? "kauft ein" : s === "submitted" ? "wartet aufs OK" : e.scheduled_start ? "" : "fällig";
     return [at, word].filter(Boolean).join(" · ");
   }
 

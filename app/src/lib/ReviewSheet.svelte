@@ -68,7 +68,7 @@
         <button type="button" aria-label="Mehr XP" disabled={xp >= task.points_max} onclick={() => (xp = Math.min(task.points_max, xp + 1))}>+</button>
         <span class="muted small">zwischen {task.points_min} und {task.points_max}</span>
       </div>
-      {#if task.bounty > 0}<span class="muted small">Dazu kommt der Bonus: <span class="coin-chip">+{task.bounty}</span></span>{/if}
+      {#if task.bounty > 0}<span class="muted small">Dazu kommt der Bonus: <span class="xp-chip">+{task.bounty} XP</span></span>{/if}
     </div>
 
     <label class="field"><span>Nachricht an {name} <small class="muted">(optional)</small></span>

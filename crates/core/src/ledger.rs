@@ -56,14 +56,10 @@ pub struct LedgerDelta {
 }
 
 impl LedgerDelta {
-    /// Credit for completing a task. Penalty tasks give contribution but no balance.
-    /// Bounties are paid out as separate `BountyPayout` entries.
-    pub fn task_reward(kind: TaskKind, points: Points) -> Self {
-        Self {
-            kind: LedgerKind::TaskReward,
-            contribution: points,
-            balance: if kind.credits_balance() { points } else { 0 },
-        }
+    /// Credit for completing a task: XP only. Guthaben is no longer earned (since 23.11.2026,
+    /// the app shows XP only); `kind` stays for older callers.
+    pub fn task_reward(_kind: TaskKind, points: Points) -> Self {
+        Self { kind: LedgerKind::TaskReward, contribution: points, balance: 0 }
     }
 
     /// Both sides of a balance transfer between members: (sender, receiver).

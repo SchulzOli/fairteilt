@@ -21,14 +21,13 @@ use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 
 use crate::api::households::membership;
-use crate::api::points::{Ledger, balance, lock_member};
+use crate::api::points::Ledger;
 use crate::api::rooms::{check_icon, planner};
 use crate::inbox::{self, Category, Note};
 use crate::auth::AuthUser;
 use crate::error::{AppError, AppResult};
 use crate::AppState;
 
-const DEFAULT_CHECKIN_MIN: i32 = 25;
 pub(crate) const MAX_STEPS: usize = 20;
 
 // ---------------------------------------------------------------- household context
@@ -83,17 +82,6 @@ fn status_parse(s: &str) -> TaskStatus {
     }
 }
 
-fn status_str(s: TaskStatus) -> &'static str {
-    match s {
-        TaskStatus::Open => "open",
-        TaskStatus::Claimed => "claimed",
-        TaskStatus::InProgress => "in_progress",
-        TaskStatus::Submitted => "submitted",
-        TaskStatus::Completed => "completed",
-        TaskStatus::Cancelled => "cancelled",
-    }
-}
-
 // ---------------------------------------------------------------- DTOs
 
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
@@ -117,6 +105,8 @@ pub struct TaskDto {
     pub kind: TaskKind,
     pub status: TaskStatus,
     pub assignee_id: Option<Uuid>,
+    /// Others who joined ("+"); everyone on the task shares its XP.
+    pub helpers: Vec<Uuid>,
     pub cycle_start: DateTime<Utc>,
     pub due_at: Option<DateTime<Utc>>,
     /// Share of the round that has passed: < 0.75 fresh, < 1 due, ≥ 1 overdue.
@@ -135,7 +125,7 @@ pub struct TaskDto {
     pub completed_at: Option<DateTime<Utc>>,
     pub completed_by: Option<Uuid>,
     pub points_awarded: Option<i64>,
-    /// Bonus G currently held on this task (paid to whoever completes it).
+    /// Bonus XP others put on this task (shared by whoever does it).
     pub bounty: i64,
     pub approved_by: Option<Uuid>,
     /// Message from the reviewer ("Super!" or "Bitte noch den Boden").
@@ -159,6 +149,7 @@ pub(crate) struct TaskRow {
     kind: String,
     status: String,
     assignee_id: Option<Uuid>,
+    helpers: Vec<Uuid>,
     cycle_start: DateTime<Utc>,
     due_at: Option<DateTime<Utc>>,
     points_min: i64,
@@ -184,7 +175,8 @@ pub(crate) struct TaskRow {
 /// Columns of `TaskRow`, as a macro so queries stay literal (static) SQL strings.
 macro_rules! task_columns {
     () => {
-        "id, template_id, title, icon, room_id, kind, status, assignee_id, cycle_start, due_at,
+        "id, template_id, title, icon, room_id, kind, status, assignee_id,
+         ARRAY(SELECT h.member_id FROM task_helpers h WHERE h.task_id = tasks.id ORDER BY h.joined_at) AS helpers, cycle_start, due_at,
          points_min, points_default, points_max, started_at, remind_at, duration_min, step_order, completed_at, completed_by, points_awarded,
          (SELECT COALESCE(SUM(b.amount), 0) FROM bounties b WHERE b.task_id = tasks.id AND b.status = 'held')::BIGINT AS bounty,
          approved_by, review_note, household_id, scheduled_start, scheduled_end,
@@ -215,6 +207,7 @@ fn to_dto(t: TaskRow, steps: Vec<TaskStepDto>, policy: &PointPolicy, now: DateTi
         kind: kind_parse(&t.kind),
         status: status_parse(&t.status),
         assignee_id: t.assignee_id,
+        helpers: t.helpers,
         cycle_start: t.cycle_start,
         due_at: t.due_at,
         condition: c,
@@ -740,12 +733,10 @@ pub(crate) async fn record_event(tx: &mut Transaction<'_, Postgres>, task_id: Uu
 #[derive(Deserialize, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum TaskCommand {
+    /// Open task: it is mine. Someone else's: I join ("+"), the XP is shared.
     Claim,
+    /// I leave the task; the last one leaving makes it open again.
     Unclaim,
-    Start,
-    Pause,
-    /// "+10 min": ask again later.
-    Snooze,
     Done,
     /// Admins: skip this round (recurring tasks get their next round).
     Cancel,
@@ -755,17 +746,15 @@ pub enum TaskCommand {
 #[derive(Deserialize)]
 pub struct TaskActionRequest {
     pub action: TaskCommand,
-    /// Snooze length in minutes (default 10).
-    pub minutes: Option<i32>,
 }
 
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[derive(Serialize)]
 pub struct TaskActionResponse {
     pub task: TaskDto,
-    /// XP credited when this action completed the task (directly or by approval).
+    /// XP credited to the caller when this action completed the task (their share).
     pub xp_awarded: Option<i64>,
-    /// Bonus G paid out together with the XP.
+    /// Bonus XP that was on the task (shared like the XP, included in `xp_awarded`).
     pub bounty_paid: Option<i64>,
     /// The task now waits for an adult to confirm it.
     pub submitted: bool,
@@ -838,37 +827,64 @@ async fn finish(
         return Ok(Outcome { submitted: true, ..Outcome::default() });
     }
     record_event(tx, task.id, actor, "completed", serde_json::json!({ "xp": xp })).await?;
-    let paid = credit(tx, task, actor, xp, None, actor).await?;
+    let c = credit(tx, task, actor, xp, None, actor).await?;
     let next = next_round(tx, task, now, hh, Some(actor)).await?;
-    Ok(Outcome { xp_awarded: Some(xp), bounty_paid: (paid > 0).then_some(paid), submitted: false, next_task_id: next })
+    Ok(Outcome { xp_awarded: Some(c.share_of(actor)), bounty_paid: (c.bonus > 0).then_some(c.bonus), submitted: false, next_task_id: next })
 }
 
-/// Books the XP (and G, except for catch-up tasks) and pays out held bounties to `member`.
-async fn credit(tx: &mut Transaction<'_, Postgres>, task: &TaskRow, member: Uuid, xp: i64, note: Option<&str>, by: Uuid) -> AppResult<i64> {
-    let ledger = Ledger { household: task.household_id, by };
-    ledger.book(tx, member, LedgerDelta::task_reward(kind_parse(&task.kind), xp), "task", task.id, note).await?;
-    let held: Vec<i64> = sqlx::query_scalar("UPDATE bounties SET status = 'paid' WHERE task_id = $1 AND status = 'held' RETURNING amount")
+/// Everyone on a task: whoever finished it first, then the assignee and the helpers.
+async fn participants(tx: &mut Transaction<'_, Postgres>, task: &TaskRow, completer: Uuid) -> AppResult<Vec<Uuid>> {
+    let mut people = vec![completer];
+    let helpers: Vec<Uuid> =
+        sqlx::query_scalar("SELECT member_id FROM task_helpers WHERE task_id = $1 ORDER BY joined_at").bind(task.id).fetch_all(&mut **tx).await?;
+    for m in task.assignee_id.into_iter().chain(helpers) {
+        if !people.contains(&m) {
+            people.push(m);
+        }
+    }
+    Ok(people)
+}
+
+/// `total` split evenly; the first ones get what does not divide.
+pub(crate) fn shares(total: i64, n: usize) -> Vec<i64> {
+    let n = n.max(1) as i64;
+    (0..n).map(|i| total / n + i64::from(i < total % n)).collect()
+}
+
+pub(crate) struct Credited {
+    /// Bonus XP that was on the task.
+    pub bonus: i64,
+    /// (member, XP) for everyone on the task.
+    pub shares: Vec<(Uuid, i64)>,
+}
+
+impl Credited {
+    fn share_of(&self, member: Uuid) -> i64 {
+        self.shares.iter().find(|(m, _)| *m == member).map_or(0, |(_, x)| *x)
+    }
+}
+
+/// Books the task's XP plus the bonus on it, shared evenly by everyone on the task.
+async fn credit(tx: &mut Transaction<'_, Postgres>, task: &TaskRow, completer: Uuid, xp: i64, note: Option<&str>, by: Uuid) -> AppResult<Credited> {
+    let bonus: i64 = sqlx::query_scalar::<_, i64>("UPDATE bounties SET status = 'paid' WHERE task_id = $1 AND status = 'held' RETURNING amount")
         .bind(task.id)
         .fetch_all(&mut **tx)
-        .await?;
-    let paid: i64 = held.iter().sum();
-    if paid > 0 {
-        ledger.book(tx, member, LedgerDelta::bounty_payout(paid), "task", task.id, None).await?;
+        .await?
+        .iter()
+        .sum();
+    let people = participants(tx, task, completer).await?;
+    let ledger = Ledger { household: task.household_id, by };
+    let mut out = Vec::with_capacity(people.len());
+    for (member, share) in people.iter().zip(shares(xp + bonus, people.len())) {
+        ledger.book(tx, *member, LedgerDelta::task_reward(kind_parse(&task.kind), share), "task", task.id, note).await?;
+        out.push((*member, share));
     }
-    Ok(paid)
+    Ok(Credited { bonus, shares: out })
 }
 
-/// A round that will not be done (skipped): bounties go back to who set them.
-pub(crate) async fn refund_bounties(tx: &mut Transaction<'_, Postgres>, task: &TaskRow, by: Uuid) -> AppResult<()> {
-    let held: Vec<(Uuid, i64)> =
-        sqlx::query_as("UPDATE bounties SET status = 'refunded' WHERE task_id = $1 AND status = 'held' RETURNING pledger_id, amount")
-            .bind(task.id)
-            .fetch_all(&mut **tx)
-            .await?;
-    let ledger = Ledger { household: task.household_id, by };
-    for (pledger, amount) in held {
-        ledger.book(tx, pledger, LedgerDelta::bounty_refund(amount), "task", task.id, None).await?;
-    }
+/// A round that will not be done (skipped, deleted): the bonus XP on it lapses.
+pub(crate) async fn refund_bounties(tx: &mut Transaction<'_, Postgres>, task: &TaskRow, _by: Uuid) -> AppResult<()> {
+    sqlx::query("UPDATE bounties SET status = 'refunded' WHERE task_id = $1 AND status = 'held'").bind(task.id).execute(&mut **tx).await?;
     Ok(())
 }
 
@@ -937,17 +953,6 @@ pub async fn action(
 
     let mut outcome = Outcome::default();
     match req.action {
-        TaskCommand::Snooze => {
-            if status != TaskStatus::InProgress {
-                return Err(invalid());
-            }
-            let minutes = req.minutes.unwrap_or(10).clamp(1, 120);
-            sqlx::query("UPDATE tasks SET remind_at = $2, updated_at = now() WHERE id = $1")
-                .bind(task_id)
-                .bind(now + Duration::minutes(i64::from(minutes)))
-                .execute(&mut *tx)
-                .await?;
-        }
         TaskCommand::Cancel => {
             if role != "admin" {
                 return Err(AppError::Forbidden("Nur Admins können eine Runde überspringen.".into()));
@@ -971,43 +976,57 @@ pub async fn action(
             }
             outcome = finish(&mut tx, &task, me, &role, &hh, now).await?;
         }
-        cmd => {
-            let action = match cmd {
-                TaskCommand::Claim => TaskAction::Claim,
-                TaskCommand::Unclaim => TaskAction::Unclaim,
-                TaskCommand::Start => TaskAction::Start,
-                _ => TaskAction::Pause,
-            };
-            let next = status.apply(action, false).map_err(|_| invalid())?;
-            let (assignee, started, remind) = match action {
-                TaskAction::Claim => (Some(me), None, None),
-                TaskAction::Unclaim => (None, None, None),
-                // Starting takes the task over; time counts up, the check-in comes after the planned duration.
-                TaskAction::Start => {
-                    let minutes = task.duration_min.unwrap_or(DEFAULT_CHECKIN_MIN);
-                    (Some(me), Some(now), Some(now + Duration::minutes(i64::from(minutes))))
+        TaskCommand::Claim => {
+            let on_it = task.assignee_id == Some(me) || is_helper(&mut tx, task_id, me).await?;
+            match status {
+                TaskStatus::Open => {
+                    sqlx::query("UPDATE tasks SET status = 'claimed', assignee_id = $2, updated_at = now(), version = version + 1 WHERE id = $1")
+                        .bind(task_id)
+                        .bind(me)
+                        .execute(&mut *tx)
+                        .await?;
                 }
-                _ => (task.assignee_id, None, None),
-            };
-            sqlx::query(
-                "UPDATE tasks SET status = $2, assignee_id = $3, started_at = $4, remind_at = $5, updated_at = now(), version = version + 1
-                 WHERE id = $1",
-            )
-            .bind(task_id)
-            .bind(status_str(next))
-            .bind(assignee)
-            .bind(started)
-            .bind(remind)
-            .execute(&mut *tx)
-            .await?;
+                // Someone else is on it: join, the XP will be shared.
+                TaskStatus::Claimed | TaskStatus::InProgress if !on_it => join(&mut tx, &task, me).await?,
+                TaskStatus::Claimed | TaskStatus::InProgress => {}
+                _ => return Err(invalid()),
+            }
+        }
+        TaskCommand::Unclaim => {
+            if !matches!(status, TaskStatus::Claimed | TaskStatus::InProgress) {
+                return Err(invalid());
+            }
+            let helper = is_helper(&mut tx, task_id, me).await?;
+            if helper {
+                sqlx::query("DELETE FROM task_helpers WHERE task_id = $1 AND member_id = $2").bind(task_id).bind(me).execute(&mut *tx).await?;
+            } else if task.assignee_id == Some(me) || role == "admin" {
+                // The first helper takes over; without helpers the task is open again.
+                let next: Option<Uuid> = sqlx::query_scalar(
+                    "DELETE FROM task_helpers WHERE (task_id, member_id) =
+                       (SELECT task_id, member_id FROM task_helpers WHERE task_id = $1 ORDER BY joined_at LIMIT 1)
+                     RETURNING member_id",
+                )
+                .bind(task_id)
+                .fetch_optional(&mut *tx)
+                .await?;
+                sqlx::query(
+                    "UPDATE tasks SET assignee_id = $2, status = CASE WHEN $2::uuid IS NULL THEN 'open' ELSE status END,
+                            started_at = CASE WHEN $2::uuid IS NULL THEN NULL ELSE started_at END, remind_at = NULL,
+                            updated_at = now(), version = version + 1
+                     WHERE id = $1",
+                )
+                .bind(task_id)
+                .bind(next)
+                .execute(&mut *tx)
+                .await?;
+            } else {
+                return Err(AppError::Forbidden("Du bist bei dieser Aufgabe nicht eingetragen.".into()));
+            }
         }
     }
     let event = match req.action {
         TaskCommand::Claim => "claimed",
         TaskCommand::Unclaim => "unclaimed",
-        TaskCommand::Start => "started",
-        TaskCommand::Pause => "paused",
-        TaskCommand::Snooze => "snoozed",
         TaskCommand::Done => "done",
         TaskCommand::Cancel => "cancelled",
     };
@@ -1025,8 +1044,8 @@ pub async fn action(
     respond(&state, task_id, &hh, outcome).await
 }
 
-/// Checks one step. Checking a step means working on it: an open task becomes started.
-/// The last step finishes the task.
+/// Checks one step. Checking a step means working on it: an open task becomes mine, on
+/// someone else's I join (shared XP). The last step finishes the task.
 pub async fn check_step(
     State(state): State<AppState>,
     user: AuthUser,
@@ -1062,15 +1081,15 @@ pub async fn check_step(
     let mut outcome = Outcome::default();
     if all_done(&done) {
         outcome = finish(&mut tx, &task, me, &role, &hh, now).await?;
-    } else if status != TaskStatus::InProgress {
-        let minutes = task.duration_min.unwrap_or(DEFAULT_CHECKIN_MIN);
-        sqlx::query("UPDATE tasks SET status = 'in_progress', assignee_id = $2, started_at = $3, remind_at = $4, updated_at = $3 WHERE id = $1")
+    } else if task.assignee_id.is_none() {
+        sqlx::query("UPDATE tasks SET status = 'claimed', assignee_id = $2, updated_at = $3 WHERE id = $1")
             .bind(task_id)
             .bind(me)
             .bind(now)
-            .bind(now + Duration::minutes(i64::from(minutes)))
             .execute(&mut *tx)
             .await?;
+    } else if task.assignee_id != Some(me) && !is_helper(&mut tx, task_id, me).await? {
+        join(&mut tx, &task, me).await?;
     }
     tx.commit().await?;
     notify(&state, hid, &outcome);
@@ -1117,8 +1136,8 @@ pub async fn review(
         return Err(AppError::Conflict("Diese Aufgabe wartet nicht auf Bestätigung.".into()));
     }
     let completer = task.completed_by.ok_or(AppError::NotFound)?;
-    if completer == me {
-        return Err(AppError::Forbidden("Die eigene Aufgabe bestätigt bitte jemand anderes.".into()));
+    if completer == me || task.assignee_id == Some(me) || is_helper(&mut tx, task_id, me).await? {
+        return Err(AppError::Forbidden("Eine Aufgabe, bei der du mitgemacht hast, bestätigt bitte jemand anderes.".into()));
     }
 
     let mut outcome = Outcome::default();
@@ -1139,22 +1158,23 @@ pub async fn review(
         .execute(&mut *tx)
         .await?;
         record_event(&mut tx, task_id, me, "approved", serde_json::json!({ "xp": xp, "note": note })).await?;
-        let paid = credit(&mut tx, &task, completer, xp, note.as_deref(), me).await?;
+        let c = credit(&mut tx, &task, completer, xp, note.as_deref(), me).await?;
         let who = inbox::name(&mut tx, me).await?;
-        let g = if kind_parse(&task.kind).credits_balance() { xp } else { 0 } + paid;
-        inbox::add(
-            &mut tx,
-            Note::new(completer, "approved", Category::Reviews, format!("„{}“ bestätigt · +{xp} XP{}", task.title, if g > 0 { format!(" · +{g} G") } else { String::new() }))
-                .body(note.clone().map_or_else(|| format!("von {who}"), |n| format!("„{n}“ – {who}")))
-                .about("task", task_id),
-        )
-        .await?;
+        for (member, share) in &c.shares {
+            inbox::add(
+                &mut tx,
+                Note::new(*member, "approved", Category::Reviews, format!("„{}“ bestätigt · +{share} XP", task.title))
+                    .body(note.clone().map_or_else(|| format!("von {who}"), |n| format!("„{n}“ – {who}")))
+                    .about("task", task_id),
+            )
+            .await?;
+        }
         // The next round starts when the work was done, not when it was confirmed.
         let next = next_round(&mut tx, &task, done_at, &hh, Some(completer)).await?;
-        outcome = Outcome { xp_awarded: Some(xp), bounty_paid: (paid > 0).then_some(paid), submitted: false, next_task_id: next };
-        let g = if kind_parse(&task.kind).credits_balance() { xp } else { 0 } + paid;
+        let mine = c.share_of(completer);
+        outcome = Outcome { xp_awarded: Some(mine), bounty_paid: (c.bonus > 0).then_some(c.bonus), submitted: false, next_task_id: next };
         serde_json::json!({
-            "type": "credited", "member": completer, "by": me, "task": task.title, "xp": xp, "g": g, "note": note,
+            "type": "credited", "member": completer, "by": me, "task": task.title, "xp": mine, "note": note,
         })
     } else {
         sqlx::query(
@@ -1187,15 +1207,59 @@ pub async fn review(
     respond(&state, task_id, &hh, outcome).await
 }
 
-// ---------------------------------------------------------------- bounty (M3)
+// ---------------------------------------------------------------- bonus XP
 
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[derive(Deserialize)]
 pub struct BountyRequest {
+    /// Bonus XP to put on the task.
     pub amount: i64,
 }
 
-/// "Wer das Bad putzt, bekommt 20 von mir": the G is held right away (KONZEPT §4.3).
+async fn is_helper(tx: &mut Transaction<'_, Postgres>, task_id: Uuid, member: Uuid) -> AppResult<bool> {
+    Ok(sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM task_helpers WHERE task_id = $1 AND member_id = $2)")
+        .bind(task_id)
+        .bind(member)
+        .fetch_one(&mut **tx)
+        .await?)
+}
+
+/// `member` joins someone else's task: the XP will be shared. A bonus they put on it goes
+/// back to their monthly allowance (nobody earns their own gift). The one who has it hears it.
+async fn join(tx: &mut Transaction<'_, Postgres>, task: &TaskRow, member: Uuid) -> AppResult<()> {
+    sqlx::query("INSERT INTO task_helpers (task_id, member_id) VALUES ($1, $2) ON CONFLICT DO NOTHING")
+        .bind(task.id)
+        .bind(member)
+        .execute(&mut **tx)
+        .await?;
+    sqlx::query("UPDATE bounties SET status = 'refunded' WHERE task_id = $1 AND pledger_id = $2 AND status = 'held'")
+        .bind(task.id)
+        .bind(member)
+        .execute(&mut **tx)
+        .await?;
+    sqlx::query("UPDATE tasks SET updated_at = now(), version = version + 1 WHERE id = $1").bind(task.id).execute(&mut **tx).await?;
+    if let Some(assignee) = task.assignee_id {
+        let who = inbox::name(tx, member).await?;
+        inbox::add(
+            tx,
+            Note::new(assignee, "joined", Category::Tasks, format!("{who} macht bei „{}“ mit", task.title)).body("Die XP werden geteilt.").about("task", task.id),
+        )
+        .await?;
+    }
+    Ok(())
+}
+
+/// Bonus XP this member has given away in the current month.
+pub(crate) async fn bonus_given(tx: &mut Transaction<'_, Postgres>, member: Uuid, hh: &Household, now: DateTime<Utc>) -> AppResult<i64> {
+    Ok(sqlx::query_scalar("SELECT COALESCE(SUM(amount), 0)::BIGINT FROM bounties WHERE pledger_id = $1 AND created_at >= $2 AND status <> 'refunded'")
+        .bind(member)
+        .bind(month_start(hh.tz, now))
+        .fetch_one(&mut **tx)
+        .await?)
+}
+
+/// "Wer das Bad putzt, bekommt 10 XP extra": a gift, it costs the giver nothing. Each member
+/// has a monthly allowance (household rule `bonus_xp_per_month`). Not on tasks you are on.
 pub async fn pledge(
     State(state): State<AppState>,
     user: AuthUser,
@@ -1204,18 +1268,31 @@ pub async fn pledge(
 ) -> AppResult<Json<TaskDto>> {
     let (hid, me, _) = task_household(&state, &user, task_id).await?;
     let hh = household(&state.db, hid).await?;
+    let now = Utc::now();
     let mut tx = state.db.begin().await?;
     let task = lock_task(&mut tx, task_id).await?;
     let status = status_parse(&task.status);
     if status.is_final() || status == TaskStatus::Submitted {
         return Err(AppError::Conflict("Auf erledigte Aufgaben kann man keinen Bonus mehr setzen.".into()));
     }
-    if task.assignee_id == Some(me) {
-        return Err(AppError::Forbidden("Auf die eigene Aufgabe kannst du keinen Bonus setzen.".into()));
+    if task.assignee_id == Some(me) || is_helper(&mut tx, task_id, me).await? {
+        return Err(AppError::Forbidden("Auf eine Aufgabe, bei der du mitmachst, kannst du keinen Bonus setzen.".into()));
     }
-    lock_member(&mut tx, me).await?;
-    let have = balance(&mut tx, me).await?;
-    hh.policy.check_bounty(req.amount, have).map_err(|e| AppError::BadRequest(e.to_string()))?;
+    let allowance = hh.policy.bonus_xp_per_month;
+    if allowance <= 0 {
+        return Err(AppError::BadRequest("XP-Bonus ist in diesem Haushalt ausgeschaltet.".into()));
+    }
+    if req.amount < 1 {
+        return Err(AppError::BadRequest("Der Bonus ist mindestens 1 XP.".into()));
+    }
+    let left = allowance - bonus_given(&mut tx, me, &hh, now).await?;
+    if req.amount > left {
+        return Err(AppError::BadRequest(if left > 0 {
+            format!("Diesen Monat kannst du noch {left} XP verschenken.")
+        } else {
+            "Deine XP für Boni sind diesen Monat aufgebraucht.".into()
+        }));
+    }
     sqlx::query("INSERT INTO bounties (id, task_id, pledger_id, amount) VALUES ($1, $2, $3, $4)")
         .bind(Uuid::new_v4())
         .bind(task_id)
@@ -1223,18 +1300,16 @@ pub async fn pledge(
         .bind(req.amount)
         .execute(&mut *tx)
         .await?;
-    Ledger { household: hid, by: me }.book(&mut tx, me, LedgerDelta::bounty_hold(req.amount), "task", task_id, None).await?;
     record_event(&mut tx, task_id, me, "bounty", serde_json::json!({ "amount": req.amount })).await?;
-    if let Some(assignee) = task.assignee_id {
-        let who = inbox::name(&mut tx, me).await?;
+    let who = inbox::name(&mut tx, me).await?;
+    for member in participants(&mut tx, &task, me).await?.into_iter().filter(|m| *m != me) {
         inbox::add(
             &mut tx,
-            Note::new(assignee, "bounty", Category::Tasks, format!("Bonus auf „{}“: +{} G", task.title, req.amount)).body(format!("von {who}")).about("task", task_id),
+            Note::new(member, "bounty", Category::Tasks, format!("Bonus auf „{}“: +{} XP", task.title, req.amount)).body(format!("von {who}")).about("task", task_id),
         )
         .await?;
     }
     tx.commit().await?;
     state.live.notify(hid, r#"{"type":"tasks_changed"}"#);
-    state.live.notify(hid, r#"{"type":"points_changed"}"#);
     Ok(Json(load_dto(&state, task_id, &hh.policy).await?))
 }

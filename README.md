@@ -82,19 +82,16 @@ Die Vorschau „Abschluss ausprobieren“ unter Regeln rechnet den Ausgleich off
 | `POST /api/v1/lists/{lid}/items` · `PATCH` · `DELETE /api/v1/items/{iid}` | Aufschreiben (ohne XP, gleiche Artikel zusammengefasst), Notiz, Abteilung, dringend |
 | `POST /api/v1/items/{iid}/check` | in den Wagen (startet den Einkauf) oder „nebenbei mitgebracht“ |
 | `GET /api/v1/households/{id}/tasks` · `GET /api/v1/tasks/{tid}` | aktuelle Runden mit Zustand, XP und Schritten |
-| `POST /api/v1/tasks/{tid}/action` | `claim` · `unclaim` · `start` · `pause` · `snooze` · `done` · `cancel` (nur Admins) |
+| `POST /api/v1/tasks/{tid}/action` | `claim` (übernehmen oder mitmachen, XP werden geteilt) · `unclaim` · `done` · `cancel` (nur Admins) |
 | `POST /api/v1/tasks/{tid}/steps/{sid}/check` | Schritt abhaken; der letzte erledigt die Aufgabe |
 | `POST /api/v1/tasks/{tid}/review` | Erwachsene bestätigen (XP im Rahmen anpassbar, Nachricht) oder schicken zurück |
-| `POST /api/v1/tasks/{tid}/bounty` | Bonus aus eigenem Guthaben setzen (sofort reserviert) |
-| `GET /api/v1/households/{id}/accounts` | Guthaben, XP des Monats und Serie aller Mitglieder |
+| `POST /api/v1/tasks/{tid}/bounty` | XP-Bonus verschenken (Monatsbudget `bonus_xp_per_month`), geteilt wie die XP |
+| `GET /api/v1/households/{id}/accounts` | XP des Monats, Serie und übriges Bonus-Budget aller Mitglieder |
 | `GET /api/v1/households/{id}/ledger` | Verlauf des eigenen Kontos (Admins: `?member=`), `before` + `limit` zum Blättern |
 | `POST /api/v1/households/{id}/ledger/{eid}/reverse` | Admins nehmen eine Gutschrift per Gegenbuchung zurück (mit Begründung) |
-| `GET` · `POST /api/v1/households/{id}/transfers` · `POST /api/v1/transfers/{xid}/decide` | Guthaben übertragen, Freigabe für Kinder |
 | `GET /api/v1/households/{id}/period` | laufender Zeitraum mit Rennen gegen Krümel und den letzten Abschlüssen |
 | `GET /api/v1/households/{id}/settlements` · `POST /api/v1/settlements/{sid}/approve` | Abschlüsse, Freigabe durch Admins |
 | `GET` · `PUT /api/v1/households/{id}/rules` · `PUT …/goal` | Regeln des Haushalts (Punkte, Abschluss, Familienziel); Familienziel allein |
-| `GET` · `POST /api/v1/households/{id}/rewards` · `PATCH` · `DELETE …/rewards/{rid}` | Belohnungskatalog |
-| `POST /api/v1/rewards/{rid}/redeem` · `GET …/households/{id}/redemptions` · `POST /api/v1/redemptions/{xid}/decide` | Einlösen, Freigabe |
 | `GET /api/v1/households/{id}/inbox` · `…/inbox/unread` · `POST …/inbox/read` | Postfach, ungelesene, als gelesen markieren |
 | `GET` · `PUT /api/v1/households/{id}/notification-prefs` | Push-Kategorien und Ruhezeit je Person |
 | `POST` · `DELETE /api/v1/devices` | Push-Token des Geräts an- und abmelden |

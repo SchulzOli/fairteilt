@@ -5,7 +5,6 @@
   import Icon, { type IconName } from "$lib/ui/Icon.svelte";
   import { applyTheme, settings } from "$lib/settings.svelte";
   import { session } from "$lib/session.svelte";
-  import CheckIn from "$lib/CheckIn.svelte";
   import NoticeBar from "$lib/NoticeBar.svelte";
   import { taskStore } from "$lib/tasks.svelte";
   import * as reminders from "$lib/reminders";
@@ -51,7 +50,7 @@
     if (taskStore.listVersion > 0) void shopping.load().catch(() => {});
   });
 
-  // Local reminders for my own tasks (bald fällig, check-in), planned after every reload.
+  // Local reminders for my own tasks (fällig), planned after every reload.
   $effect(() => {
     void taskStore.version;
     const me = session.membership?.membership_id;
@@ -79,21 +78,8 @@
     if (session.status === "signed_out" && outbox.items.length) outbox.clear();
   });
 
-  // Buttons on a reminder: like the in-app check-in; a tap opens the task.
-  reminders.setActionHandler(async (actionId, taskId) => {
-    try {
-      if (actionId === "snooze") await taskStore.action(taskId, "snooze", 10);
-      else if (actionId === "later") await taskStore.action(taskId, "pause");
-      else if (actionId === "done") {
-        const t = taskStore.tasks.find((x) => x.id === taskId);
-        const open = t?.steps.filter((s) => s.done_at === null) ?? [];
-        if (open.length === 0) await taskStore.action(taskId, "done");
-        for (const s of open) await taskStore.checkStep(taskId, s.id);
-      } else void goto(`/aufgabe/${taskId}`);
-    } catch {
-      void goto(`/aufgabe/${taskId}`);
-    }
-  });
+  // A tap on a reminder opens the task.
+  reminders.setActionHandler((_actionId, taskId) => void goto(`/aufgabe/${taskId}`));
 
   const tabs: { href: string; label: string; icon: IconName }[] = [
     { href: "/", label: "Heute", icon: "sun" },
@@ -134,7 +120,6 @@
   </main>
 
   {#if showNav}
-    <CheckIn />
     <NoticeBar />
     <nav aria-label="Hauptnavigation">
       {#each tabs as tab (tab.href)}

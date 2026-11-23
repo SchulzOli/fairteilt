@@ -6,7 +6,7 @@
   import Krumel from "$lib/ui/Krumel.svelte";
   import GoalSheet from "$lib/GoalSheet.svelte";
   import { session } from "$lib/session.svelte";
-  import { conditionOf, taskStore } from "$lib/tasks.svelte";
+  import { conditionOf, isOn, taskStore } from "$lib/tasks.svelte";
   import type { AnimalName } from "$lib/ui/Avatar.svelte";
 
   let sheet = $state<{ preset?: TaskPreset } | null>(null);
@@ -19,10 +19,10 @@
   );
   const toReview = $derived(planner ? byUrgency.filter((t) => t.status === "submitted" && t.completed_by !== me) : []);
   const rest = $derived(byUrgency.filter((t) => !toReview.includes(t)));
-  const running = $derived(rest.filter((t) => t.status === "in_progress" && t.assignee_id === me));
-  const mine = $derived(rest.filter((t) => t.status !== "in_progress" && t.assignee_id === me));
+  // Mine: I have it or joined it. Others': shown faded at the end, "+" still lets me join.
+  const mine = $derived(rest.filter((t) => isOn(t, me)));
   const open = $derived(rest.filter((t) => !t.assignee_id));
-  const others = $derived(rest.filter((t) => t.assignee_id && t.assignee_id !== me));
+  const others = $derived(rest.filter((t) => t.assignee_id && !isOn(t, me)));
   const streak = $derived(taskStore.myAccount?.streak ?? { days: 0, today: false });
 
   let goalSheet = $state(false);
@@ -67,9 +67,9 @@
   <div class="row between">
     <strong>Familie gegen Krümel</strong>
     {#if session.isAdmin}
-      <button class="reward" onclick={() => (goalSheet = true)} aria-label="Familienziel ändern: {goal.reward}"><span class="coin-chip">{goal.reward}</span></button>
+      <button class="reward" onclick={() => (goalSheet = true)} aria-label="Familienziel ändern: {goal.reward}"><span class="goal-chip"><Icon name="flag" size={14} />{goal.reward}</span></button>
     {:else}
-      <span class="coin-chip">{goal.reward}</span>
+      <span class="goal-chip"><Icon name="flag" size={14} />{goal.reward}</span>
     {/if}
   </div>
   <div class="track" aria-hidden="true">
@@ -110,19 +110,12 @@
     </div>
   {/if}
 
-  {#if running.length}
-    <h2 class="section-title">Läuft gerade</h2>
-    <div class="stack">
-      {#each running as task (task.id)}<TaskCard {task} />{/each}
-    </div>
-  {/if}
-
   <h2 class="section-title">Für dich</h2>
   <div class="stack">
     {#each mine as task (task.id)}
       <TaskCard {task} />
     {:else}
-      <p class="muted">{running.length ? "Sonst nichts. Super!" : "Alles erledigt. Danke dir!"}</p>
+      <p class="muted">Alles erledigt. Danke dir!</p>
     {/each}
   </div>
 
@@ -134,7 +127,7 @@
   {/if}
 
   {#if others.length}
-    <h2 class="section-title">Bei den anderen</h2>
+    <h2 class="section-title">Bei den anderen · mitmachen mit +</h2>
     <div class="stack">
       {#each others as task (task.id)}<TaskCard {task} />{/each}
     </div>
@@ -283,6 +276,19 @@
     min-height: 0;
     background: transparent;
     border: none;
+  }
+
+  .goal-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 10px;
+    border-radius: 999px;
+    background: var(--primary-soft);
+    color: var(--primary);
+    font-weight: 700;
+    font-size: 0.82rem;
+    white-space: nowrap;
   }
 
   .race.won {

@@ -1,4 +1,5 @@
-//! M2: rooms, templates with rhythm, condition, started tasks, steps, assignment, live updates.
+//! M2: rooms, templates with rhythm, condition, steps, assignment, several people on a task
+//! (shared XP), live updates.
 
 use std::net::SocketAddr;
 
@@ -29,7 +30,12 @@ async fn call(app: &Router, method: &str, path: &str, token: Option<&str>, body:
     let res = app.clone().oneshot(req).await.unwrap();
     let status = res.status();
     let bytes = res.into_body().collect().await.unwrap().to_bytes();
-    let json = if bytes.is_empty() { Value::Null } else { serde_json::from_slice(&bytes).unwrap() };
+    // Body rejections (e.g. an unknown action) come from axum as plain text.
+    let json = if bytes.is_empty() {
+        Value::Null
+    } else {
+        serde_json::from_slice(&bytes).unwrap_or_else(|_| Value::String(String::from_utf8_lossy(&bytes).into_owned()))
+    };
     (status, json)
 }
 
@@ -63,7 +69,7 @@ fn near(a: DateTime<Utc>, b: DateTime<Utc>) -> bool {
 }
 
 /// The M2 scenario: "Bad putzen, alle 7 Tage" turns yellow after 6 days and red after 8;
-/// Alex starts it, checks off five steps, and Fairteilt checks in kindly if he gets stuck.
+/// Alex checks off five steps (no timer) and gets the XP.
 #[sqlx::test(migrator = "punkte_server::MIGRATOR")]
 async fn m2_bathroom_scenario(db: PgPool) {
     let app = routes::router(AppState::new(db.clone(), SECRET), &[]);
@@ -109,27 +115,25 @@ async fn m2_bathroom_scenario(db: PgPool) {
     assert_eq!(list[0]["condition_state"], "overdue", "{list}");
     assert_eq!(list[0]["xp"], 22);
 
-    // Alex starts it: time counts up from now, the check-in comes after the planned 30 minutes.
-    let (s, r) = call(&app, "POST", &format!("/api/v1/tasks/{tid}/action"), Some(&alex), Some(json!({ "action": "start" }))).await;
-    assert_eq!(s, StatusCode::OK, "{r}");
-    assert_eq!(r["task"]["status"], "in_progress");
-    let started = ts(&r["task"]["started_at"]);
-    assert!(near(started, Utc::now()));
-    assert!(near(ts(&r["task"]["remind_at"]), started + Duration::minutes(30)));
-
-    // He gets stuck: "+10 min" moves the gentle check-in.
-    let (s, r) = call(&app, "POST", &format!("/api/v1/tasks/{tid}/action"), Some(&alex), Some(json!({ "action": "snooze" }))).await;
-    assert_eq!(s, StatusCode::OK, "{r}");
-    assert!(near(ts(&r["task"]["remind_at"]), Utc::now() + Duration::minutes(10)));
+    // No timer any more: there is nothing to start, pause or snooze.
+    for gone in ["start", "pause", "snooze"] {
+        let (s, _) = call(&app, "POST", &format!("/api/v1/tasks/{tid}/action"), Some(&alex), Some(json!({ "action": gone }))).await;
+        assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY, "{gone}");
+    }
 
     // Steps one after another: the floor cannot come before the mirror.
-    let step_ids: Vec<String> = r["task"]["steps"].as_array().unwrap().iter().map(|s| s["id"].as_str().unwrap().to_string()).collect();
+    let step_ids: Vec<String> = task["steps"].as_array().unwrap().iter().map(|s| s["id"].as_str().unwrap().to_string()).collect();
     let (s, _) = call(&app, "POST", &format!("/api/v1/tasks/{tid}/steps/{}/check", step_ids[4]), Some(&alex), None).await;
     assert_eq!(s, StatusCode::CONFLICT);
     for sid in &step_ids[..4] {
         let (s, r) = call(&app, "POST", &format!("/api/v1/tasks/{tid}/steps/{sid}/check"), Some(&alex), None).await;
         assert_eq!(s, StatusCode::OK, "{r}");
         assert!(r["xp_awarded"].is_null(), "XP only at the end");
+        // Checking steps is working on it, but nothing runs on a clock: still Alex's, no check-in.
+        let t = &r["task"];
+        assert_eq!((t["status"].as_str(), t["assignee_id"].as_str()), (Some("claimed"), Some(alex_mid.as_str())));
+        assert!(t["started_at"].is_null() && t["remind_at"].is_null(), "{t}");
+        assert_eq!(t["helpers"], json!([]));
     }
     // Done while a step is still open is refused.
     let (s, _) = call(&app, "POST", &format!("/api/v1/tasks/{tid}/action"), Some(&alex), Some(json!({ "action": "done" }))).await;
@@ -205,10 +209,16 @@ async fn task_rules_and_rights(db: PgPool) {
     assert!(created["task"]["due_at"].is_null());
     let (s, r) = call(&app, "POST", &format!("/api/v1/tasks/{tid}/action"), Some(mia), Some(json!({ "action": "claim" }))).await;
     assert_eq!(s, StatusCode::OK, "{r}");
-    assert_eq!(r["task"]["assignee_id"], child["membership_id"]);
-    // Snoozing only makes sense while it runs.
-    let (s, _) = call(&app, "POST", &format!("/api/v1/tasks/{tid}/action"), Some(mia), Some(json!({ "action": "snooze" }))).await;
-    assert_eq!(s, StatusCode::CONFLICT);
+    assert_eq!((r["task"]["status"].as_str(), r["task"]["assignee_id"].as_str()), (Some("claimed"), child["membership_id"].as_str()));
+    // There is no timer to snooze any more.
+    let (s, _) = call(&app, "POST", &format!("/api/v1/tasks/{tid}/action"), Some(mia), Some(json!({ "action": "snooze", "minutes": 10 }))).await;
+    assert_eq!(s, StatusCode::UNPROCESSABLE_ENTITY);
+    // Children leave their own tasks, but do not take others off theirs.
+    let (_, other) = call(&app, "POST", &format!("/api/v1/households/{hid}/templates"), Some(&alex), Some(simple("Tisch decken"))).await;
+    let other = other["task"]["id"].as_str().unwrap();
+    call(&app, "POST", &format!("/api/v1/tasks/{other}/action"), Some(&sam), Some(json!({ "action": "claim" }))).await;
+    let (s, _) = call(&app, "POST", &format!("/api/v1/tasks/{other}/action"), Some(mia), Some(json!({ "action": "unclaim" }))).await;
+    assert_eq!(s, StatusCode::FORBIDDEN);
     // Only admins skip a round.
     let (s, _) = call(&app, "POST", &format!("/api/v1/tasks/{tid}/action"), Some(mia), Some(json!({ "action": "cancel" }))).await;
     assert_eq!(s, StatusCode::FORBIDDEN);
@@ -222,7 +232,8 @@ async fn task_rules_and_rights(db: PgPool) {
     assert_eq!(r["xp_awarded"], 10);
     assert!(r["next_task_id"].is_null());
     let (_, list) = call(&app, "GET", &format!("/api/v1/households/{hid}/tasks"), Some(&sam), None).await;
-    assert_eq!(list.as_array().unwrap().len(), 0);
+    let titles: Vec<&str> = list.as_array().unwrap().iter().map(|t| t["title"].as_str().unwrap()).collect();
+    assert_eq!(titles, ["Tisch decken"]);
 
     // Someone from another household sees nothing.
     let eve = register(&app, "eve@example.org", "Eve").await;
@@ -230,6 +241,103 @@ async fn task_rules_and_rights(db: PgPool) {
     assert_eq!(s, StatusCode::NOT_FOUND);
     let (s, _) = call(&app, "GET", &format!("/api/v1/households/{hid}/tasks"), Some(&eve), None).await;
     assert_eq!(s, StatusCode::NOT_FOUND);
+}
+
+/// (xp_month, balance) of one member.
+async fn xp_and_balance(app: &Router, token: &str, hid: &str, mid: &str) -> (i64, i64) {
+    let (s, list) = call(app, "GET", &format!("/api/v1/households/{hid}/accounts"), Some(token), None).await;
+    assert_eq!(s, StatusCode::OK, "{list}");
+    let a = list.as_array().unwrap().iter().find(|a| a["membership_id"] == mid).unwrap();
+    (a["xp_month"].as_i64().unwrap(), a["balance"].as_i64().unwrap())
+}
+
+/// Several people on one task: a second "claim" (or checking a step on someone else's task)
+/// joins it, and everyone on it shares the XP evenly; whoever finishes gets what does not
+/// divide. Leaving hands the task to whoever is still on it.
+#[sqlx::test(migrator = "punkte_server::MIGRATOR")]
+async fn several_people_share_a_task(db: PgPool) {
+    let app = routes::router(AppState::new(db, SECRET), &[]);
+    let (alex, sam, hid, alex_mid, sam_mid) = family(&app).await;
+    let act = async |token: &str, tid: &str, action: &str| -> (StatusCode, Value) {
+        call(&app, "POST", &format!("/api/v1/tasks/{tid}/action"), Some(token), Some(json!({ "action": action }))).await
+    };
+    let create = async |title: &str, xp: i64, steps: Value| -> Value {
+        let (s, b) = call(&app, "POST", &format!("/api/v1/households/{hid}/templates"), Some(&alex), Some(json!({
+            "title": title, "points": { "min": xp, "default": xp, "max": xp }, "schedule": { "type": "once" },
+            "assignment": { "type": "open" }, "steps": steps, "step_order": "sequential"
+        }))).await;
+        assert_eq!(s, StatusCode::CREATED, "{b}");
+        b["task"].clone()
+    };
+
+    // Alex takes the windows, Sam joins; Alex hears about it (once).
+    let windows = create("Fenster putzen", 20, json!([])).await["id"].as_str().unwrap().to_string();
+    let (s, r) = act(&alex, &windows, "claim").await;
+    assert_eq!((s, r["task"]["status"].as_str(), r["task"]["assignee_id"].as_str()), (StatusCode::OK, Some("claimed"), Some(alex_mid.as_str())));
+    let (s, r) = act(&sam, &windows, "claim").await;
+    assert_eq!(s, StatusCode::OK, "{r}");
+    assert_eq!((r["task"]["status"].as_str(), r["task"]["assignee_id"].as_str()), (Some("claimed"), Some(alex_mid.as_str())));
+    assert_eq!(r["task"]["helpers"], json!([sam_mid]));
+    let (s, r) = act(&sam, &windows, "claim").await;
+    assert_eq!((s, &r["task"]["helpers"]), (StatusCode::OK, &json!([sam_mid])), "joining twice changes nothing");
+    let (_, inbox) = call(&app, "GET", &format!("/api/v1/households/{hid}/inbox"), Some(&alex), None).await;
+    let joined: Vec<&Value> = inbox.as_array().unwrap().iter().filter(|n| n["kind"] == "joined").collect();
+    assert_eq!(joined.len(), 1, "{inbox}");
+    assert_eq!((joined[0]["title"].as_str(), joined[0]["ref_id"].as_str()), (Some("Sam macht bei „Fenster putzen“ mit"), Some(windows.as_str())));
+
+    // Alex is done: 20 XP, 10 each, one credit per person, no G.
+    let (s, r) = act(&alex, &windows, "done").await;
+    assert_eq!((s, r["xp_awarded"].as_i64(), r["task"]["status"].as_str()), (StatusCode::OK, Some(10), Some("completed")), "{r}");
+    assert_eq!(xp_and_balance(&app, &alex, &hid, &alex_mid).await, (10, 0));
+    assert_eq!(xp_and_balance(&app, &alex, &hid, &sam_mid).await, (10, 0));
+    let (_, h) = call(&app, "GET", &format!("/api/v1/households/{hid}/ledger"), Some(&sam), None).await;
+    let h = h.as_array().unwrap();
+    assert_eq!(h.len(), 1);
+    assert_eq!((h[0]["kind"].as_str(), h[0]["contribution_delta"].as_i64(), h[0]["balance_delta"].as_i64()), (Some("task_reward"), Some(10), Some(0)));
+
+    // 15 XP for two, Sam (the helper) finishes: he gets the odd one.
+    let trash = create("Müll rausbringen", 15, json!([])).await["id"].as_str().unwrap().to_string();
+    act(&alex, &trash, "claim").await;
+    act(&sam, &trash, "claim").await;
+    let (s, r) = act(&sam, &trash, "done").await;
+    assert_eq!((s, r["xp_awarded"].as_i64(), r["task"]["completed_by"].as_str()), (StatusCode::OK, Some(8), Some(sam_mid.as_str())), "{r}");
+    assert_eq!(xp_and_balance(&app, &alex, &hid, &alex_mid).await, (17, 0));
+    assert_eq!(xp_and_balance(&app, &alex, &hid, &sam_mid).await, (18, 0));
+
+    // Checking a step on an open task makes it yours (no timer); on someone else's you join.
+    let dishes = create("Spülmaschine", 10, json!(["Ausräumen", "Einräumen", "Tabs auffüllen"])).await;
+    let id = dishes["id"].as_str().unwrap().to_string();
+    let step = |i: usize| format!("/api/v1/tasks/{id}/steps/{}/check", dishes["steps"][i]["id"].as_str().unwrap());
+    let (s, r) = call(&app, "POST", &step(0), Some(&sam), None).await;
+    assert_eq!(s, StatusCode::OK, "{r}");
+    let t = &r["task"];
+    assert_eq!((t["status"].as_str(), t["assignee_id"].as_str()), (Some("claimed"), Some(sam_mid.as_str())));
+    assert!(t["started_at"].is_null() && t["remind_at"].is_null(), "{t}");
+    let (s, r) = call(&app, "POST", &step(1), Some(&alex), None).await;
+    assert_eq!(s, StatusCode::OK, "{r}");
+    assert_eq!((r["task"]["assignee_id"].as_str(), &r["task"]["helpers"]), (Some(sam_mid.as_str()), &json!([alex_mid])));
+
+    // Sam leaves: Alex, who helped, takes over.
+    let (s, r) = act(&sam, &id, "unclaim").await;
+    assert_eq!(s, StatusCode::OK, "{r}");
+    assert_eq!((r["task"]["status"].as_str(), r["task"]["assignee_id"].as_str()), (Some("claimed"), Some(alex_mid.as_str())));
+    assert_eq!(r["task"]["helpers"], json!([]));
+    // A helper who leaves just leaves.
+    let (_, r) = act(&sam, &id, "claim").await;
+    assert_eq!(r["task"]["helpers"], json!([sam_mid]));
+    let (_, r) = act(&sam, &id, "unclaim").await;
+    assert_eq!((r["task"]["assignee_id"].as_str(), &r["task"]["helpers"]), (Some(alex_mid.as_str()), &json!([])));
+    // The last one leaving makes it open again; an open task cannot be left.
+    let (_, r) = act(&alex, &id, "unclaim").await;
+    assert_eq!((r["task"]["status"].as_str(), r["task"]["assignee_id"].as_str()), (Some("open"), None));
+    let (s, _) = act(&alex, &id, "unclaim").await;
+    assert_eq!(s, StatusCode::CONFLICT);
+
+    // Alex finishes it alone: who left gets nothing.
+    let (s, r) = call(&app, "POST", &step(2), Some(&alex), None).await;
+    assert_eq!((s, r["xp_awarded"].as_i64()), (StatusCode::OK, Some(10)), "{r}");
+    assert_eq!(xp_and_balance(&app, &alex, &hid, &alex_mid).await, (27, 0));
+    assert_eq!(xp_and_balance(&app, &alex, &hid, &sam_mid).await, (18, 0));
 }
 
 /// Connected apps hear about changes right away.
@@ -282,7 +390,8 @@ async fn live_updates(db: PgPool) {
             break;
         }
     }
-    assert_eq!((personal["member"].as_str(), personal["xp"].as_i64(), personal["g"].as_i64()), (Some(sam_mid.as_str()), Some(10), Some(10)));
+    assert_eq!((personal["member"].as_str(), personal["xp"].as_i64()), (Some(sam_mid.as_str()), Some(10)));
+    assert!(personal["g"].is_null(), "no G any more: {personal}");
     assert_eq!((personal["task"].as_str(), personal["note"].as_str()), (Some("Fenster putzen"), Some("Danke!")));
 }
 
@@ -342,4 +451,36 @@ async fn edit_move_and_delete_a_setup(db: PgPool) {
     assert_eq!(s, StatusCode::BAD_REQUEST);
     let (s, _) = call(&app, "DELETE", &format!("/api/v1/templates/{einkaufen}"), Some(&alex), None).await;
     assert_eq!(s, StatusCode::CONFLICT);
+}
+
+/// Nobody earns their own gift and nobody confirms a task they were on: a bonus goes back when
+/// its giver joins the task, and a helper cannot approve it.
+#[sqlx::test(migrator = "punkte_server::MIGRATOR")]
+async fn helpers_neither_keep_their_bonus_nor_approve(db: PgPool) {
+    let app = routes::router(AppState::new(db, SECRET), &[]);
+    let (alex, sam, hid, _, _) = family(&app).await;
+    let (s, b) = call(&app, "POST", &format!("/api/v1/households/{hid}/templates"), Some(&alex), Some(json!({
+        "title": "Keller", "points": { "min": 10, "default": 10, "max": 10 }, "schedule": { "type": "once" },
+        "assignment": { "type": "open" }, "steps": [], "step_order": "free", "approval": "always"
+    }))).await;
+    assert_eq!(s, StatusCode::CREATED, "{b}");
+    let tid = b["task"]["id"].as_str().unwrap().to_string();
+    let act = async |token: &str, action: &str| -> (StatusCode, Value) {
+        call(&app, "POST", &format!("/api/v1/tasks/{tid}/action"), Some(token), Some(json!({ "action": action }))).await
+    };
+
+    // Alex takes it, Sam puts 6 XP on it, then joins: the 6 XP go back to Sam's allowance.
+    assert_eq!(act(&alex, "claim").await.0, StatusCode::OK);
+    let (s, t) = call(&app, "POST", &format!("/api/v1/tasks/{tid}/bounty"), Some(&sam), Some(json!({ "amount": 6 }))).await;
+    assert_eq!((s, t["bounty"].as_i64()), (StatusCode::OK, Some(6)), "{t}");
+    let (s, r) = act(&sam, "claim").await;
+    assert_eq!((s, r["task"]["bounty"].as_i64(), r["task"]["helpers"].as_array().unwrap().len()), (StatusCode::OK, Some(0), 1), "{r}");
+    let (_, accounts) = call(&app, "GET", &format!("/api/v1/households/{hid}/accounts"), Some(&sam), None).await;
+    assert!(accounts.as_array().unwrap().iter().all(|a| a["bonus_left"] == 30), "{accounts}");
+
+    // Alex is done; it waits for someone who was not on it. Sam was: no.
+    let (s, r) = act(&alex, "done").await;
+    assert_eq!((s, r["submitted"].as_bool()), (StatusCode::OK, Some(true)), "{r}");
+    let (s, _) = call(&app, "POST", &format!("/api/v1/tasks/{tid}/review"), Some(&sam), Some(json!({ "approve": true }))).await;
+    assert_eq!(s, StatusCode::FORBIDDEN);
 }

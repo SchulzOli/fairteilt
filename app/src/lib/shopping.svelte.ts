@@ -170,7 +170,7 @@ class ShoppingStore {
     const list = this.lists.find((l) => l.id === item.list_id);
     const round = list?.task_id ? taskStore.tasks.find((t) => t.id === list.task_id) : undefined;
     const shopping =
-      round && (round.status === "in_progress" || ((round.status === "open" || round.status === "claimed") && (!round.assignee_id || round.assignee_id === me)));
+      round && (round.status === "in_progress" || ((round.status === "open" || round.status === "claimed") && (!round.assignee_id || round.assignee_id === me || (!!me && round.helpers.includes(me)))));
     this.edit(item.list_id, (l) => ({
       ...l,
       items:

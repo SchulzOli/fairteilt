@@ -3,7 +3,7 @@ import type { Streak } from "./Streak";
 
 export type AccountDto = { membership_id: string, 
 /**
- * Guthaben (G): transferable, for bonuses and rewards.
+ * Guthaben (G) from before 23.11.2026; no longer earned or shown.
  */
 balance: number, 
 /**
@@ -13,4 +13,8 @@ xp_month: number, xp_total: number, streak: Streak,
 /**
  * Own tasks waiting for someone to confirm them.
  */
-waiting: number, };
+waiting: number, 
+/**
+ * Bonus XP this member can still give away this month (household rule `bonus_xp_per_month`).
+ */
+bonus_left: number, };

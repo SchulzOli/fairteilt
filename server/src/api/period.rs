@@ -191,8 +191,8 @@ fn validate(r: &RulesDto) -> Result<(), String> {
     if p.escalation.is_some_and(|e| e.step_points < 0 || e.step_points > 100 || e.step_interval_secs < 3600) {
         return Err("Steigerung: 0 bis 100 XP, höchstens stündlich.".into());
     }
-    if p.bounty_max_per_pledge.is_some_and(|m| m < 1) || p.transfer_max_per_period.is_some_and(|m| m < 1) {
-        return Err("Grenzen für Bonus und Übertragung müssen mindestens 1 sein.".into());
+    if !(0..=500).contains(&p.bonus_xp_per_month) {
+        return Err("XP-Bonus: 0 (aus) bis 500 XP pro Person und Monat.".into());
     }
     let q = &r.period_policy;
     let length_ok = match q.length {

@@ -37,4 +37,9 @@ quality_adjust: boolean,
 /**
  * Allow `penalty_deduction` to push a balance below zero.
  */
-allow_negative_balance: boolean, };
+allow_negative_balance: boolean, 
+/**
+ * XP each member may put on others' tasks per month as a bonus (a gift: it costs the
+ * giver nothing, the people who do the task share it). 0 = no bonus.
+ */
+bonus_xp_per_month: number, };

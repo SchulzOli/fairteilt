@@ -5,7 +5,11 @@ import type { TaskKind } from "./TaskKind";
 import type { TaskStatus } from "./TaskStatus";
 import type { TaskStepDto } from "./TaskStepDto";
 
-export type TaskDto = { id: string, template_id: string | null, title: string, icon: string | null, room_id: string | null, kind: TaskKind, status: TaskStatus, assignee_id: string | null, cycle_start: string, due_at: string | null, 
+export type TaskDto = { id: string, template_id: string | null, title: string, icon: string | null, room_id: string | null, kind: TaskKind, status: TaskStatus, assignee_id: string | null, 
+/**
+ * Others who joined ("+"); everyone on the task shares its XP.
+ */
+helpers: Array<string>, cycle_start: string, due_at: string | null, 
 /**
  * Share of the round that has passed: < 0.75 fresh, < 1 due, ≥ 1 overdue.
  */
@@ -19,7 +23,7 @@ xp: number, points_min: number, points_max: number, started_at: string | null,
  */
 remind_at: string | null, duration_min: number | null, step_order: StepOrder, steps: Array<TaskStepDto>, completed_at: string | null, completed_by: string | null, points_awarded: number | null, 
 /**
- * Bonus G currently held on this task (paid to whoever completes it).
+ * Bonus XP others put on this task (shared by whoever does it).
  */
 bounty: number, approved_by: string | null, 
 /**

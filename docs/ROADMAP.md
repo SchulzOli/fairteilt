@@ -184,6 +184,12 @@ Runde, solange sie niemand begonnen hat, sonst ab der nächsten. Aufgaben per Zi
 den Credential Manager, im Browser über Google Identity Services, Server prüft das ID-Token; Einrichtung:
 [GOOGLE-LOGIN.md](GOOGLE-LOGIN.md)).
 
+**Vereinfacht am 23.11.2026:** nur noch XP (Guthaben, Übertragungen und Belohnungskatalog entfernt,
+Monatsziel bleibt und ist unter Punkte änderbar). XP-Bonus auf Aufgaben anderer als Geschenk mit
+Monatsbudget pro Person (Regeln). Mehrere Personen pro Aufgabe („+“ = mitmachen), XP und Bonus werden
+geteilt. Kein Timer mehr: kein Starten, keine Pause, keine Dauer, keine Nachfrage. Zustand in vier Stufen
+(Gut, Hat Zeit, Fällig, Überfällig) mit Farbverlauf Grün bis Rot; fremde Aufgaben auf Heute ausgegraut.
+
 ### M7 Offline & Stores
 
 **Abgeschlossen am 23.11.2026** (soweit ohne Store-Konten möglich). Offline: Die App startet ohne
