@@ -5,6 +5,7 @@ use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::Json;
 use chrono::{DateTime, Duration, Utc};
+use punkte_core::schedule::end_of_day;
 use punkte_core::{Assignment, Schedule, TaskKind};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -29,6 +30,8 @@ pub struct PlanRequest {
 }
 
 /// Put a task into the calendar. Planners plan everything, everyone their own tasks.
+/// For a task "auf Abruf" (shopping) the planned day is the day it is done: its due date moves
+/// to the end of that day, so the bar and the reminders follow the plan.
 pub async fn schedule(
     State(state): State<AppState>,
     user: AuthUser,
@@ -36,9 +39,16 @@ pub async fn schedule(
     Json(req): Json<PlanRequest>,
 ) -> AppResult<Json<TaskDto>> {
     let (hid, me, role) = task_household(&state, &user, task_id).await?;
+    let hh = household(&state.db, hid).await?;
     let mut tx = state.db.begin().await?;
-    let (status, assignee, duration): (String, Option<Uuid>, Option<i32>) =
-        sqlx::query_as("SELECT status, assignee_id, duration_min FROM tasks WHERE id = $1 FOR UPDATE").bind(task_id).fetch_one(&mut *tx).await?;
+    let (status, assignee, duration, cycle_start, on_call): (String, Option<Uuid>, Option<i32>, DateTime<Utc>, bool) = sqlx::query_as(
+        "SELECT status, assignee_id, duration_min, cycle_start, \
+         COALESCE((SELECT tt.schedule->>'type' = 'on_call' FROM task_templates tt WHERE tt.id = tasks.template_id), false) \
+         FROM tasks WHERE id = $1 FOR UPDATE",
+    )
+    .bind(task_id)
+    .fetch_one(&mut *tx)
+    .await?;
     if role == "child" && assignee != Some(me) {
         return Err(AppError::Forbidden("Einplanen kannst du nur deine eigenen Aufgaben.".into()));
     }
@@ -55,16 +65,29 @@ pub async fn schedule(
         }
         (Some(start), None) => Some(start + Duration::minutes(i64::from(duration.unwrap_or(30)))),
     };
-    sqlx::query("UPDATE tasks SET scheduled_start = $2, scheduled_end = $3, updated_at = now(), version = version + 1 WHERE id = $1")
-        .bind(task_id)
-        .bind(req.scheduled_start)
-        .bind(end)
-        .execute(&mut *tx)
-        .await?;
+    let due = match req.scheduled_start {
+        Some(start) if on_call => {
+            let due = end_of_day(start.with_timezone(&hh.tz).date_naive(), hh.tz);
+            if due <= cycle_start {
+                return Err(AppError::BadRequest("Dieser Tag ist schon vorbei.".into()));
+            }
+            Some(due)
+        }
+        _ => None,
+    };
+    sqlx::query(
+        "UPDATE tasks SET scheduled_start = $2, scheduled_end = $3, due_at = COALESCE($4, due_at), \
+         updated_at = now(), version = version + 1 WHERE id = $1",
+    )
+    .bind(task_id)
+    .bind(req.scheduled_start)
+    .bind(end)
+    .bind(due)
+    .execute(&mut *tx)
+    .await?;
     record_event(&mut tx, task_id, me, "scheduled", serde_json::json!({ "start": req.scheduled_start })).await?;
     tx.commit().await?;
     state.live.notify(hid, r#"{"type":"tasks_changed"}"#);
-    let hh = household(&state.db, hid).await?;
     Ok(Json(load_dto(&state, task_id, &hh.policy).await?))
 }
 

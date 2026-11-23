@@ -9,8 +9,11 @@
   import ReviewSheet from "$lib/ReviewSheet.svelte";
   import { bySection, shopping } from "$lib/shopping.svelte";
   import ItemRow from "$lib/shop/ItemRow.svelte";
+  import PlanSheet from "$lib/plan/PlanSheet.svelte";
 
   const id = $derived(page.params.id ?? "");
+  let planning = $state(false);
+  const whenFmt = new Intl.DateTimeFormat("de-DE", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 
   /** The task as last answered by the server for this page (also after it is completed). */
   let local = $state<TaskDto | null>(null);
@@ -35,6 +38,10 @@
     task?.remind_at && Date.parse(task.remind_at) > now ? Math.ceil((Date.parse(task.remind_at) - now) / 60_000) : null,
   );
   const submitted = $derived(task?.status === "submitted");
+  /** Into the calendar: adults everything, everyone their own (as on the server). */
+  const canPlan = $derived(
+    !!task && !["submitted", "completed", "cancelled"].includes(task.status) && (session.membership?.role !== "child" || task.assignee_id === me),
+  );
   const canReview = $derived(submitted && session.membership?.role !== "child" && task?.completed_by !== me);
   const canPledge = $derived(
     !!task && !submitted && task.status !== "completed" && task.status !== "cancelled" && task.assignee_id !== me,
@@ -163,6 +170,20 @@
         <ConditionBar value={condition} />
         <span class="small" class:late={condition >= 1}>{dueText(task, now)}</span>
       </div>
+      {#if canPlan}
+        <button class="when" class:set={!!task.scheduled_start} onclick={() => (planning = true)}>
+          <Icon name="plan" size={18} />
+          <span class="when-text">
+            {#if task.scheduled_start}
+              <span class="muted small">{list ? "Einkaufen am" : "Geplant"}</span>
+              <b>{whenFmt.format(new Date(task.scheduled_start))} Uhr</b>
+            {:else}
+              <b>{list ? "Einkaufstag wählen" : "In den Kalender legen"}</b>
+            {/if}
+          </span>
+          <Icon name="chevron" size={16} />
+        </button>
+      {/if}
     {/if}
   </header>
 
@@ -323,6 +344,10 @@
   <ReviewSheet {task} onclose={() => (reviewing = false)} />
 {/if}
 
+{#if planning && task}
+  <PlanSheet {task} onclose={() => (planning = false)} />
+{/if}
+
 <style>
   .shop {
     display: flex;
@@ -444,6 +469,36 @@
     display: flex;
     flex-direction: column;
     gap: 4px;
+  }
+
+  .when {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    min-height: 48px;
+    padding: 6px var(--space-3);
+    border-radius: var(--radius-sm);
+    background: var(--surface-2);
+    color: var(--fg);
+    text-align: left;
+  }
+
+  .when.set {
+    background: var(--primary-soft);
+    color: var(--primary);
+  }
+
+  .when-text {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    line-height: 1.25;
+  }
+
+  .when.set .muted {
+    color: inherit;
+    opacity: 0.8;
   }
 
   .late {

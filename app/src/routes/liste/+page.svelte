@@ -10,7 +10,11 @@
   import Avatar from "$lib/ui/Avatar.svelte";
   import type { AnimalName } from "$lib/ui/Avatar.svelte";
   import Icon from "$lib/ui/Icon.svelte";
+  import PlanSheet from "$lib/plan/PlanSheet.svelte";
+  import type { TaskDto } from "$lib/generated";
 
+  let planning = $state<TaskDto | null>(null);
+  const whenFmt = new Intl.DateTimeFormat("de-DE", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
   let name = $state("");
   let note = $state("");
   let section = $state<Section | null>(null);
@@ -133,6 +137,12 @@
       </span>
       <Icon name="chevron" size={18} />
     </button>
+    {#if round.status !== "submitted" && (planner || round.assignee_id === me)}
+      <button class="when" class:set={!!round.scheduled_start} onclick={() => (planning = round)}>
+        <Icon name="plan" size={16} />
+        {#if round.scheduled_start}Einkaufen am <b>{whenFmt.format(new Date(round.scheduled_start))}</b> · ändern{:else}Einkaufstag wählen{/if}
+      </button>
+    {/if}
   {:else if open.length === 0}
     <p class="duty calm muted">Nichts zu kaufen. Sobald etwas draufsteht, kommt „Einkaufen“ als Aufgabe.</p>
   {/if}
@@ -185,6 +195,10 @@
   <p class="muted">Keine Liste gefunden.</p>
 {:else}
   <p class="muted">Liste lädt …</p>
+{/if}
+
+{#if planning}
+  <PlanSheet task={planning} onclose={() => (planning = null)} />
 {/if}
 
 <style>
@@ -248,6 +262,34 @@
     background: var(--primary-soft);
     text-align: left;
     font-weight: 400;
+  }
+
+  .duty:has(+ .when) {
+    margin-bottom: var(--space-2);
+  }
+
+  .when {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    min-height: 40px;
+    margin-bottom: var(--space-3);
+    padding: 0 var(--space-3);
+    border-radius: var(--radius-sm);
+    background: var(--surface-2);
+    color: var(--muted);
+    font-weight: 400;
+    font-size: 0.9rem;
+    text-align: left;
+  }
+
+  .when.set {
+    color: var(--primary);
+  }
+
+  .when b {
+    font-weight: 800;
   }
 
   .duty.calm {

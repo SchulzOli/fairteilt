@@ -165,6 +165,15 @@ Bildschirm bleibt an, nachts gedimmt und leise. Push-Empfang (aus M5): Firebase 
 Token an den Server, Hinweise im System, wenn die App im Hintergrund ist. Server-Seite als Test
 geprüft, Plan und Wandanzeige in der App, Push mit dem Firebase-Projekt (siehe unten).
 
+**Überarbeitet am 23.11.2026:** Kalender und Board im Stil der Aufgabenkarten. Ein gemeinsamer Eintrag
+(`PlanNode`) für alle Plan-Ansichten: Symbol-Kachel in der Farbe der Person, Tier, XP, Zustände wie auf
+den Karten (läuft, überfällig, erledigt, kommt noch gestrichelt). Woche als Tageskarten mit Datums-Plakette,
+Tag mit Stundenraster und Jetzt-Linie, Monat mit farbigen Balken, Agenda nach Tagen. **Ziehen und Ablegen**
+mit Maus und Finger (am Handy kurz drücken, dann ziehen): Einträge auf Tag oder Stunde verschieben, aus
+„Noch ohne Termin“ einplanen, auf „Ohne Uhrzeit“ austragen; Board-Liste: auf Person oder Tag ziehen.
+Board mit breiteren Zonen und Zoom-Knöpfen. **„Wann?“** auf jeder Aufgabe (und auf der Einkaufsliste):
+Tag und Uhrzeit wählen; bei Aufgaben „auf Abruf“ wie Einkaufen wird der gewählte Tag auch die Fälligkeit.
+
 ### M7 Offline & Stores
 
 **Abgeschlossen am 23.11.2026** (soweit ohne Store-Konten möglich). Offline: Die App startet ohne

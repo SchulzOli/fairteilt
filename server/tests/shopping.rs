@@ -223,3 +223,39 @@ async fn on_call_task_by_hand_and_more_lists(db: PgPool) {
     assert_eq!(s, StatusCode::NO_CONTENT);
     let _ = (&f.alex_mid, &f.sam_mid);
 }
+
+/// The shopping day can be chosen: planning "Einkaufen" moves its due date to the end of that
+/// day (household time), so it is not overdue before the planned trip. Normal tasks keep their
+/// rhythm's due date; a day in the past is refused.
+#[sqlx::test(migrator = "punkte_server::MIGRATOR")]
+async fn shopping_day_can_be_planned(db: PgPool) {
+    let app = routes::router(AppState::new(db, SECRET), &[]);
+    let f = family(&app).await;
+    let (_, overview) = call(&app, "GET", &format!("/api/v1/households/{}/shopping", f.hid), Some(&f.alex), None).await;
+    let lid = overview["lists"][0]["id"].as_str().unwrap().to_string();
+    call(&app, "POST", &format!("/api/v1/lists/{lid}/items"), Some(&f.mia), Some(json!({ "name": "Milch" }))).await;
+    let (_, t) = call(&app, "GET", &format!("/api/v1/households/{}/tasks", f.hid), Some(&f.alex), None).await;
+    let tid = named(&t, "Einkaufen")[0]["id"].as_str().unwrap().to_string();
+
+    // Saturday in five days, 10:00 Berlin = 08:00 or 09:00 UTC; the due date becomes 23:59:59.
+    let day = Utc::now().with_timezone(&chrono_tz::Europe::Berlin).date_naive() + chrono::Duration::days(5);
+    let start = day.and_hms_opt(10, 0, 0).unwrap().and_local_timezone(chrono_tz::Europe::Berlin).unwrap().with_timezone(&Utc);
+    let (s, task) = call(&app, "PUT", &format!("/api/v1/tasks/{tid}/schedule"), Some(&f.sam), Some(json!({ "scheduled_start": start }))).await;
+    assert_eq!(s, StatusCode::OK, "{task}");
+    let due: DateTime<Utc> = task["due_at"].as_str().unwrap().parse().unwrap();
+    let local = due.with_timezone(&chrono_tz::Europe::Berlin);
+    assert_eq!((local.date_naive(), local.format("%H:%M").to_string()), (day, "23:59".to_string()));
+
+    // Moved to the next day: the due date follows. Taking it out of the calendar keeps it.
+    let (_, task) = call(&app, "PUT", &format!("/api/v1/tasks/{tid}/schedule"), Some(&f.sam),
+        Some(json!({ "scheduled_start": start + chrono::Duration::days(1) }))).await;
+    let moved: DateTime<Utc> = task["due_at"].as_str().unwrap().parse().unwrap();
+    assert_eq!((moved - due).num_hours(), 24);
+    let (_, task) = call(&app, "PUT", &format!("/api/v1/tasks/{tid}/schedule"), Some(&f.sam), Some(json!({ "scheduled_start": null }))).await;
+    assert_eq!((task["scheduled_start"].is_null(), task["due_at"].as_str().map(|d| d.parse::<DateTime<Utc>>().unwrap())), (true, Some(moved)));
+
+    // Yesterday is refused.
+    let (s, _) = call(&app, "PUT", &format!("/api/v1/tasks/{tid}/schedule"), Some(&f.sam),
+        Some(json!({ "scheduled_start": Utc::now() - chrono::Duration::days(2) }))).await;
+    assert_eq!(s, StatusCode::BAD_REQUEST);
+}
