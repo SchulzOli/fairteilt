@@ -96,6 +96,14 @@ jobs:
         run: >-
           pnpm --dir app tauri android build --aab --apk
           --config "{\"bundle\":{\"android\":{\"versionCode\":$VERSION_CODE}}}"
+      # Keep the build even if distributing fails.
+      - uses: actions/upload-artifact@v5
+        with:
+          name: fairteilt-android
+          path: |
+            app/src-tauri/gen/android/app/build/outputs/bundle/universalRelease/*.aab
+            app/src-tauri/gen/android/app/build/outputs/apk/universal/release/*.apk
+          if-no-files-found: error
       - name: Send to App Distribution
         # Only a signed APK with push can be installed and updated on the phones.
         if: >-
@@ -108,21 +116,32 @@ jobs:
         run: |
           key="$RUNNER_TEMP/distribution-key.json"
           printf '%s' "$FIREBASE_APP_DISTRIBUTION_KEY" > "$key"
-          app_id=$(jq -r '.client[] | select(.client_info.android_client_info.package_name == "eu.olitech.fairteilt") | .client_info.mobilesdk_app_id' app/src-tauri/gen/android/app/google-services.json)
+          export GOOGLE_APPLICATION_CREDENTIALS="$key"
+          gs=app/src-tauri/gen/android/app/google-services.json
+          app_id=$(jq -r '.client[] | select(.client_info.android_client_info.package_name == "eu.olitech.fairteilt") | .client_info.mobilesdk_app_id' "$gs")
+          project=$(jq -r '.project_info.project_id' "$gs")
+          fb() { npx --yes firebase-tools@15.35.0 "$@" --project "$project" --non-interactive; }
+          # Distributing to a group that does not exist fails with 404: create missing groups
+          # (display name = alias with a capital letter; testers are added in the console).
+          existing=$(fb appdistribution:groups:list 2>&1 || true)
+          echo "$existing"
+          IFS=',' read -ra wanted <<< "$GROUPS"
+          for alias in "${wanted[@]}"; do
+            alias=$(echo "$alias" | xargs)
+            [ -z "$alias" ] && continue
+            if grep -qw -- "$alias" <<< "$existing"; then
+              echo "group $alias exists"
+            else
+              echo "creating group $alias"
+              fb appdistribution:groups:create "${alias^}" "$alias"
+            fi
+          done
           apk=$(ls app/src-tauri/gen/android/app/build/outputs/apk/universal/release/*.apk | head -n 1)
           notes=$(printf '%s\n\nBuild %s · %s · %s' "${NOTES:-$(git log -1 --format=%s)}" "$VERSION_CODE" "${GITHUB_SHA:0:7}" "$GITHUB_REF_NAME")
-          GOOGLE_APPLICATION_CREDENTIALS="$key" npx --yes firebase-tools@15.35.0 appdistribution:distribute "$apk" \
-            --app "$app_id" --groups "$GROUPS" --release-notes "$notes"
+          fb appdistribution:distribute "$apk" --app "$app_id" --groups "$GROUPS" --release-notes "$notes"
       - name: Remove secrets from the runner
         if: always()
         run: rm -f "$RUNNER_TEMP/upload.jks" "$RUNNER_TEMP/distribution-key.json" app/src-tauri/gen/android/app/google-services.json
-      - uses: actions/upload-artifact@v5
-        with:
-          name: fairteilt-android
-          path: |
-            app/src-tauri/gen/android/app/build/outputs/bundle/universalRelease/*.aab
-            app/src-tauri/gen/android/app/build/outputs/apk/universal/release/*.apk
-          if-no-files-found: error
 
   ios:
     name: iOS (Simulator, unsigned)
