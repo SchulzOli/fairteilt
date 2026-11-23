@@ -59,6 +59,24 @@ fn preview_settlement(policy: PeriodPolicy, members: Vec<MemberPeriodInput>) -> 
     settle(&policy, &members)
 }
 
+/// FCM push token of this device (Android writes it to `dataDir/fcm_token`, see Push.kt).
+/// None elsewhere or before Firebase delivered one.
+#[tauri::command]
+fn push_token(app: tauri::AppHandle) -> Option<String> {
+    #[cfg(target_os = "android")]
+    {
+        use tauri::Manager;
+        let dir = app.path().app_data_dir().ok()?;
+        let candidates = [dir.join("fcm_token"), dir.parent().map(|p| p.join("fcm_token")).unwrap_or_default()];
+        candidates.iter().find_map(|p| std::fs::read_to_string(p).ok()).map(|t| t.trim().to_string()).filter(|t| !t.is_empty())
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = app;
+        None
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
@@ -73,6 +91,7 @@ pub fn run() {
             server_health,
             default_policies,
             preview_settlement,
+            push_token,
             secure_store::secure_set,
             secure_store::secure_get,
             secure_store::secure_delete

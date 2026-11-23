@@ -65,7 +65,13 @@ pub fn router(state: AppState, cors_origins: &[String]) -> Router {
         .route("/households/{id}/inbox/unread", get(api::inbox::unread))
         .route("/households/{id}/inbox/read", post(api::inbox::mark_read))
         .route("/households/{id}/notification-prefs", get(api::inbox::prefs).put(api::inbox::update_prefs))
-        .route("/devices", post(api::inbox::register_device).delete(api::inbox::unregister_device));
+        .route("/devices", post(api::inbox::register_device).delete(api::inbox::unregister_device))
+        .route("/tasks/{tid}/schedule", put(api::plan::schedule))
+        .route("/tasks/{tid}/assign", put(api::plan::assign))
+        .route("/households/{id}/calendar", get(api::plan::calendar))
+        .route("/households/{id}/board", get(api::plan::board).put(api::plan::move_card))
+        .route("/households/{id}/views", get(api::plan::views).post(api::plan::create_view))
+        .route("/views/{vid}", put(api::plan::update_view).delete(api::plan::delete_view));
 
     Router::new()
         .route("/health", get(health))

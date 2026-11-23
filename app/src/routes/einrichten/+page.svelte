@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { unregisterPush } from "$lib/push";
   import { ApiError, isPhone, parseInviteCode, session } from "$lib/session.svelte";
   import AnimalPicker from "$lib/ui/AnimalPicker.svelte";
 
@@ -63,7 +64,7 @@
   <button class="primary" type="submit" disabled={busy}>{busy ? "Einen Moment …" : mode === "create" ? "Haushalt anlegen" : "Beitreten"}</button>
 </form>
 
-<button class="link" onclick={() => session.signOut()}>Abmelden</button>
+<button class="link" onclick={async () => { await unregisterPush(); await session.signOut(); }}>Abmelden</button>
 
 <style>
   .seg {

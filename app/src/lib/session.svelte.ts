@@ -175,14 +175,14 @@ class Session {
   }
 
   // ---------- HTTP ----------
-  private async raw<T>(method: string, path: string, body?: unknown, auth = true): Promise<T> {
+  private async raw<T>(method: string, path: string, body?: unknown, auth = true, bearer?: string): Promise<T> {
     let res: Response;
     try {
       res = await fetch(`${this.serverUrl}/api/v1${path}`, {
         method,
         headers: {
           ...(body !== undefined ? { "content-type": "application/json" } : {}),
-          ...(auth && this.tokens?.access ? { authorization: `Bearer ${this.tokens.access}` } : {}),
+          ...(bearer ? { authorization: `Bearer ${bearer}` } : auth && this.tokens?.access ? { authorization: `Bearer ${this.tokens.access}` } : {}),
         },
         body: body !== undefined ? JSON.stringify(body) : undefined,
       });
@@ -315,6 +315,20 @@ class Session {
   }
 
   // ---------- family tablet ----------
+  /**
+   * Wall display: act once as another member (PIN), e.g. check off their task, then end that
+   * short session again. The tablet stays signed in as before.
+   */
+  async asMember<T>(membershipId: string, pin: string, fn: (call: <R>(method: string, path: string, body?: unknown) => Promise<R>) => Promise<T>): Promise<T> {
+    const res = await this.request<TokenResponse>("POST", "/auth/pin", { membership_id: membershipId, pin, device_name: "Wandanzeige" });
+    const call = <R>(method: string, path: string, body?: unknown) => this.raw<R>(method, path, body, true, res.access_token);
+    try {
+      return await fn(call);
+    } finally {
+      await call("POST", "/auth/logout").catch(() => {});
+    }
+  }
+
   async switchProfile(membershipId: string, pin: string) {
     const deviceUser = this.me?.user.display_name ?? "";
     const res = await this.request<TokenResponse>("POST", "/auth/pin", { membership_id: membershipId, pin, device_name: "Familien-Tablet" });

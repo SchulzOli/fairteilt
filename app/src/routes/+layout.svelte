@@ -9,6 +9,7 @@
   import NoticeBar from "$lib/NoticeBar.svelte";
   import { taskStore } from "$lib/tasks.svelte";
   import * as reminders from "$lib/reminders";
+  import { registerPush } from "$lib/push";
 
   let { children } = $props();
 
@@ -46,6 +47,11 @@
     else void reminders.clear();
   });
 
+  // Push on this phone: register the token once signed in (not for a child profile on the tablet).
+  $effect(() => {
+    if (session.status === "ready" && session.me && !session.profile) void registerPush();
+  });
+
   // Buttons on a reminder: like the in-app check-in; a tap opens the task.
   reminders.setActionHandler(async (actionId, taskId) => {
     try {
@@ -70,14 +76,14 @@
   ];
 
   const isActive = (href: string) => (href === "/" ? page.url.pathname === "/" : page.url.pathname.startsWith(href));
-  const showNav = $derived(session.status === "ready" && !!session.membership && !["/willkommen", "/einrichten"].includes(page.url.pathname));
+  const showNav = $derived(session.status === "ready" && !!session.membership && !["/willkommen", "/einrichten", "/wand"].includes(page.url.pathname));
 </script>
 
 <svelte:window onpointerdown={() => session.touch()} onkeydown={() => session.touch()} onfocus={() => taskStore.wake()} />
 <svelte:document onvisibilitychange={() => document.visibilityState === "visible" && taskStore.wake()} />
 
 <div class="shell">
-  {#if session.profile}
+  {#if session.profile && page.url.pathname !== "/wand"}
     <div class="profile-bar" role="status">
       <span>Angemeldet als <b>{session.profile.name}</b></span>
       <button onclick={() => session.returnToDevice()}>Zurück zu {session.profile.deviceUser}</button>

@@ -8,13 +8,12 @@ im Familienalltag nutzbar (Familien-Alpha). Umfang grob: S / M / L.
 
 ## Nächste Schritte
 
-Erledigt: CI, TypeScript-Typen aus `punkte-core` und Server, Design-Grundlage in der App, **M1**, **M2**, **M3**, **M4**, **M5** (Push-Empfang am Handy folgt mit dem Firebase-Projekt).
+Erledigt: CI, TypeScript-Typen aus `punkte-core` und Server, Design-Grundlage in der App, **M1** bis **M6**, Push über Firebase eingerichtet.
 
 | Wer | Schritt |
 | --- | --- |
-| Code | Familien-Alpha: Deployment auf Hetzner durchspielen, signierte APK, Backup und Wiederherstellung testen |
-| Betrieb | Firebase-Projekt anlegen (Android-App `eu.olitech.fairteilt`): `google-services.json` und Dienstkonto-Schlüssel, siehe README „Push einrichten“ |
-| Code | Danach: Push-Empfang in der Android-App (FCM-Token anmelden), auf einem Gerät prüfen |
+| Code | Familien-Alpha: Deployment auf Hetzner, signierte APK, Backup und Wiederherstellung; App-Start ohne Server |
+| Code | M7: Offline-Warteschlange, Play Store, iOS, Datenexport und Löschen |
 | Entscheidung | Klang auswählen (Klang-Spielplatz auf der Roadmap-Seite). Krümel, Serie, Schritte und Tiere sind entschieden |
 | Betrieb | Hetzner-Cloud-Server bestellen, DNS `fairteilt.oli-tech.eu` setzen (bis zur Alpha) |
 | Betrieb | Tablet für die Wandanzeige festlegen. Apple-Developer-Account vor M7 |
@@ -30,7 +29,7 @@ Erledigt: CI, TypeScript-Typen aus `punkte-core` und Server, Design-Grundlage in
 | ▶ | **α Familien-Alpha** | Läuft auf Hetzner mit Backups, signierte APK, zwei Wochen Alltag ohne Datenverlust | S |
 | ✅ | **M4 Ausgleich, Familienziel & Belohnungen** | Monatsabschluss läuft automatisch, Rennen gegen Krümel entscheidet über die Familienbelohnung | M |
 | ✅ | **M5 Erinnerungen & Push** | Lokale Erinnerungen beim Kippen auf „fällig“, Postfach, Push über FCM | M |
-| | **M6 Plan & Wandanzeige** | Kalender, Board, eigene Ansichten, Tablet-Wandanzeige mit PIN-Abhaken | L |
+| ✅ | **M6 Plan & Wandanzeige** | Kalender, Board, eigene Ansichten, Tablet-Wandanzeige mit PIN-Abhaken | L |
 | | **M7 Offline & Stores** | Offline-Warteschlange, Play Store, iOS über CI, Datenexport und Löschen | L |
 | | **M8 Haushaltsbuch** | Ausgaben, Budgets und Belege in denselben Haushalten | L |
 
@@ -121,7 +120,7 @@ mit M5; Abwesenheiten werden berücksichtigt, haben aber noch keine Oberfläche.
 
 ### M5 Erinnerungen & Push
 
-**Abgeschlossen am 23.11.2026** (ohne Push-Empfang am Gerät, der braucht das Firebase-Projekt).
+**Abgeschlossen am 23.11.2026.** Push-Empfang in der Android-App am selben Tag nachgereicht (siehe M6).
 Server: Postfach für alles, was jemanden betrifft (neue Aufgabe, bitte bestätigen, bestätigt oder
 zurückgegeben, Bonus, Guthaben, Übertragung und Belohnung zur Freigabe, Abschluss fertig und
 freigegeben, Aufholaufgabe, Familienziel, Zurücknahme). Erinnerungen per Job alle 5 Minuten: „bald
@@ -133,6 +132,22 @@ Gerät über das offizielle Tauri-Plugin: „wird bald fällig“ und die Nachfr
 mit den Knöpfen Erledigt / +10 Min. / Später (am Handy geplant, am Rechner solange die App läuft).
 Server-Seite als Test geprüft (auch Push gegen einen nachgebauten FCM-Endpunkt), Postfach in der App.
 Lokale Benachrichtigungen und Knöpfe sind gebaut, aber noch nicht auf einem Gerät ausprobiert.
+
+### M6 Plan & Wandanzeige
+
+**Abgeschlossen am 23.11.2026.** `punkte-core`: kommende Runden aus dem Rhythmus (angenommen, jede wird
+pünktlich erledigt). Server: Aufgaben in den Kalender einplanen (Planer alles, alle ihre eigenen),
+zuweisen per Board (mit Postfach-Eintrag), Kalender-Abfrage mit aktuellen, erledigten und kommenden
+Runden samt Reihum-Folge, Kartenpositionen auf dem gemeinsamen Board (wiederkehrende Aufgaben behalten
+ihren Platz), eigene Ansichten (Filter nach Person, Raum, Stand, Art, Bonus, Fälligkeit; Liste, Kanban,
+Kalender, Fläche; privat oder geteilt). App: Plan mit Räume · Kalender (Tag, Woche, Monat, Agenda;
+ziehen oder antippen zum Einplanen; Farbe = Person) · Board (Fläche mit Personen- und Tageszonen, ziehen
+zum Zuweisen und Einplanen, verschieben und zoomen; als Liste auf schmalen Bildschirmen) · Ansichten.
+Wandanzeige `/wand` (Querformat): Uhr, Familienziel, eine Spalte pro Person mit den Aufgaben von heute,
+abhaken per Antippen → Tier → PIN (kurze Sitzung für die Person, das Tablet bleibt angemeldet),
+Bildschirm bleibt an, nachts gedimmt und leise. Push-Empfang (aus M5): Firebase im Android-Projekt,
+Token an den Server, Hinweise im System, wenn die App im Hintergrund ist. Server-Seite als Test
+geprüft, Plan und Wandanzeige in der App, Push mit dem Firebase-Projekt (siehe unten).
 
 ## Design (Kurzfassung, Details in KONZEPT §7.5)
 

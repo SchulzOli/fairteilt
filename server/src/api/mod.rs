@@ -5,6 +5,7 @@ pub mod households;
 pub mod inbox;
 pub mod members;
 pub mod period;
+pub mod plan;
 pub mod points;
 pub mod rewards;
 pub mod rooms;

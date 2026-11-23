@@ -140,6 +140,9 @@ pub struct TaskDto {
     pub approved_by: Option<Uuid>,
     /// Message from the reviewer ("Super!" or "Bitte noch den Boden").
     pub review_note: Option<String>,
+    /// Planned in the calendar (M6).
+    pub scheduled_start: Option<DateTime<Utc>>,
+    pub scheduled_end: Option<DateTime<Utc>>,
 }
 
 #[derive(sqlx::FromRow)]
@@ -168,6 +171,8 @@ struct TaskRow {
     approved_by: Option<Uuid>,
     review_note: Option<String>,
     household_id: Uuid,
+    scheduled_start: Option<DateTime<Utc>>,
+    scheduled_end: Option<DateTime<Utc>>,
 }
 
 /// Columns of `TaskRow`, as a macro so queries stay literal (static) SQL strings.
@@ -176,7 +181,7 @@ macro_rules! task_columns {
         "id, template_id, title, icon, room_id, kind, status, assignee_id, cycle_start, due_at,
          points_min, points_default, points_max, started_at, remind_at, duration_min, step_order, completed_at, completed_by, points_awarded,
          (SELECT COALESCE(SUM(b.amount), 0) FROM bounties b WHERE b.task_id = tasks.id AND b.status = 'held')::BIGINT AS bounty,
-         approved_by, review_note, household_id"
+         approved_by, review_note, household_id, scheduled_start, scheduled_end"
     };
 }
 
@@ -220,6 +225,8 @@ fn to_dto(t: TaskRow, steps: Vec<TaskStepDto>, policy: &PointPolicy, now: DateTi
         bounty: t.bounty,
         approved_by: t.approved_by,
         review_note: t.review_note,
+        scheduled_start: t.scheduled_start,
+        scheduled_end: t.scheduled_end,
     }
 }
 
@@ -245,7 +252,7 @@ async fn steps_of<'e, E: sqlx::PgExecutor<'e>>(db: E, task_ids: &[Uuid]) -> AppR
         .collect())
 }
 
-async fn load_dto(state: &AppState, task_id: Uuid, policy: &PointPolicy) -> AppResult<TaskDto> {
+pub(crate) async fn load_dto(state: &AppState, task_id: Uuid, policy: &PointPolicy) -> AppResult<TaskDto> {
     let row = sqlx::query_as::<_, TaskRow>(concat!("SELECT ", task_columns!(), " FROM tasks WHERE id = $1"))
         .bind(task_id)
         .fetch_optional(&state.db)
@@ -585,7 +592,7 @@ pub async fn list_tasks(State(state): State<AppState>, user: AuthUser, Path(hous
     Ok(Json(tasks))
 }
 
-async fn task_household(state: &AppState, user: &AuthUser, task_id: Uuid) -> AppResult<(Uuid, Uuid, String)> {
+pub(crate) async fn task_household(state: &AppState, user: &AuthUser, task_id: Uuid) -> AppResult<(Uuid, Uuid, String)> {
     let hid: Uuid = sqlx::query_scalar("SELECT household_id FROM tasks WHERE id = $1")
         .bind(task_id)
         .fetch_optional(&state.db)
@@ -601,7 +608,7 @@ pub async fn get_task(State(state): State<AppState>, user: AuthUser, Path(task_i
     Ok(Json(load_dto(&state, task_id, &hh.policy).await?))
 }
 
-async fn record_event(tx: &mut Transaction<'_, Postgres>, task_id: Uuid, actor: Uuid, kind: &str, payload: serde_json::Value) -> AppResult<()> {
+pub(crate) async fn record_event(tx: &mut Transaction<'_, Postgres>, task_id: Uuid, actor: Uuid, kind: &str, payload: serde_json::Value) -> AppResult<()> {
     sqlx::query("INSERT INTO task_events (id, task_id, actor_id, type, payload) VALUES ($1, $2, $3, $4, $5)")
         .bind(Uuid::new_v4())
         .bind(task_id)

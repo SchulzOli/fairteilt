@@ -1,16 +1,36 @@
 <script lang="ts">
   import Icon from "$lib/ui/Icon.svelte";
-  import Avatar from "$lib/ui/Avatar.svelte";
   import ConditionBar from "$lib/ui/ConditionBar.svelte";
-  import { members, tasks } from "$lib/demo";
+  import Board from "$lib/plan/Board.svelte";
+  import Calendar from "$lib/plan/Calendar.svelte";
+  import Views from "$lib/plan/Views.svelte";
   import TaskCard from "$lib/TaskCard.svelte";
   import TaskSheet from "$lib/TaskSheet.svelte";
   import { session } from "$lib/session.svelte";
   import { TASK_ICONS, conditionOf, iconOf, taskStore } from "$lib/tasks.svelte";
   import type { IconName } from "$lib/ui/Icon.svelte";
 
-  type View = "rooms" | "calendar" | "board";
-  let view = $state<View>("rooms");
+  type View = "rooms" | "calendar" | "board" | "views";
+  const VIEW_KEY = "fairteilt.plan";
+  let view = $state<View>(readView());
+
+  function readView(): View {
+    try {
+      const v = localStorage.getItem(VIEW_KEY);
+      return v === "calendar" || v === "board" || v === "views" ? v : "rooms";
+    } catch {
+      return "rooms";
+    }
+  }
+
+  function show(v: View) {
+    view = v;
+    try {
+      localStorage.setItem(VIEW_KEY, v);
+    } catch {
+      /* not remembered */
+    }
+  }
   let openRoom = $state<string | null>(null);
   let sheet = $state<{ roomId?: string } | null>(null);
   let adding = $state(false);
@@ -50,33 +70,15 @@
       error = err instanceof Error ? err.message : String(err);
     }
   }
-
-  // Calendar placeholder (M6): week strip and the day's tasks.
-  const days = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
-  const todayIndex = (new Date().getDay() + 6) % 7;
-  let selectedDay = $state(todayIndex);
-
-  // Board placeholder (M6): zones per member, tap card then zone to assign.
-  let assignment = $state<Record<string, string | undefined>>(Object.fromEntries(tasks.map((t) => [t.id, t.assignee])));
-  let picked = $state<string | null>(null);
-  const zones = [
-    { name: undefined as string | undefined, label: "Offen", color: "var(--muted)" },
-    ...members.map((m) => ({ name: m.name as string | undefined, label: m.name, color: m.color })),
-  ];
-  function drop(zone: string | undefined) {
-    if (!picked) return;
-    assignment[picked] = zone;
-    picked = null;
-  }
-  const memberOf = (name?: string) => members.find((m) => m.name === name);
 </script>
 
 <header class="stack tight">
   <h1 class="page-title">Plan</h1>
   <div class="seg" role="tablist" aria-label="Ansicht">
-    <button role="tab" aria-selected={view === "rooms"} class:sel={view === "rooms"} onclick={() => (view = "rooms")}>Räume</button>
-    <button role="tab" aria-selected={view === "calendar"} class:sel={view === "calendar"} onclick={() => (view = "calendar")}>Kalender</button>
-    <button role="tab" aria-selected={view === "board"} class:sel={view === "board"} onclick={() => (view = "board")}>Board</button>
+    <button role="tab" aria-selected={view === "rooms"} class:sel={view === "rooms"} onclick={() => show("rooms")}>Räume</button>
+    <button role="tab" aria-selected={view === "calendar"} class:sel={view === "calendar"} onclick={() => show("calendar")}>Kalender</button>
+    <button role="tab" aria-selected={view === "board"} class:sel={view === "board"} onclick={() => show("board")}>Board</button>
+    <button role="tab" aria-selected={view === "views"} class:sel={view === "views"} onclick={() => show("views")}>Ansichten</button>
   </div>
 </header>
 
@@ -125,42 +127,11 @@
   {/if}
   <p class="muted small hint">Der Balken eines Raums zeigt seine dringendste Aufgabe. Wer früher erledigt, setzt den Balken zurück.</p>
 {:else if view === "calendar"}
-  <div class="week" role="tablist" aria-label="Wochentag">
-    {#each days as d, i (d)}
-      <button role="tab" aria-selected={selectedDay === i} class:sel={selectedDay === i} class:today={i === todayIndex} onclick={() => (selectedDay = i)}>{d}</button>
-    {/each}
-  </div>
-  <div class="stack">
-    {#each tasks.slice(0, 5) as t, i (t.id)}
-      {@const m = memberOf(t.assignee)}
-      <div class="slot">
-        <span class="time muted">{8 + i * 3}:00</span>
-        <div class="event" style="border-left-color: {m?.color ?? 'var(--muted)'}">
-          <strong>{t.title}</strong>
-          <span class="muted small">{t.assignee ?? "offen"} · {t.xp} XP</span>
-        </div>
-      </div>
-    {/each}
-  </div>
-  <p class="muted small hint">Vorschau. Tag, Woche, Monat und Ziehen zum Einplanen folgen in M6.</p>
+  <Calendar />
+{:else if view === "board"}
+  <Board />
 {:else}
-  <p class="muted small">Karte antippen, dann eine Zone antippen = zuweisen. Freies Canvas mit Zoom folgt in M6.</p>
-  <div class="zones">
-    {#each zones as z (z.label)}
-      {@const m = memberOf(z.name)}
-      <div class="zone" class:target={picked !== null} style="--zone: {z.color}" onclick={() => drop(z.name)}
-        onkeydown={(e) => e.key === "Enter" && drop(z.name)} role="button" tabindex="0" aria-label="Zone {z.label}">
-        <h2 class="row">{#if m}<Avatar animal={m.animal} color={m.color} size={24} />{/if}{z.label}</h2>
-        <div class="cards">
-          {#each tasks.filter((t) => assignment[t.id] === z.name) as t (t.id)}
-            <button class="mini" class:picked={picked === t.id} onclick={(e) => { e.stopPropagation(); picked = picked === t.id ? null : t.id; }}>
-              <span>{t.title}</span><span class="muted">{t.xp}</span>
-            </button>
-          {/each}
-        </div>
-      </div>
-    {/each}
-  </div>
+  <Views />
 {/if}
 
 {#if planner && view === "rooms"}
@@ -186,39 +157,8 @@
     text-align: center;
   }
 
-  .seg,
-  .week {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 4px;
-    padding: 4px;
-    border-radius: 14px;
-    background: var(--surface-2);
-  }
-
-  .week {
-    grid-template-columns: repeat(7, 1fr);
-    margin-bottom: var(--space-4);
-  }
-
-  .seg button,
-  .week button {
-    min-height: 36px;
-    padding: 0;
-    background: transparent;
-    color: var(--muted);
-    border-radius: 10px;
-  }
-
-  .seg button.sel,
-  .week button.sel {
-    background: var(--surface);
-    color: var(--fg);
-    box-shadow: 0 1px 3px rgb(0 0 0 / 0.12);
-  }
-
-  .week button.today {
-    color: var(--primary);
+  .seg button {
+    font-size: 0.85rem;
   }
 
   .room {
@@ -312,73 +252,13 @@
     grid-column: 2 / -1;
   }
 
-  .slot {
-    display: grid;
-    grid-template-columns: 52px 1fr;
-    gap: var(--space-3);
-  }
 
-  .time {
-    font-size: 0.85rem;
-    font-variant-numeric: tabular-nums;
-    padding-top: var(--space-2);
-  }
 
-  .event {
-    display: flex;
-    flex-direction: column;
-    padding: var(--space-3);
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-left: 4px solid;
-    border-radius: var(--radius-sm);
-  }
 
-  .zones {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-    gap: var(--space-3);
-    margin-top: var(--space-3);
-  }
 
-  .zone {
-    min-height: 140px;
-    padding: var(--space-3);
-    border: 2px dashed color-mix(in srgb, var(--zone) 50%, var(--line));
-    border-radius: var(--radius);
-    background: color-mix(in srgb, var(--zone) 6%, var(--surface));
-  }
 
-  .zone.target {
-    border-style: solid;
-  }
 
-  .zone h2 {
-    font-size: 0.95rem;
-    color: var(--zone);
-    margin-bottom: var(--space-2);
-    gap: var(--space-2);
-  }
 
-  .cards {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-  }
 
-  .mini {
-    display: flex;
-    justify-content: space-between;
-    gap: var(--space-2);
-    text-align: left;
-    font-size: 0.85rem;
-    background: var(--surface);
-    border: 1px solid var(--line);
-    padding: var(--space-2);
-    min-height: 40px;
-  }
 
-  .mini.picked {
-    outline: 2px solid var(--primary);
-  }
 </style>

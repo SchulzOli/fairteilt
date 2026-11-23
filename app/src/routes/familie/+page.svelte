@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { unregisterPush } from "$lib/push";
   import QRCode from "qrcode";
   import type { InviteResponse, MemberDto } from "$lib/generated";
   import { ApiError, session } from "$lib/session.svelte";
@@ -120,6 +121,7 @@
     <a class="btnlike" href="/profil">Profil wechseln (Tablet)</a>
   {/if}
   <a class="btnlike" href="/regeln">Regeln des Haushalts</a>
+  {#if session.isAdmin}<a class="btnlike" href="/wand">Wandanzeige starten</a>{/if}
 </div>
 
 {#if panel}
@@ -200,7 +202,7 @@
 <div class="card stack">
   <p class="small">Angemeldet als <b>{session.me?.user.display_name}</b>{session.me?.user.email ? ` (${session.me.user.email})` : ""}</p>
   <p class="muted small">Server: {session.serverUrl}</p>
-  <button onclick={() => session.signOut()}>Abmelden</button>
+  <button onclick={async () => { await unregisterPush(); await session.signOut(); }}>Abmelden</button>
 </div>
 
 <style>

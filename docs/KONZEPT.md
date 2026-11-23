@@ -406,7 +406,7 @@ Periodenabschluss. Kein zusätzlicher Dienst nötig, mehrere Instanzen wären sp
 | `absences` | member_id, from, to, reason |
 | `notifications` / `notification_prefs` | Postfach (Kategorie, Bezug, gelesen, Push gesendet); Push-Kategorien und Ruhezeit je Mitglied |
 | `rewards` / `reward_redemptions` | Katalog (Preis, Freigabe, Bestand, Abkühlzeit) und Einlösungen (Preis, Status, Entscheidung) |
-| `boards` / `board_items` | Canvas: Zonen, Karten (task_id), Position, Größe |
+| `boards` / `board_items` | gemeinsames Board je Haushalt; Kartenposition je Vorlage (wiederkehrend) oder Aufgabe |
 | `saved_views` | owner_id, shared, filter (jsonb), layout, sort |
 | `jobs` | id, kind, run_at, payload, attempts, locked_until |
 

@@ -7,6 +7,24 @@ plugins {
     id("rust")
 }
 
+// Firebase (push): the values from google-services.json become string resources, as Google's
+// gradle plugin would do. Without the file the app builds and simply has no push.
+val firebaseValues: Map<String, String> = file("google-services.json").takeIf { it.exists() }?.let { f ->
+    @Suppress("UNCHECKED_CAST")
+    val json = groovy.json.JsonSlurper().parse(f) as Map<String, Any?>
+    val project = json["project_info"] as Map<String, Any?>
+    val client = (json["client"] as List<Map<String, Any?>>).first {
+        ((it["client_info"] as Map<String, Any?>)["android_client_info"] as Map<String, Any?>)["package_name"] == "eu.olitech.fairteilt"
+    }
+    mapOf(
+        "google_app_id" to (client["client_info"] as Map<String, Any?>)["mobilesdk_app_id"] as String,
+        "google_api_key" to ((client["api_key"] as List<Map<String, Any?>>).first()["current_key"] as String),
+        "gcm_defaultSenderId" to project["project_number"] as String,
+        "project_id" to project["project_id"] as String,
+        "google_storage_bucket" to (project["storage_bucket"] as String? ?: ""),
+    )
+} ?: emptyMap()
+
 val tauriProperties = Properties().apply {
     val propFile = file("tauri.properties")
     if (propFile.exists()) {
@@ -24,6 +42,7 @@ android {
         targetSdk = 37
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
         versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0")
+        firebaseValues.forEach { (name, value) -> resValue("string", name, value) }
     }
     buildTypes {
         getByName("debug") {
@@ -56,6 +75,7 @@ android {
     }
     buildFeatures {
         buildConfig = true
+        resValues = true
     }
 }
 
@@ -75,6 +95,7 @@ dependencies {
     implementation("androidx.activity:activity-ktx:1.10.1")
     implementation("com.google.android.material:material:1.12.0")
     implementation("androidx.lifecycle:lifecycle-process:2.10.0")
+    implementation("com.google.firebase:firebase-messaging:24.1.0")
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.4")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.0")

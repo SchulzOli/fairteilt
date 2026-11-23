@@ -144,6 +144,23 @@ impl Schedule {
         };
         Some(Cycle { start: done_at, due })
     }
+
+    /// Future rounds for the calendar ("Wiederholungen werden aufgefaltet"), assuming each
+    /// round is done on its due date. Starts after the round that is due at `current_due`;
+    /// at most `max` rounds, none due after `until`.
+    pub fn upcoming(&self, current_due: DateTime<Utc>, until: DateTime<Utc>, tz: Tz, max: usize) -> Vec<Cycle> {
+        let mut out = Vec::new();
+        let mut due = current_due;
+        while out.len() < max {
+            let Some(next) = self.next_cycle(due, due, tz) else { break };
+            if next.due > until || next.due <= due {
+                break;
+            }
+            due = next.due;
+            out.push(next);
+        }
+        out
+    }
 }
 
 #[cfg(test)]
@@ -157,6 +174,22 @@ mod tests {
 
     fn local(t: DateTime<Utc>) -> String {
         t.with_timezone(&Berlin).format("%a %Y-%m-%d %H:%M").to_string()
+    }
+
+    #[test]
+    fn upcoming_rounds_for_the_calendar() {
+        // Every 7 days: rounds follow each other at the due date.
+        let s = Schedule::Interval { days: 7 };
+        let due = utc("2026-11-25T10:00:00Z");
+        let next = s.upcoming(due, utc("2026-12-31T00:00:00Z"), Berlin, 10);
+        assert_eq!(next.iter().map(|c| local(c.due)).collect::<Vec<_>>(), [
+            "Wed 2026-12-02 11:00", "Wed 2026-12-09 11:00", "Wed 2026-12-16 11:00", "Wed 2026-12-23 11:00", "Wed 2026-12-30 11:00"
+        ]);
+        // Tuesdays and Fridays, limited by `max`.
+        let w = Schedule::Weekly { weekdays: vec![2, 5], every_weeks: 1 };
+        let next = w.upcoming(utc("2026-11-24T22:59:59Z"), utc("2027-01-01T00:00:00Z"), Berlin, 3);
+        assert_eq!(next.iter().map(|c| local(c.due)).collect::<Vec<_>>(), ["Fri 2026-11-27 23:59", "Tue 2026-12-01 23:59", "Fri 2026-12-04 23:59"]);
+        assert!(Schedule::Once.upcoming(due, utc("2027-01-01T00:00:00Z"), Berlin, 5).is_empty());
     }
 
     #[test]

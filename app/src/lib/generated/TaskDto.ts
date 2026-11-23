@@ -25,4 +25,8 @@ bounty: number, approved_by: string | null,
 /**
  * Message from the reviewer ("Super!" or "Bitte noch den Boden").
  */
-review_note: string | null, };
+review_note: string | null, 
+/**
+ * Planned in the calendar (M6).
+ */
+scheduled_start: string | null, scheduled_end: string | null, };
