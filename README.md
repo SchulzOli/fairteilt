@@ -167,14 +167,15 @@ Apple-Developer-Konto.
 
 Ausführlich mit Sichern, Wiederherstellen und Zurückgehen: **[docs/BETRIEB.md](docs/BETRIEB.md)**. Kurz:
 
-1. Cloud-Server (Debian 13, x86), Hetzner-Firewall nur 22/80/443, SSH nur mit Schlüssel
-2. DNS-Eintrag `fairteilt.oli-tech.eu` (A/AAAA) auf die Server-IP
+1. Server mit Debian 13 (x86), Docker, Firewall nur 22/80/443, SSH nur mit Schlüssel
+2. DNS `fairteilt.oli-tech.eu` (A/AAAA oder Wildcard) auf den Server; im zentralen Caddy ein Block
+   `reverse_proxy 127.0.0.1:8791` (Server nur für Fairteilt: `COMPOSE_PROFILES=caddy`)
 3. Repo nach `/opt/fairteilt` holen, dann in `deploy/`:
    ```bash
-   cp .env.example .env   # POSTGRES_PASSWORD, JWT_SECRET, API_IMAGE eintragen
-   ./update.sh            # holt das Image aus der CI (Workflow Server-Image) und startet
+   sudo cp .env.example .env   # POSTGRES_PASSWORD und JWT_SECRET eintragen
+   sudo ./update.sh            # holt das Image aus der CI (Workflow Server-Image) und startet
    ```
-4. Caddy holt das TLS-Zertifikat selbst. Prüfen mit `curl https://fairteilt.oli-tech.eu/health`
+4. Prüfen mit `curl https://fairteilt.oli-tech.eu/health`
 5. Cron: `backup.sh` nachts (mit restic außer Haus), `restore.sh --test` wöchentlich
 
 ## Lizenz

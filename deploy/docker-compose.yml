@@ -1,6 +1,8 @@
-# Production stack for the Hetzner server, step by step in docs/BETRIEB.md.
-#   cp .env.example .env   # fill in DOMAIN, POSTGRES_PASSWORD, JWT_SECRET, API_IMAGE
-#   docker compose up -d   # or ./update.sh
+# Production stack, step by step in docs/BETRIEB.md.
+#   cp .env.example .env   # fill in POSTGRES_PASSWORD, JWT_SECRET, API_IMAGE
+#   ./update.sh
+# Shared server with a central reverse proxy (default): the API listens on 127.0.0.1:API_PORT.
+# Server for Fairteilt alone: COMPOSE_PROFILES=caddy starts the bundled Caddy on 80/443.
 name: punkte
 
 services:
@@ -28,12 +30,15 @@ services:
     environment:
       DATABASE_URL: postgres://punkte:${POSTGRES_PASSWORD}@db:5432/punkte
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET missing in .env}
-      # Caddy sits in front: trust X-Forwarded-For for rate limiting
+      # A reverse proxy sits in front: trust X-Forwarded-For for rate limiting
       TRUST_PROXY: "1"
       CORS_ORIGINS: ${CORS_ORIGINS:-http://tauri.localhost,https://tauri.localhost,tauri://localhost}
       RUST_LOG: ${RUST_LOG:-punkte_server=info,tower_http=info}
       # Push over FCM: path of the Firebase service account inside the container (empty = no push)
       FCM_SERVICE_ACCOUNT: ${FCM_SERVICE_ACCOUNT:-}
+    ports:
+      # Only reachable from this machine; the reverse proxy forwards to it
+      - "127.0.0.1:${API_PORT:-8791}:8080"
     volumes:
       # Put firebase-service-account.json into deploy/secrets/ (never commit it)
       - ./secrets:/run/secrets:ro
@@ -43,13 +48,14 @@ services:
 
   caddy:
     image: caddy:2
+    profiles: ["caddy"]
     restart: unless-stopped
     ports:
       - "80:80"
       - "443:443"
       - "443:443/udp"
     environment:
-      DOMAIN: ${DOMAIN:?DOMAIN missing in .env}
+      DOMAIN: ${DOMAIN:-fairteilt.oli-tech.eu}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
