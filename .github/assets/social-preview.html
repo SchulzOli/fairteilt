@@ -1,0 +1,176 @@
+<!doctype html>
+<!-- Source of social-preview.png (GitHub social preview, 1280x640). Render with:
+     msedge --headless=new --hide-scrollbars --window-size=1280,640 --screenshot=social-preview.png social-preview.html
+     Fonts come from app/node_modules (pnpm --dir app install). -->
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>Fairteilt</title>
+<style>
+  @font-face { font-family: "Bricolage"; src: url("../../app/node_modules/@fontsource-variable/bricolage-grotesque/files/bricolage-grotesque-latin-wght-normal.woff2") format("woff2"); font-weight: 200 800; }
+  @font-face { font-family: "Atkinson"; src: url("../../app/node_modules/@fontsource-variable/atkinson-hyperlegible-next/files/atkinson-hyperlegible-next-latin-wght-normal.woff2") format("woff2"); font-weight: 200 800; }
+
+  :root {
+    --indigo: #4338ca; --indigo-deep: #2e248f; --honey: #f4c246; --honey-dark: #d99a1e;
+    --bg: #f6f4f0; --surface: #fff; --surface-2: #ece9e3; --fg: #1b1b26; --muted: #625f6c; --line: #e0dcd4;
+    --xp: #0b7f6f; --xp-soft: #d4eee8; --primary-soft: #e6e3fa; --coin: #95600a; --coin-soft: #fbefcd;
+    --fresh: #2f9e5b; --due: #e0a019; --over: #d2492a; --krumel: #8a5a2b;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { width: 1280px; height: 640px; overflow: hidden; }
+  body {
+    font-family: "Atkinson", system-ui, sans-serif;
+    color: #fff;
+    background:
+      radial-gradient(900px 600px at 0% 0%, #5a4fe0 0%, transparent 60%),
+      radial-gradient(700px 500px at 100% 100%, #2a1f86 0%, transparent 65%),
+      var(--indigo);
+    position: relative;
+  }
+  /* crumbs */
+  .crumb { position: absolute; border-radius: 50%; background: var(--honey); opacity: .9; }
+
+  .left { position: absolute; left: 84px; top: 0; bottom: 0; width: 640px; display: flex; flex-direction: column; justify-content: center; gap: 22px; }
+  .brand { display: flex; align-items: center; gap: 26px; }
+  .brand svg { width: 132px; height: 132px; flex: none; filter: drop-shadow(0 18px 30px rgb(0 0 0 / .28)); }
+  h1 { font-family: "Bricolage", sans-serif; font-weight: 800; font-size: 112px; letter-spacing: -3px; line-height: .9; }
+  .tag { font-family: "Bricolage", sans-serif; font-weight: 700; font-size: 40px; line-height: 1.12; letter-spacing: -.5px; }
+  .tag em { font-style: normal; color: var(--honey); }
+  .en { font-size: 23px; line-height: 1.4; color: #d9d6ff; max-width: 560px; }
+  .chips { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 6px; }
+  .chip { padding: 9px 16px; border-radius: 999px; background: rgb(255 255 255 / .12); border: 1px solid rgb(255 255 255 / .22); font-size: 19px; font-weight: 700; }
+  .chip.honey { background: var(--honey); color: #3b2604; border-color: transparent; }
+
+  /* phone */
+  .phone {
+    position: absolute; left: 812px; top: 58px; width: 372px; height: 720px;
+    border-radius: 54px; background: #111018; padding: 12px;
+    box-shadow: 0 40px 80px -20px rgb(0 0 0 / .55), 0 0 0 2px rgb(255 255 255 / .12) inset;
+    transform: rotate(4deg);
+  }
+  .screen { width: 100%; height: 100%; border-radius: 44px; background: var(--bg); color: var(--fg); overflow: hidden; padding: 46px 18px 0; position: relative; }
+  .notch { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); width: 96px; height: 26px; border-radius: 99px; background: #111018; }
+  .hello { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+  .hello small { display: block; color: var(--muted); font-size: 12px; }
+  .hello b { font-family: "Bricolage", sans-serif; font-size: 26px; letter-spacing: -.5px; line-height: 1; }
+  .streak { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 99px; background: var(--over-soft, #fbe1d8); color: var(--over); font-weight: 800; font-size: 13px; }
+
+  .av { width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; flex: none; }
+  .av svg { width: 82%; height: 82%; }
+  .av.s { width: 24px; height: 24px; box-shadow: 0 0 0 2px var(--surface); }
+  .stack { display: inline-flex; align-items: center; }
+  .stack .av + .av { margin-left: -10px; }
+
+  .race { background: #fff8e8; border: 1px solid #ead9b0; border-radius: 20px; padding: 13px 14px 12px; margin-bottom: 14px; }
+  .race-top { display: flex; justify-content: space-between; align-items: center; }
+  .race-top b { font-size: 14px; }
+  .goalchip { display: inline-flex; gap: 4px; align-items: center; padding: 2px 9px; border-radius: 99px; background: var(--primary-soft); color: var(--indigo); font-size: 12px; font-weight: 700; }
+  .track { position: relative; height: 32px; margin: 8px 40px 2px 2px; }
+  .lane, .fam { position: absolute; left: 0; top: 13px; height: 6px; border-radius: 6px; }
+  .lane { right: -28px; background: var(--surface-2); }
+  .fam { width: 64%; background: var(--xp); }
+  .runner { position: absolute; top: 1px; transform: translateX(-50%); width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; border: 2px solid #fff8e8; }
+  .runner.kr { left: 44%; background: #eadbc9; color: var(--krumel); }
+  .runner.us { left: 64%; background: var(--xp); color: #fff; font-weight: 800; font-size: 11px; }
+  .post { position: absolute; right: -42px; top: 1px; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: var(--coin-soft); color: var(--coin); border: 2px solid #fff8e8; box-shadow: 0 0 0 1.5px #f4c246b3; }
+  .race small { color: var(--muted); font-size: 11.5px; }
+
+  .sec { font-size: 11px; font-weight: 800; letter-spacing: .8px; color: var(--muted); margin: 4px 2px 8px; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 12px 12px 11px; margin-bottom: 10px; display: grid; grid-template-columns: 38px 1fr auto; gap: 4px 10px; align-items: center; }
+  .tile { width: 38px; height: 38px; border-radius: 12px; display: grid; place-items: center; background: var(--surface-2); color: var(--fg); }
+  .ico { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+  .title b { display: block; font-size: 15.5px; }
+  .title span { font-size: 11.5px; color: var(--muted); font-weight: 700; }
+  .right { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+  .xp { padding: 2px 8px; border-radius: 8px; background: var(--xp-soft); color: var(--xp); font-weight: 800; font-size: 12px; }
+  .bonus { padding: 1px 7px; border-radius: 8px; background: var(--coin-soft); color: var(--coin); font-weight: 800; font-size: 11px; }
+  .who { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 700; color: var(--muted); }
+  .bar { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+  .bar i { flex: 1; height: 6px; border-radius: 6px; background: var(--surface-2); position: relative; overflow: hidden; }
+  .bar i::after { content: ""; position: absolute; inset: 0 auto 0 0; width: var(--w); background: var(--c); border-radius: 6px; }
+  .state { font-size: 11px; font-weight: 800; padding: 1px 8px; border-radius: 99px; color: var(--c); background: color-mix(in srgb, var(--c) 14%, white); }
+  .plus { width: 30px; height: 30px; border-radius: 50%; border: 2px dashed #b7b0ec; color: var(--indigo); display: grid; place-items: center; }
+</style>
+</head>
+<body>
+  <span class="crumb" style="left: 690px; top: 96px; width: 14px; height: 14px"></span>
+  <span class="crumb" style="left: 742px; top: 548px; width: 10px; height: 10px; opacity: .7"></span>
+  <span class="crumb" style="left: 60px; top: 566px; width: 9px; height: 9px; opacity: .55"></span>
+
+  <div class="left">
+    <div class="brand">
+      <svg viewBox="0 0 100 100" aria-hidden="true">
+        <defs>
+          <clipPath id="tile"><rect width="100" height="100" rx="23"/></clipPath>
+          <clipPath id="hl"><path d="M0 0H55L47 26 57 42 44 58 53 74 44 100H0z"/></clipPath>
+          <clipPath id="hr"><path d="M55 0H100V100H44L53 74 44 58 57 42 47 26z"/></clipPath>
+        </defs>
+        <g clip-path="url(#tile)">
+          <rect width="100" height="100" fill="#3a30b8"/>
+          <g transform="translate(-4.5 1.5)"><g clip-path="url(#hl)">
+            <circle cx="50" cy="50" r="30" fill="#f4c246"/><circle cx="50" cy="50" r="30" fill="none" stroke="#d99a1e" stroke-width="3"/>
+            <circle cx="38" cy="38" r="3.6" fill="#5b3415"/><circle cx="33" cy="56" r="3.2" fill="#5b3415"/><circle cx="42" cy="69" r="3" fill="#5b3415"/>
+          </g></g>
+          <g transform="translate(4.5 -1.5)"><g clip-path="url(#hr)">
+            <circle cx="50" cy="50" r="30" fill="#f4c246"/><circle cx="50" cy="50" r="30" fill="none" stroke="#d99a1e" stroke-width="3"/>
+            <circle cx="65" cy="38" r="3.4" fill="#5b3415"/><circle cx="68" cy="57" r="3.2" fill="#5b3415"/><circle cx="60" cy="68" r="2.8" fill="#5b3415"/>
+          </g></g>
+          <circle cx="21" cy="81" r="2.6" fill="#f4c246"/><circle cx="80" cy="20" r="2.2" fill="#f4c246"/>
+        </g>
+      </svg>
+      <h1>Fairteilt</h1>
+    </div>
+    <p class="tag">Haushalt fair teilen –<br><em>gemeinsam gegen Krümel.</em></p>
+    <p class="en">Open-source family chores app: XP for every task, a fair monthly balance and one shared family goal.</p>
+    <div class="chips">
+      <span class="chip honey">Open Source · AGPL-3.0</span>
+      <span class="chip">Android · iOS · Desktop</span>
+      <span class="chip">Rust · Tauri 2 · SvelteKit</span>
+    </div>
+  </div>
+
+  <div class="phone"><div class="screen">
+    <span class="notch"></span>
+    <div class="hello">
+      <span class="av" style="background: #fbe3d2; color: #e8660f"><svg viewBox="0 0 40 40"><path d="M7 7l9 7h8l9-7-2 15c-1.5 6-6 10-11 10S10.5 28 9 22z" fill="currentColor"/><path d="M13 25c2 4 4.5 5.5 7 5.5s5-1.5 7-5.5c-2.5 1.2-4.7 1.5-7 1.5s-4.5-.3-7-1.5z" fill="#fff"/><circle cx="15" cy="20" r="1.8" fill="#1b1b26"/><circle cx="25" cy="20" r="1.8" fill="#1b1b26"/><circle cx="20" cy="27.5" r="1.6" fill="#1b1b26"/></svg></span>
+      <div><small>Montag, 23. November</small><b>Hallo Alex</b></div>
+      <span class="streak"><svg class="ico" style="width:14px;height:14px" viewBox="0 0 24 24"><path d="M12 21c-4 0-6.5-2.6-6.5-6.2 0-3.6 2.8-5.6 3.8-9.3 1.6 1.4 2.4 3 2.4 4.8 1-.8 1.6-2 1.8-3.3 2.4 2 5 4.6 5 8 0 3.5-2.6 6-6.5 6z"/></svg>4 Tage</span>
+    </div>
+
+    <div class="race">
+      <div class="race-top"><b>Familie gegen Krümel</b><span class="goalchip"><svg class="ico" style="width:12px;height:12px" viewBox="0 0 24 24"><path d="M5 21V4"/><path d="M5 4h11l-2 4 2 4H5"/></svg>Zoo-Besuch</span></div>
+      <div class="track">
+        <span class="lane"></span><span class="fam"></span>
+        <span class="runner kr"><svg viewBox="0 0 48 48" width="22" height="22"><path d="M24 5c3 0 4 3 6.5 3.5S35 6.5 37 8.5s.5 4.5 2 6.5 4 2.5 4 5.5-2.5 3.5-2.5 6 2.5 4 1 6.5-4.5 1.5-6.5 3-1 4.5-4 5.5-4.5-1.5-7-1.5-4 2.5-7 1.5-2-4-4-5.5-5 0-6.5-3 1-4 1-6.5-2.5-3-2.5-6 2.5-3 4-5.5-.5-4.5 2-6.5 4.5 0 7-.5S21 5 24 5z" fill="currentColor"/><circle cx="18" cy="21" r="5" fill="#fff"/><circle cx="30" cy="21" r="5" fill="#fff"/><circle cx="19" cy="22" r="2.4" fill="#1b1b26"/><circle cx="31" cy="22" r="2.4" fill="#1b1b26"/><path d="M17 31c2.5 3 11.5 3 14 0" stroke="#1b1b26" stroke-width="2" fill="none" stroke-linecap="round"/></svg></span>
+        <span class="runner us">wir</span>
+        <span class="post"><svg class="ico" style="width:14px;height:14px" viewBox="0 0 24 24"><path d="M5 21V4"/><path d="M5 4h11l-2 4 2 4H5"/></svg></span>
+      </div>
+      <small>96 / 150 XP · ihr liegt vor Krümel</small>
+    </div>
+
+    <p class="sec">FÜR DICH</p>
+    <div class="card">
+      <span class="tile"><svg class="ico" viewBox="0 0 24 24"><path d="M3 12h18v1.5A5.5 5.5 0 0 1 15.5 19h-7A5.5 5.5 0 0 1 3 13.5z"/><path d="M6 12V6.5a2.5 2.5 0 0 1 5 0"/><path d="M7 19l-1 2M17 19l1 2"/></svg></span>
+      <div class="title"><b>Bad putzen</b><span>2/4 Schritte</span></div>
+      <div class="right"><span class="xp">20 XP</span><span class="who"><span class="av s" style="background: #fbe3d2; color: #e8660f"><svg viewBox="0 0 40 40"><path d="M7 7l9 7h8l9-7-2 15c-1.5 6-6 10-11 10S10.5 28 9 22z" fill="currentColor"/><path d="M13 25c2 4 4.5 5.5 7 5.5s5-1.5 7-5.5c-2.5 1.2-4.7 1.5-7 1.5s-4.5-.3-7-1.5z" fill="#fff"/><circle cx="15" cy="20" r="1.8" fill="#1b1b26"/><circle cx="25" cy="20" r="1.8" fill="#1b1b26"/></svg></span>du</span></div>
+      <div class="bar" style="--c: var(--due); --w: 86%"><i></i><span class="state">Fällig</span></div>
+    </div>
+    <div class="card">
+      <span class="tile"><svg class="ico" viewBox="0 0 24 24"><path d="M15 3.5c2.5 0 4 2 3 4.5l-4 9"/><path d="M4 17h11a2 2 0 0 1 2 2v1H4z"/></svg></span>
+      <div class="title"><b>Staubsaugen</b><span>mit Sam · XP geteilt</span></div>
+      <div class="right"><span class="xp">12 XP</span><span class="who"><span class="stack">
+        <span class="av s" style="background: #fbe3d2; color: #e8660f; z-index: 2"><svg viewBox="0 0 40 40"><path d="M7 7l9 7h8l9-7-2 15c-1.5 6-6 10-11 10S10.5 28 9 22z" fill="currentColor"/><path d="M13 25c2 4 4.5 5.5 7 5.5s5-1.5 7-5.5c-2.5 1.2-4.7 1.5-7 1.5s-4.5-.3-7-1.5z" fill="#fff"/><circle cx="15" cy="20" r="1.8" fill="#1b1b26"/><circle cx="25" cy="20" r="1.8" fill="#1b1b26"/></svg></span>
+        <span class="av s" style="background: #e9e3fb; color: #7c5cd6; z-index: 1"><svg viewBox="0 0 40 40"><path d="M9 8l5 4h12l5-4v18c0 6-5 9-11 9S9 32 9 26z" fill="currentColor"/><circle cx="15" cy="18" r="5" fill="#fff"/><circle cx="25" cy="18" r="5" fill="#fff"/><circle cx="15" cy="18" r="2.2" fill="#1b1b26"/><circle cx="25" cy="18" r="2.2" fill="#1b1b26"/><path d="M18 23l2 3 2-3z" fill="#f4c246"/></svg></span>
+      </span>du</span></div>
+      <div class="bar" style="--c: #8fae1e; --w: 62%"><i></i><span class="state">Hat Zeit</span></div>
+    </div>
+    <p class="sec">OFFEN · WER HILFT?</p>
+    <div class="card">
+      <span class="tile"><svg class="ico" viewBox="0 0 24 24"><rect x="4" y="3.5" width="16" height="17" rx="2.5"/><path d="M12 3.5v17M4 12h16"/></svg></span>
+      <div class="title"><b>Fenster putzen</b><span>noch offen</span></div>
+      <div class="right" style="flex-direction: row; align-items: center; gap: 8px"><span style="display:flex;flex-direction:column;align-items:flex-end;gap:4px"><span class="xp">15 XP</span><span class="bonus">+5 Bonus</span></span><span class="plus"><svg class="ico" style="width:16px;height:16px" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span></div>
+      <div class="bar" style="--c: var(--fresh); --w: 24%"><i></i><span class="state">Gut</span></div>
+    </div>
+  </div></div>
+</body>
+</html>

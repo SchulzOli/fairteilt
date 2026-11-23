@@ -1,183 +1,162 @@
-# Fairteilt
+<p align="center">
+  <img src=".github/assets/social-preview.png" alt="Fairteilt: Haushalt fair teilen, gemeinsam gegen Krümel" width="100%">
+</p>
 
-Familien-App für Haushaltsaufgaben mit XP, periodischem Ausgleich,
-Monatsziel/Aufholaufgaben, Erinnerungen und Kalender-/Canvas-Planung.
-Tauri 2 (Android, iOS, Desktop) + SvelteKit, Backend in Rust (axum + PostgreSQL) auf Hetzner.
+<p align="center">
+  <a href="https://github.com/SchulzOli/fairteilt/actions/workflows/ci.yml"><img src="https://github.com/SchulzOli/fairteilt/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/Lizenz-AGPL--3.0-4338ca" alt="Lizenz: AGPL-3.0"></a>
+  <img src="https://img.shields.io/badge/Android%20%C2%B7%20iOS%20%C2%B7%20Desktop-Tauri%202-24c8db" alt="Android, iOS, Desktop mit Tauri 2">
+  <img src="https://img.shields.io/badge/Rust-axum%20%2B%20PostgreSQL-b7410e?logo=rust" alt="Rust, axum, PostgreSQL">
+  <img src="https://img.shields.io/badge/SvelteKit-Svelte%205-ff3e00?logo=svelte&logoColor=white" alt="SvelteKit, Svelte 5">
+  <img src="https://img.shields.io/badge/Status-Familien--Alpha-f4c246" alt="Status: Familien-Alpha">
+</p>
 
-Konzept und Regeln: **[docs/KONZEPT.md](docs/KONZEPT.md)** · Roadmap: **[docs/ROADMAP.md](docs/ROADMAP.md)**
+<p align="center">
+  <b>Fairteilt</b> ist eine freie Familien-App für Haushaltsaufgaben.<br>
+  Jede Aufgabe bringt XP, am Monatsende gleicht Fairteilt aus, wer mehr und wer weniger getragen hat,<br>
+  und alle zusammen rennen gegen das Maskottchen <b>Krümel</b> um ein gemeinsames Familienziel.
+</p>
 
-## Aufbau
+<p align="center">
+  <a href="#funktionen">Funktionen</a> ·
+  <a href="#so-funktionierts">So funktioniert's</a> ·
+  <a href="#schnellstart">Schnellstart</a> ·
+  <a href="#selbst-hosten">Selbst hosten</a> ·
+  <a href="#mitmachen">Mitmachen</a> ·
+  <a href="#in-english">English</a>
+</p>
 
-| Ordner | Inhalt |
+---
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/screenshots/heute.png" width="200" alt="Heute: Familienziel und eigene Aufgaben"><br><sub><b>Heute</b>: Familienziel und deine Aufgaben</sub></td>
+    <td align="center"><img src="docs/screenshots/aufgabe.png" width="200" alt="Aufgabe mit Schritten"><br><sub><b>Aufgabe</b>: Schritt für Schritt</sub></td>
+    <td align="center"><img src="docs/screenshots/kalender.png" width="200" alt="Kalender mit Wochenansicht"><br><sub><b>Plan</b>: Kalender, Board, Räume</sub></td>
+    <td align="center"><img src="docs/screenshots/liste.png" width="200" alt="Gemeinsame Einkaufsliste"><br><sub><b>Liste</b>: gemeinsam einkaufen</sub></td>
+  </tr>
+</table>
+
+<p align="center">
+  <img src="docs/screenshots/wand.png" width="640" alt="Wandanzeige auf dem Tablet mit einer Spalte pro Person"><br>
+  <sub><b>Wandanzeige</b> fürs Familien-Tablet: eine Spalte pro Person, abhaken mit Tier und PIN</sub>
+</p>
+
+## Warum Fairteilt?
+
+In vielen Familien bleibt der Haushalt an wenigen hängen, und wer ihn trägt, merkt es meist zuerst.
+Fairteilt macht die Arbeit sichtbar, ohne daraus einen Wettkampf zu machen: Es gibt **keine
+Rangliste**, sondern ein Ziel, das alle nur gemeinsam erreichen. Wer im Monat hinten liegt, bekommt
+keine Strafe, sondern **Aufholaufgaben**. Und weil Kinder anders mithelfen als Erwachsene, zählt jede
+Person nach ihrem eigenen **Gewicht**.
+
+## Funktionen
+
+- **Räume und Rhythmen.** Aufgaben kehren von selbst wieder: an festen Tagen, „alle 7 Tage nach dem
+  letzten Mal“ oder auf Abruf. Ein Balken zeigt in vier Stufen, wie dringend sie sind: Gut, Hat Zeit,
+  Fällig, Überfällig.
+- **XP und Serien.** Erledigen bringt XP, mit Konfetti in der Karte und einem warmen „Ding-Ding!“.
+  Schritte („Waschbecken, Spiegel, Dusche …“) lassen sich einzeln abhaken.
+- **Gemeinsam anpacken.** Mit „+“ übernimmst du eine Aufgabe oder machst bei einer fremden mit; die
+  XP werden geteilt. Auf ungeliebte Aufgaben kann jede Person einen **XP-Bonus** verschenken.
+- **Fairer Ausgleich.** Am Monatsende rechnet Fairteilt aus, wer über oder unter seinem fairen Anteil
+  lag. Rückstand und Vorsprung wandern in den nächsten Monat oder werden zu Aufholaufgaben. Alle Regeln
+  sind pro Haushalt einstellbar.
+- **Familienziel gegen Krümel.** Krümel rückt jeden Tag ein Stück vor, liegengebliebene Aufgaben
+  schieben ihn an. Wer zuerst am Ziel ist, entscheidet über die Familienbelohnung.
+- **Für Kinder gemacht.** Tiere statt Fotos, Anmeldung mit Kinder-Code oder PIN auf dem Familien-Tablet,
+  Bestätigung durch Eltern mit anpassbaren Punkten.
+- **Plan.** Kalender (Tag, Woche, Monat, Agenda), freies Board mit Zonen, eigene Ansichten. Alles per
+  Ziehen und Ablegen.
+- **Einkaufsliste.** Alle schreiben auf, wer einkauft, bekommt XP. Live-Hinweis „Noch mitbringen?“
+  an die Person im Laden.
+- **Erinnerungen und Push,** pro Kategorie abschaltbar, mit Ruhezeiten.
+- **Offline-fest.** Änderungen warten in einer Warteschlange und gehen raus, sobald wieder Netz da ist.
+- **Deine Daten.** Kein Tracking, keine Werbung. Export als Datei, Konto und Haushalt in der App
+  löschbar, Server selbst hostbar.
+
+<p align="center">
+  <img src="docs/screenshots/heute-dunkel.png" width="200" alt="Heute im dunklen Design">
+  &nbsp;&nbsp;
+  <img src="docs/screenshots/punkte.png" width="200" alt="Punkte: XP des Monats, Serie und Monatsziel">
+  <br><sub>Hell und dunkel gleichwertig gestaltet · Punkte mit Serie, Bonus-Budget und Monatsziel</sub>
+</p>
+
+## So funktioniert's
+
+```text
+Aufgabe erledigt ──▶ XP (geteilt, wenn mehrere mitmachen) ──▶ Punktebuch
+                                                                  │
+Monatsende ◀───────────── fairer Anteil je Person (Gewicht, Abwesenheit) ◀─┘
+     │
+     ├── im Rahmen (± Toleranz) ............ nichts
+     ├── Rückstand ......................... Übertrag oder Aufholaufgaben
+     └── Vorsprung ......................... senkt das Ziel im nächsten Monat
+```
+
+Die Regeln stecken in der Rust-Bibliothek [`punkte-core`](crates/core): rein, ohne IO und mit Tests.
+Server und App rechnen damit dasselbe, die App sogar offline. Die Details stehen im
+**[Konzept](docs/KONZEPT.md)**.
+
+## Technik
+
+| Teil | Womit |
 | --- | --- |
-| `crates/core` | `punkte-core`: Punkte-, Status- und Ausgleichsregeln, rein und getestet. Läuft auf Server und in der App |
-| `server` | `punkte-server`: REST-API, Job-Scheduler, Migrationen (`server/migrations`) |
-| `app` | SvelteKit-Oberfläche (mobil zuerst) |
-| `app/src-tauri` | Tauri-Kern: Server-Zugriff, Offline-Vorschau mit `punkte-core` |
-| `deploy` | Dockerfile, Compose (Produktion + Entwicklung), Caddy, Skripte für Sichern, Wiederherstellen und Aktualisieren |
+| App | [Tauri 2](https://tauri.app) für Android, iOS und Desktop, Oberfläche in [SvelteKit](https://svelte.dev) (Svelte 5, TypeScript) |
+| Server | Rust mit [axum](https://github.com/tokio-rs/axum) und PostgreSQL ([sqlx](https://github.com/launchbadge/sqlx)), WebSocket für Live-Updates, Job-Scheduler in der Datenbank |
+| Regeln | [`crates/core`](crates/core): Punkte, Zustand, Ausgleich, Rennen gegen Krümel; TypeScript-Typen per [ts-rs](https://github.com/Aleph-Alpha/ts-rs) erzeugt |
+| Push | Firebase Cloud Messaging (optional), sonst Postfach und lokale Erinnerungen |
+| Betrieb | Docker Compose, Caddy, nächtliche Backups, Server-Image aus der CI |
 
-## Entwicklung
-
-Voraussetzungen: Rust (unter Windows mit dem **MSVC**-Toolchain), Node 22+, pnpm, Docker.
-
-```powershell
-# einmalig unter Windows, falls der GNU-Toolchain Standard ist
-rustup override set stable-x86_64-pc-windows-msvc
+```text
+app/            SvelteKit-Oberfläche + Tauri-Kern (app/src-tauri)
+crates/core/    punkte-core: alle Regeln, rein und getestet
+server/         punkte-server: REST-API, WebSocket, Scheduler, Migrationen
+deploy/         Dockerfile, Compose, Caddy, Backup- und Update-Skripte
+docs/           Konzept, Roadmap, Betrieb, Entwicklung, Store
 ```
 
-```powershell
-cargo test -p punkte-core
+## Schnellstart
+
+Voraussetzungen: Rust (stable), Node 22+, [pnpm](https://pnpm.io), Docker.
+
+```bash
+git clone https://github.com/SchulzOli/fairteilt.git && cd fairteilt
+docker compose -f deploy/docker-compose.dev.yml up -d          # PostgreSQL
+cp server/.env.example server/.env && cargo run -p punkte-server
+pnpm --dir app install && pnpm --dir app dev                   # http://localhost:1420
 ```
 
-```powershell
-docker compose -f deploy/docker-compose.dev.yml up -d
-```
+Als App auf dem Rechner: `pnpm --dir app tauri dev`, auf dem Android-Handy:
+`pnpm --dir app tauri android dev`. Tests, API-Übersicht, Push und Android-Setup stehen in
+**[docs/ENTWICKLUNG.md](docs/ENTWICKLUNG.md)**.
 
-```powershell
-Copy-Item server/.env.example server/.env; cargo run -p punkte-server
-```
+## Selbst hosten
 
-Tests (Integrationstests brauchen die Entwicklungsdatenbank):
+Ein kleiner VPS reicht. Der Server läuft als Docker-Image aus der CI
+(`ghcr.io/schulzoli/fairteilt-server`) hinter Caddy, mit nächtlichem Backup und automatischen
+Updates nach grüner CI. Schritt für Schritt: **[docs/BETRIEB.md](docs/BETRIEB.md)**.
 
-```powershell
-$env:DATABASE_URL = 'postgres://punkte:punkte-dev@127.0.0.1:5432/punkte'; cargo test --workspace
-```
+## Stand und Roadmap
 
-`127.0.0.1` statt `localhost`: Unter Windows versucht `localhost` zuerst IPv6 und kostet so rund 2 Sekunden pro Datenbankverbindung.
+Fairteilt ist in der **Familien-Alpha**: Es läuft im echten Familienalltag, die Store-Versionen folgen.
+Was fertig ist und was als Nächstes kommt: **[docs/ROADMAP.md](docs/ROADMAP.md)**.
 
-```powershell
-pnpm --dir app install; pnpm --dir app tauri dev
-```
+## Mitmachen
 
-In der App unter **Mehr → Server** `http://localhost:8080` eintragen und „Verbindung testen“.
-Die Vorschau „Abschluss ausprobieren“ unter Regeln rechnet den Ausgleich offline mit `punkte-core` (im Tauri-Kern).
+Ideen, Fehlerberichte und Pull Requests sind herzlich willkommen, auch auf Englisch.
+Lies am besten zuerst **[CONTRIBUTING.md](CONTRIBUTING.md)** und schau nach
+[`good first issue`](https://github.com/SchulzOli/fairteilt/issues?q=is%3Aopen+label%3A%22good+first+issue%22).
+Sicherheitslücken bitte vertraulich melden, siehe [SECURITY.md](SECURITY.md).
 
-### API (Stand M8)
+## In English
 
-| Route | Zweck |
-| --- | --- |
-| `GET /health` | Status + Datenbankverbindung |
-| `GET /api/v1/meta` | Version und Standardregeln für neue Haushalte |
-| `POST /api/v1/preview/settlement` | Ausgleich durchrechnen: `{ policy, members }` → `Settlement` |
-| `POST /api/v1/auth/register` · `/login` | Konto anlegen / anmelden → Zugriffstoken (15 min) + Refresh-Token |
-| `POST /api/v1/auth/google` | Mit Google anmelden: ID-Token prüfen, Konto finden, per E-Mail verbinden oder anlegen ([Einrichtung](docs/GOOGLE-LOGIN.md)) |
-| `POST /api/v1/auth/refresh` · `/logout` | Refresh-Token tauschen (rotierend) / Gerät abmelden |
-| `GET /api/v1/me` · `DELETE /api/v1/me` | eigenes Konto und Haushalte; Konto löschen (`{ password }`) |
-| `GET /api/v1/me/export` | alle Daten zum eigenen Konto als JSON-Datei |
-| `POST /api/v1/households` | Haushalt mit Standardregeln anlegen (Ersteller wird Admin) |
-| `POST /api/v1/households/{id}/invites` | Einladungscode erzeugen (nur Admins, 7 Tage gültig) |
-| `POST /api/v1/invites/accept` | mit Code beitreten, Tier und Farbe wählen |
-| `POST /api/v1/invites/join` | Kind ohne E-Mail tritt mit Kinder-Code auf eigenem Gerät bei |
-| `GET /api/v1/households/{id}/members` · `PATCH` · `DELETE …/members/{mid}` | Mitglieder; Tier/Farbe selbst, Rolle/Gewicht als Admin; entfernen (Admins) |
-| `GET /api/v1/households/{id}/export` · `POST …/delete` | Haushalt exportieren, löschen (`{ confirm_name }`), nur Admins |
-| `POST /api/v1/households/{id}/children` · `PUT …/members/{mid}/pin` | Kinderprofil anlegen, PIN setzen |
-| `POST /api/v1/auth/pin` | Profilwechsel per PIN, nur von einem Gerät des Haushalts (Sperre nach 5 Fehlversuchen) |
-| `GET` · `POST /api/v1/households/{id}/rooms` · `PATCH` · `DELETE …/rooms/{rid}` | Räume (Kinder nur lesen) |
-| `GET` · `POST /api/v1/households/{id}/templates` | Vorlagen mit Rhythmus, Zuweisung, Schritten; legt die erste Runde an (außer „auf Abruf“) |
-| `PATCH` · `DELETE /api/v1/templates/{tid}` | Einrichtung ändern (offene Runde folgt, solange sie nicht begonnen ist) / löschen |
-| `PUT /api/v1/tasks/{tid}/room` | Aufgabe samt Einrichtung in einen anderen Raum |
-| `POST /api/v1/templates/{tid}/trigger` | „Ist wieder nötig“: öffnet eine Runde einer Vorlage „auf Abruf“ |
-| `GET /api/v1/households/{id}/shopping` | Einkaufslisten mit Artikeln, offener Runde und Vorschlägen |
-| `POST /api/v1/households/{id}/lists` · `PATCH` · `DELETE /api/v1/lists/{lid}` | Listen (Erwachsene), jede mit eigener Aufgabe |
-| `POST /api/v1/lists/{lid}/items` · `PATCH` · `DELETE /api/v1/items/{iid}` | Aufschreiben (ohne XP, gleiche Artikel zusammengefasst), Notiz, Abteilung, dringend |
-| `POST /api/v1/items/{iid}/check` | in den Wagen (startet den Einkauf) oder „nebenbei mitgebracht“ |
-| `GET /api/v1/households/{id}/tasks` · `GET /api/v1/tasks/{tid}` | aktuelle Runden mit Zustand, XP und Schritten |
-| `POST /api/v1/tasks/{tid}/action` | `claim` (übernehmen oder mitmachen, XP werden geteilt) · `unclaim` · `done` · `cancel` (nur Admins) |
-| `POST /api/v1/tasks/{tid}/steps/{sid}/check` | Schritt abhaken; der letzte erledigt die Aufgabe |
-| `POST /api/v1/tasks/{tid}/review` | Erwachsene bestätigen (XP im Rahmen anpassbar, Nachricht) oder schicken zurück |
-| `POST /api/v1/tasks/{tid}/bounty` | XP-Bonus verschenken (Monatsbudget `bonus_xp_per_month`), geteilt wie die XP |
-| `GET /api/v1/households/{id}/accounts` | XP des Monats, Serie und übriges Bonus-Budget aller Mitglieder |
-| `GET /api/v1/households/{id}/ledger` | Verlauf des eigenen Kontos (Admins: `?member=`), `before` + `limit` zum Blättern |
-| `POST /api/v1/households/{id}/ledger/{eid}/reverse` | Admins nehmen eine Gutschrift per Gegenbuchung zurück (mit Begründung) |
-| `GET /api/v1/households/{id}/period` | laufender Zeitraum mit Rennen gegen Krümel und den letzten Abschlüssen |
-| `GET /api/v1/households/{id}/settlements` · `POST /api/v1/settlements/{sid}/approve` | Abschlüsse, Freigabe durch Admins |
-| `GET` · `PUT /api/v1/households/{id}/rules` · `PUT …/goal` | Regeln des Haushalts (Punkte, Abschluss, Familienziel); Familienziel allein |
-| `GET /api/v1/households/{id}/inbox` · `…/inbox/unread` · `POST …/inbox/read` | Postfach, ungelesene, als gelesen markieren |
-| `GET` · `PUT /api/v1/households/{id}/notification-prefs` | Push-Kategorien und Ruhezeit je Person |
-| `POST` · `DELETE /api/v1/devices` | Push-Token des Geräts an- und abmelden |
-| `PUT /api/v1/tasks/{tid}/schedule` · `PUT /api/v1/tasks/{tid}/assign` | einplanen (Kalender), zuweisen (Board) |
-| `GET /api/v1/households/{id}/calendar?from=&to=` | aktuelle, erledigte und kommende Runden (höchstens 62 Tage) |
-| `GET` · `PUT /api/v1/households/{id}/board` | Kartenpositionen auf dem gemeinsamen Board |
-| `GET` · `POST /api/v1/households/{id}/views` · `PUT` · `DELETE /api/v1/views/{vid}` | eigene Ansichten |
-| Kopf `Idempotency-Key` | bei jedem Schreibaufruf erlaubt: Wiederholungen bekommen die gespeicherte Antwort (`idempotent-replay: true`), 7 Tage |
-| `GET /api/v1/households/{id}/live?token=` | WebSocket: `tasks_changed` / `rooms_changed` / `points_changed` / `list_changed`; persönlich (`member`): `credited`, `returned`, `reversed` |
-
-## Push einrichten (Firebase)
-
-Ohne Firebase funktioniert alles außer Push aufs Handy: Postfach, Live-Updates und lokale
-Erinnerungen der App. Für Push:
-
-1. In der [Firebase-Konsole](https://console.firebase.google.com/) ein Projekt anlegen und eine
-   Android-App mit dem Paketnamen `eu.olitech.fairteilt` hinzufügen.
-2. `google-services.json` herunterladen und nach `app/src-tauri/gen/android/app/` legen
-   (steht in `.gitignore`, kommt nie ins Repo).
-3. Unter Projekteinstellungen → Dienstkonten einen privaten Schlüssel erzeugen und als
-   `deploy/secrets/firebase-service-account.json` auf den Server legen; in `deploy/.env`
-   `FCM_SERVICE_ACCOUNT=/run/secrets/firebase-service-account.json` setzen. Lokal genügt
-   `$env:FCM_SERVICE_ACCOUNT = '<Pfad>'` vor `cargo run`.
-
-Der Server meldet beim Start „push over FCM enabled“. Die Android-App liest `google-services.json`
-beim Bauen selbst ein (ohne Googles Gradle-Plugin), holt sich ein FCM-Token und meldet es nach der
-Anmeldung über `POST /api/v1/devices`. Ohne die Datei baut die App trotzdem, nur ohne Push.
-
-## App-Icon
-
-Quelle: `app/icon-src/` (geteilter Keks). Nach Änderungen alle Größen neu erzeugen:
-
-```powershell
-pnpm --dir app tauri icon icon-src/icon.json
-```
-
-Danach `app/src-tauri/icons/64x64.png` als `app/static/favicon.png` übernehmen.
-
-## Android
-
-Auf diesem PC eingerichtet (Benutzer-Umgebungsvariablen):
-
-| Variable | Wert |
-| --- | --- |
-| `JAVA_HOME` | `D:\Android\jdk-21` |
-| `ANDROID_HOME` | `D:\Android\Sdk` |
-| `NDK_HOME` | `D:\Android\Sdk\ndk\30.0.16248370` |
-
-Rust-Targets für Android sind im MSVC-Toolchain installiert, das Gradle-Projekt liegt in
-`app/src-tauri/gen/android`.
-
-```powershell
-pnpm --dir app tauri android dev
-```
-
-```powershell
-pnpm --dir app tauri android build --debug --apk --target aarch64
-```
-
-Auf einem neuen Rechner: SDK, NDK (Side by side) und JDK 17+ installieren, die Variablen oben setzen,
-`rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android`.
-
-Ab Werk spricht die App mit `https://fairteilt.oli-tech.eu` (im `pnpm dev` mit `http://localhost:8080`);
-`VITE_SERVER_URL` beim Bauen überschreibt das, in der App lässt sich der Server auf dem Anmeldebildschirm ändern.
-
-**Release:** Der Workflow **Apps** (Actions → Run workflow oder Tag `v*`) baut AAB und APK, signiert mit
-dem Upload-Schlüssel aus den Secrets, und iOS für den Simulator. Lokal signiert
-`app/src-tauri/gen/android/app/keystore.properties` (nie einchecken). Schritte bis zum Play Store:
-[docs/store/PLAY-STORE.md](docs/store/PLAY-STORE.md). Testversionen gehen automatisch an die Familie über Firebase App Distribution:
-[docs/store/APP-DISTRIBUTION.md](docs/store/APP-DISTRIBUTION.md). iOS braucht für mehr als den Simulator ein
-Apple-Developer-Konto.
-
-## Deployment (Hetzner)
-
-Ausführlich mit Sichern, Wiederherstellen und Zurückgehen: **[docs/BETRIEB.md](docs/BETRIEB.md)**. Kurz:
-
-1. Server mit Debian 13 (x86), Docker, Firewall nur 22/80/443, SSH nur mit Schlüssel
-2. DNS `fairteilt.oli-tech.eu` (A/AAAA oder Wildcard) auf den Server; im zentralen Caddy ein Block
-   `reverse_proxy 127.0.0.1:8791` (Server nur für Fairteilt: `COMPOSE_PROFILES=caddy`)
-3. Repo nach `/opt/fairteilt` holen, dann in `deploy/`:
-   ```bash
-   sudo cp .env.example .env   # POSTGRES_PASSWORD (openssl rand -hex 32) und JWT_SECRET eintragen
-   sudo ./update.sh            # holt das Image aus der CI (Workflow Server-Image) und startet
-   ```
-4. Prüfen mit `curl https://fairteilt.oli-tech.eu/health`
-5. Cron: `backup.sh` und `update.sh` nachts (Updates kommen so automatisch nach grüner CI), `restore.sh --test` wöchentlich
+**Fairteilt** (German for "shared fairly") is a free, open-source family chores app. Every task earns
+XP, a monthly balance shows who carried more or less of the housework (weighted per person, so kids
+count fairly), and the whole family races together against the mascot *Krümel* towards a shared
+reward. No leaderboards, no ads, no tracking. Built with Tauri 2 (Android, iOS, desktop), SvelteKit
+and a Rust (axum + PostgreSQL) server you can host yourself. The app is in German for now;
+contributions, including translations, are very welcome.
 
 ## Lizenz
 
@@ -185,4 +164,5 @@ Copyright (C) 2026 SchulzOli
 
 Fairteilt ist freie Software unter der [GNU Affero General Public License v3.0 oder später](LICENSE).
 Wer den Server verändert und anderen als Dienst anbietet, muss den geänderten Quellcode ebenfalls
-bereitstellen.
+bereitstellen. Die Klänge für „Krümel überholt“ und „Familienziel erreicht“ sind aus
+„Music Jingles – Pizzicato 02“ von Kenney (CC0) transkribiert.

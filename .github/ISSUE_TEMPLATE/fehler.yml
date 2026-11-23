@@ -1,0 +1,47 @@
+name: Fehler melden
+description: Etwas funktioniert nicht wie erwartet.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Danke fürs Melden! Sicherheitslücken bitte nicht hier, sondern vertraulich über Security → Report a vulnerability.
+  - type: textarea
+    id: was
+    attributes:
+      label: Was ist passiert?
+      description: Und was hättest du stattdessen erwartet?
+    validations:
+      required: true
+  - type: textarea
+    id: schritte
+    attributes:
+      label: Schritte zum Nachstellen
+      placeholder: |
+        1. Heute öffnen
+        2. Bei „Bad putzen“ auf + tippen
+        3. …
+    validations:
+      required: true
+  - type: dropdown
+    id: plattform
+    attributes:
+      label: Wo?
+      multiple: true
+      options:
+        - Android
+        - iOS
+        - Desktop (Windows, macOS, Linux)
+        - Browser (Entwicklung)
+        - Wandanzeige (Tablet)
+        - Server / Selbst gehostet
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Build-Nummer aus App Tester, Commit oder Server-Image-Tag
+  - type: textarea
+    id: extra
+    attributes:
+      label: Screenshots, Logs, Sonstiges
+      description: Bitte keine Namen, E-Mails oder Tokens deiner Familie.

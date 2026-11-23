@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Sicherheitslücke melden
+    url: https://github.com/SchulzOli/fairteilt/security/advisories/new
+    about: Bitte vertraulich melden, nicht als öffentliches Issue.
+  - name: Konzept und Regeln
+    url: https://github.com/SchulzOli/fairteilt/blob/main/docs/KONZEPT.md
+    about: Wie XP, Zustand, Ausgleich und das Rennen gegen Krümel funktionieren.

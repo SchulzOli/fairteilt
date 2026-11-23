@@ -1,0 +1,27 @@
+name: Idee vorschlagen
+description: Eine neue Funktion oder Verbesserung für Fairteilt.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Welches Problem im Familienalltag löst sie?
+      placeholder: "Bei uns vergisst jede Woche jemand, den Müll rauszubringen, weil …"
+    validations:
+      required: true
+  - type: textarea
+    id: vorschlag
+    attributes:
+      label: Wie könnte es aussehen?
+    validations:
+      required: true
+  - type: textarea
+    id: alternativen
+    attributes:
+      label: Alternativen, die du überlegt hast
+  - type: checkboxes
+    id: mithelfen
+    attributes:
+      label: Mithelfen
+      options:
+        - label: Ich würde das gern selbst umsetzen (mit etwas Hilfe).
