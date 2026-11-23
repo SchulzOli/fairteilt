@@ -1,6 +1,6 @@
-# Production stack for the Hetzner server.
-#   cp .env.example .env   # fill in DOMAIN and POSTGRES_PASSWORD
-#   docker compose up -d --build
+# Production stack for the Hetzner server, step by step in docs/BETRIEB.md.
+#   cp .env.example .env   # fill in DOMAIN, POSTGRES_PASSWORD, JWT_SECRET, API_IMAGE
+#   docker compose up -d   # or ./update.sh
 name: punkte
 
 services:

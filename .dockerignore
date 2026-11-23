@@ -4,4 +4,10 @@ app/build
 app/.svelte-kit
 app/src-tauri/gen
 .git
-.env
+# Never send secrets into the build context
+**/.env
+deploy/secrets
+**/*.jks
+**/*.keystore
+**/keystore.properties
+**/google-services.json

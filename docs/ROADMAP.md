@@ -1,6 +1,6 @@
 # Fairteilt – Roadmap
 
-Stand: 22.11.2026 (nach dem Design-Interview). Details zu Regeln und Datenmodell: [KONZEPT.md](KONZEPT.md),
+Stand: 23.11.2026 (nach M8, Betrieb vorbereitet). Details zu Regeln und Datenmodell: [KONZEPT.md](KONZEPT.md),
 Gestaltung: [KONZEPT.md §7.5](KONZEPT.md#75-gestaltung-design-interview-22112026).
 
 Jeder Meilenstein endet mit etwas, das man in der Hand hat. Nach M3 ist die App zum ersten Mal
@@ -12,12 +12,11 @@ Erledigt: CI, TypeScript-Typen aus `punkte-core` und Server, Design-Grundlage in
 
 | Wer | Schritt |
 | --- | --- |
-| Code | Familien-Alpha: Deployment auf Hetzner, Backup und Wiederherstellung |
+| Betrieb | Server nach [BETRIEB.md](BETRIEB.md) einrichten, Wiederherstellung einmal echt proben |
 | Konto | Play-Console-Konto, Upload-Schlüssel erzeugen und als GitHub-Secrets hinterlegen ([Anleitung](store/PLAY-STORE.md)) |
 | Konto | Apple-Developer-Konto für TestFlight und Push auf iOS |
 | Entscheidung | Datenschutzerklärung ([Entwurf](DATENSCHUTZ.md)) ausfüllen und veröffentlichen; Zielgruppe im Play Store (18+ oder Familienrichtlinie) |
-| Entscheidung | Klang auswählen (Klang-Spielplatz auf der Roadmap-Seite). Krümel, Serie, Schritte und Tiere sind entschieden |
-| Betrieb | Hetzner-Cloud-Server bestellen, DNS `fairteilt.oli-tech.eu` setzen (bis zur Alpha) |
+| Betrieb | Hetzner-Cloud-Server (x86) bestellen, DNS `fairteilt.oli-tech.eu` setzen (bis zur Alpha) |
 | Betrieb | Tablet für die Wandanzeige festlegen |
 
 ## Meilensteine
@@ -98,6 +97,19 @@ Server-Test und in der App geprüft. Bis M4 zählt der Kalendermonat als Periode
 - Punktebuch (nur anhängen), Bestätigen/Ablehnen mit Anpassung im Rahmen und Nachricht ans Kind
 - Bonus auf Aufgaben (Treuhand), Übertragungen, Serien pro Person
 - App: Bestätigen-Blatt, Punkte-Ansicht mit Verlauf
+
+### α Familien-Alpha
+
+**Vorbereitet am 23.11.2026**, es fehlen der Server und die signierte APK (beides braucht Konten).
+Anleitung für Einrichtung, Sicherung, Wiederherstellung und Updates: [BETRIEB.md](BETRIEB.md).
+Der Workflow **Server-Image** baut bei jeder Server-Änderung auf `main` das Image
+`ghcr.io/schulzoli/fairteilt-server` (Tags `main`, `sha-<commit>`, Versionen), der Server baut kein
+Rust mehr selbst. `deploy/update.sh` sichert vor jedem Update und kann auf ein älteres Image zurück.
+`deploy/backup.sh` schiebt die nächtliche Sicherung mit restic außer Haus, `deploy/restore.sh --test`
+spielt sie wöchentlich probeweise in eine Wegwerf-Datenbank. Die echte Wiederherstellung sichert
+erst den aktuellen Stand und läuft in einer Transaktion: Eine kaputte Sicherung ändert nichts. Lokal
+mit dem kompletten Stack (Caddy, API, Postgres) geprüft: erster Start, Sicherung, Probe,
+Wiederherstellung, abgebrochene und fehlgeschlagene Wiederherstellung, Update.
 
 ### M4 Ausgleich, Familienziel & Belohnungen
 

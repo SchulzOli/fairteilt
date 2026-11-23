@@ -486,4 +486,6 @@ Store-Release noch einmal prüfen, eine eigene Anmeldung in Klasse 9/42 wäre m�
 
 ### Noch offen
 
-- Tauri-2-Push: Community-Plugin oder eigenes kleines Mobile-Plugin (vor M5 prüfen)
+- Nichts Technisches. Push unter Tauri 2 ist entschieden (M5/M6): ein kleiner eigener Android-Teil
+  (`Push.kt`) holt das FCM-Token und zeigt Nachrichten, kein Community-Plugin. iOS braucht APNs und
+  damit das Apple-Developer-Konto

@@ -14,7 +14,7 @@ Konzept und Regeln: **[docs/KONZEPT.md](docs/KONZEPT.md)** · Roadmap: **[docs/R
 | `server` | `punkte-server`: REST-API, Job-Scheduler, Migrationen (`server/migrations`) |
 | `app` | SvelteKit-Oberfläche (mobil zuerst) |
 | `app/src-tauri` | Tauri-Kern: Server-Zugriff, Offline-Vorschau mit `punkte-core` |
-| `deploy` | Dockerfile, Compose (Produktion + Entwicklung), Caddy, Backup-Skript |
+| `deploy` | Dockerfile, Compose (Produktion + Entwicklung), Caddy, Skripte für Sichern, Wiederherstellen und Aktualisieren |
 
 ## Entwicklung
 
@@ -165,15 +165,17 @@ Apple-Developer-Konto.
 
 ## Deployment (Hetzner)
 
-1. Cloud-Server (Debian, kleinste Instanz reicht), Firewall nur 22/80/443, SSH nur mit Schlüssel
+Ausführlich mit Sichern, Wiederherstellen und Zurückgehen: **[docs/BETRIEB.md](docs/BETRIEB.md)**. Kurz:
+
+1. Cloud-Server (Debian 13, x86), Hetzner-Firewall nur 22/80/443, SSH nur mit Schlüssel
 2. DNS-Eintrag `fairteilt.oli-tech.eu` (A/AAAA) auf die Server-IP
-3. Repo auf den Server holen, dann in `deploy/`:
+3. Repo nach `/opt/fairteilt` holen, dann in `deploy/`:
    ```bash
-   cp .env.example .env   # POSTGRES_PASSWORD eintragen (DOMAIN ist vorbelegt)
-   docker compose up -d --build
+   cp .env.example .env   # POSTGRES_PASSWORD, JWT_SECRET, API_IMAGE eintragen
+   ./update.sh            # holt das Image aus der CI (Workflow Server-Image) und startet
    ```
 4. Caddy holt das TLS-Zertifikat selbst. Prüfen mit `curl https://fairteilt.oli-tech.eu/health`
-5. Backups: `deploy/backup.sh` per Cron, Kopie außer Haus mit restic (Storage Box oder NAS)
+5. Cron: `backup.sh` nachts (mit restic außer Haus), `restore.sh --test` wöchentlich
 
 ## Lizenz
 
