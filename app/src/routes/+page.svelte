@@ -77,7 +77,7 @@
     <span class="fam" style="width: {familyPct}%"></span>
     <span class="runner krumel" style="left: {krumelPct}%"><Krumel size={24} /></span>
     <span class="runner us" style="left: {familyPct}%">wir</span>
-    <span class="goal"><Icon name="flag" size={20} /></span>
+    <span class="goal"><Icon name="flag" size={16} /></span>
   </div>
   <div class="row between small muted">
     <span>{goal.family_xp} / {goal.target} XP</span>
@@ -216,10 +216,12 @@
     gap: var(--space-2);
   }
 
+  /* The runners move on the track; the finish post sits right of it, so "wir" arrives next
+     to the flag instead of covering it. */
   .track {
     position: relative;
     height: 34px;
-    margin: 2px 14px 0 4px;
+    margin: 2px 48px 0 4px;
   }
 
   .lane,
@@ -232,7 +234,7 @@
   }
 
   .lane {
-    right: 0;
+    right: -32px;
     background: var(--surface-2);
   }
 
@@ -266,9 +268,23 @@
 
   .goal {
     position: absolute;
-    right: -14px;
-    top: 6px;
+    right: -48px;
+    top: 1px;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: var(--coin-soft);
     color: var(--coin);
+    border: 2px solid var(--surface);
+    box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--coin-bg) 70%, transparent);
+  }
+
+  .race.won .goal {
+    background: var(--coin-bg);
+    color: #5b3a05;
+    box-shadow: none;
   }
 
   .reward {
